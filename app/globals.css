@@ -1,0 +1,47 @@
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap');
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --terra:#C4593A;
+  --terra-d:#9E3E24;
+  --terra-l:#E07A5F;
+  --cream:#F5F0E8;
+  --cream-d:#EAE3D6;
+  --cream-dd:#DDD5C5;
+  --charcoal:#2C2C28;
+  --charcoal-m:#3E3D38;
+  --charcoal-l:#5A5952;
+  --sand:#D4C9B4;
+  --white:#FAFAF7;
+  --green:#3DAA6A;
+  --green-l:#52C47F;
+  --amber:#E8A020;
+  --fd:'Bebas Neue',sans-serif;
+  --fc:'Barlow Condensed',sans-serif;
+  --fb:'Barlow',sans-serif;
+}
+
+html{scroll-behavior:smooth}
+body{background:var(--cream);color:var(--charcoal);font-family:var(--fb);overflow-x:hidden}
+
+input::placeholder,textarea::placeholder{color:rgba(245,240,232,.25)}
+select option{background:#2C2C28;color:#F5F0E8}
+
+@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@keyframes bidSlide{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+@keyframes toastIn{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:translateX(0)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+@keyframes popIn{from{transform:scale(0);opacity:0}to{transform:scale(1);opacity:1}}
+
+.bid-in{animation:bidSlide .4s ease both}
+.toast-in{animation:toastIn .3s ease both}
+.online-dot{animation:pulse 1.8s infinite}
+.fade-up{animation:fadeUp .6s ease both}
+
+@media(max-width:900px){
+  .page-grid{grid-template-columns:1fr!important}
+  .sidebar-col{display:none!important}
+  .sidenav{display:none!important}
+  .stat-strip{grid-template-columns:1fr 1fr!important}
+}
