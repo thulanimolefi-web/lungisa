@@ -394,8 +394,11 @@ export default function AuthPage() {
                 <li><div className="ci"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#3DAA6A" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>Escrow wallet activated</li>
               </ul>
               <button className="bm bsu" onClick={async()=>{
-                await new Promise(r=>setTimeout(r,800))
-                router.push(role==='homeowner'?'/home':'/dashboard')
+                try {
+                  await supabase.auth.getSession()
+                  await new Promise(r=>setTimeout(r,1000))
+                } catch(e){}
+                window.location.href = role==='homeowner' ? '/home' : '/dashboard'
               }}>
                 Go to my dashboard →
               </button>
