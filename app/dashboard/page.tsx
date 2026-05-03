@@ -65,9 +65,26 @@ export default function Dashboard() {
     setShowCounter(false)
   }
 
-  function submitBid(){
+  async function submitBid(){
     if(!bidPrice||parseInt(bidPrice)<100||!modalJob) return
     const price=parseInt(bidPrice)
+    
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if(session?.user) {
+        await supabase.from('bids').insert({
+          job_id:          modalJob.id.toString(),
+          tradesperson_id: session.user.id,
+          amount:          price,
+          eta_label:       bidEta,
+          note:            bidNote || null,
+          status:          'pending',
+        })
+      }
+    } catch(e) {
+      console.log('Bid error:', e)
+    }
+  
     setJobs(j=>j.map(x=>x.id===modalJob.id?{...x,submitted:true,submitPrice:price}:x))
     setMyBids(b=>[...b,{job:modalJob.title,loc:modalJob.loc,price,status:'Pending',time:'Just now'}])
     toast('Bid submitted!',`R${price} on ${modalJob.title}`,false)
