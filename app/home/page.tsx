@@ -2,106 +2,225 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { supabase } from '../lib/supabase'
 
 type Tab = 'active' | 'history' | 'profile'
 
-const MOCK_JOBS = [
-  {
-    id: '1',
-    title: 'Burst pipe — kitchen sink',
-    category: 'Plumbing',
-    emoji: '🔧',
-    area: 'Soweto, JHB',
-    urgency: 'Today — emergency',
-    urgColor: '#E24B4A',
-    budget: 900,
-    status: 'bidding',
-    posted: '8 min ago',
-    bids: [
-      { id:'b1', name:'Themba Mokoena', init:'TM', bg:'#8B3A2A', trade:'Licensed Plumber · 6 yrs', rating:'★★★★★', ratingNum:'4.9', jobs:47, price:850, eta:'2 hrs', status:'pending' },
-      { id:'b2', name:'Sipho Khumalo',  init:'SK', bg:'#5A3A2A', trade:'Plumber · 3 yrs',           rating:'★★★★☆', ratingNum:'4.6', jobs:19, price:720, eta:'1 hr',  status:'pending' },
-      { id:'b3', name:'Patrick Nkosi',  init:'PN', bg:'#2A4A3A', trade:'Master Plumber · 11 yrs',   rating:'★★★★★', ratingNum:'4.8', jobs:103,price:900, eta:'3 hrs', status:'pending' },
-    ]
-  },
-  {
-    id: '2',
-    title: 'Tripping circuit breaker',
-    category: 'Electrical',
-    emoji: '⚡',
-    area: 'Roodepoort, JHB',
-    urgency: 'Within 3 days',
-    urgColor: '#E8A020',
-    budget: 700,
-    status: 'open',
-    posted: '34 min ago',
-    bids: []
-  },
-]
+type BidData = {
+  id: string
+  name: string
+  init: string
+  bg: string
+  trade: string
+  rating: string
+  ratingNum: string
+  jobs: number
+  price: number
+  eta: string
+  status: string
+}
 
-const HISTORY_JOBS = [
-  { id:'h1', title:'Geyser replacement',   category:'Plumbing',   emoji:'🔧', area:'Soweto',     tradesperson:'Themba Mokoena', price:1800, rating:5, date:'12 Apr 2026', status:'completed' },
-  { id:'h2', title:'Paint living room',    category:'Painting',   emoji:'🎨', area:'Soweto',     tradesperson:'Lungelo Dube',   price:2400, rating:4, date:'28 Mar 2026', status:'completed' },
-  { id:'h3', title:'Fix garden gate lock', category:'General',    emoji:'🔩', area:'Roodepoort', tradesperson:'James Sithole',  price:350,  rating:5, date:'15 Mar 2026', status:'completed' },
-]
+type JobData = {
+  id: string
+  title: string
+  category: string
+  emoji: string
+  area: string
+  urgency: string
+  urgColor: string
+  budget: number
+  status: string
+  posted: string
+  bids: BidData[]
+}
+
+type HistoryJob = {
+  id: string
+  title: string
+  category: string
+  emoji: string
+  area: string
+  tradesperson: string
+  price: number
+  rating: number
+  date: string
+}
+
+const AVATAR_COLORS = ['#8B3A2A','#5A3A2A','#2A4A3A','#3A4A6A','#6A3A5A','#4A5A2A']
+
+function getCatEmoji(cat:string){const m:Record<string,string>={plumbing:'🔧',electrical:'⚡',painting:'🎨',carpentry:'🪚',roofing:'🏠',tiling:'🚿',solar:'☀️',garden:'🌿',waterproofing:'💧',welding:'🔥',cleaning:'🧹',general:'🔩'};return m[cat]||'🔧'}
+function getUrgencyLabel(u:string){const m:Record<string,string>={emergency:'Today — emergency',within_3_days:'Within 3 days',this_week:'This week',flexible:'Flexible'};return m[u]||'Flexible'}
+function getUrgencyColor(u:string){const m:Record<string,string>={emergency:'#E24B4A',within_3_days:'#E8A020',this_week:'#3DAA6A',flexible:'#D4C9B4'};return m[u]||'#D4C9B4'}
+function getTimeAgo(d:string){const diff=Date.now()-new Date(d).getTime();const mins=Math.floor(diff/60000);if(mins<60)return`${mins} min ago`;const hrs=Math.floor(mins/60);if(hrs<24)return`${hrs} hr${hrs>1?'s':''} ago`;return`${Math.floor(hrs/24)} day${Math.floor(hrs/24)>1?'s':''} ago`}
 
 export default function HomeDashboard() {
   const router = useRouter()
-  const [tab, setTab]             = useState<Tab>('active')
-  const [jobs, setJobs]           = useState(MOCK_JOBS)
-  const [selectedJob, setSelectedJob] = useState<typeof MOCK_JOBS[0]|null>(MOCK_JOBS[0])
+  const [tab, setTab]               = useState<Tab>('active')
+  const [jobs, setJobs]             = useState<JobData[]>([])
+  const [historyJobs, setHistoryJobs] = useState<HistoryJob[]>([])
+  const [selectedJob, setSelectedJob] = useState<JobData|null>(null)
   const [counterAmts, setCounterAmts] = useState<Record<string,string>>({})
   const [counterResp, setCounterResp] = useState<Record<string,string>>({})
   const [acceptedBid, setAcceptedBid] = useState<Record<string,string>>({})
-  const [paidJobs, setPaidJobs]   = useState<Record<string,boolean>>({})
-  const [reviewJob, setReviewJob] = useState<string|null>(null)
-  const [rating, setRating]       = useState(5)
+  const [paidJobs, setPaidJobs]     = useState<Record<string,boolean>>({})
+  const [reviewJob, setReviewJob]   = useState<string|null>(null)
+  const [rating, setRating]         = useState(5)
   const [reviewText, setReviewText] = useState('')
-  const [toasts, setToasts]       = useState<{id:number,msg:string,color:string}[]>([])
-  const [newBidAnim, setNewBidAnim] = useState(false)
+  const [toasts, setToasts]         = useState<{id:number,msg:string,color:string}[]>([])
+  const [profile, setProfile]       = useState<any>(null)
+  const [loading, setLoading]       = useState(true)
 
   useEffect(()=>{
-    // Simulate new bid arriving
-    const t = setTimeout(()=>{
-      setJobs(j=>j.map(job=>job.id==='2'?{...job,status:'bidding',bids:[{id:'b4',name:'Andile Zulu',init:'AZ',bg:'#3A4A6A',trade:'Electrician · 5 yrs',rating:'★★★★★',ratingNum:'4.7',jobs:31,price:650,eta:'2 hrs',status:'pending'}]}:job))
-      setNewBidAnim(true)
-      toast('New bid received!','Andile Zulu bid R650 on your circuit breaker job','#E8A020')
-      setTimeout(()=>setNewBidAnim(false),1000)
-    },6000)
-    return ()=>clearTimeout(t)
+    loadProfile()
+    loadRealJobs()
+    loadHistoryJobs()
+
+    const channel = supabase
+      .channel('home-bids')
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'bids'},()=>{
+        loadRealJobs()
+        toast('New bid received!','A tradesperson just bid on your job 🎉','#E8A020')
+      })
+      .subscribe()
+
+    return ()=>{ supabase.removeChannel(channel) }
   },[])
 
-  function toast(msg:string, sub:string, color:string){
+  async function loadProfile() {
+    try {
+      const { data:{ session } } = await supabase.auth.getSession()
+      if(session?.user) {
+        const { data } = await supabase.from('profiles').select('*').eq('id',session.user.id).single()
+        if(data) setProfile(data)
+      }
+    } catch(e){ console.log('Profile error:',e) }
+  }
+
+  async function loadRealJobs() {
+    setLoading(true)
+    try {
+      const { data:{ session } } = await supabase.auth.getSession()
+      if(!session?.user) { setLoading(false); return }
+
+      const { data, error } = await supabase
+        .from('jobs')
+        .select(`
+          *,
+          bids(
+            id, amount, eta_label, note, status, created_at,
+            profiles!tradesperson_id(
+              full_name, avatar_url,
+              tradesperson_profiles(trade_category, years_experience, rating_avg, jobs_completed)
+            )
+          )
+        `)
+        .eq('homeowner_id', session.user.id)
+        .in('status',['open','bidding','accepted','in_progress'])
+        .order('created_at',{ascending:false})
+
+      if(!error && data) {
+        const mapped: JobData[] = data.map((j:any,ji:number)=>({
+          id:       j.id,
+          title:    j.title,
+          category: j.category.charAt(0).toUpperCase()+j.category.slice(1),
+          emoji:    getCatEmoji(j.category),
+          area:     `${j.area}, JHB`,
+          urgency:  getUrgencyLabel(j.urgency),
+          urgColor: getUrgencyColor(j.urgency),
+          budget:   j.budget_max||0,
+          status:   j.status,
+          posted:   getTimeAgo(j.created_at),
+          bids:     (j.bids||[]).map((b:any,bi:number)=>({
+            id:        b.id,
+            name:      b.profiles?.full_name||'Tradesperson',
+            init:      (b.profiles?.full_name||'T').split(' ').map((n:string)=>n[0]).join('').substring(0,2).toUpperCase(),
+            bg:        AVATAR_COLORS[(ji+bi)%AVATAR_COLORS.length],
+            trade:     `${(b.profiles?.tradesperson_profiles?.trade_category||'tradesperson').charAt(0).toUpperCase()+(b.profiles?.tradesperson_profiles?.trade_category||'tradesperson').slice(1)} · ${b.profiles?.tradesperson_profiles?.years_experience||0} yrs`,
+            rating:    '★★★★★',
+            ratingNum: String(b.profiles?.tradesperson_profiles?.rating_avg||'New'),
+            jobs:      b.profiles?.tradesperson_profiles?.jobs_completed||0,
+            price:     b.amount,
+            eta:       b.eta_label,
+            status:    b.status,
+          }))
+        }))
+        setJobs(mapped)
+        if(mapped.length>0&&!selectedJob) setSelectedJob(mapped[0])
+      }
+    } catch(e){ console.log('Load jobs error:',e) }
+    setLoading(false)
+  }
+
+  async function loadHistoryJobs() {
+    try {
+      const { data:{ session } } = await supabase.auth.getSession()
+      if(!session?.user) return
+      const { data, error } = await supabase
+        .from('jobs')
+        .select(`*, bids!inner(amount, profiles!tradesperson_id(full_name))`)
+        .eq('homeowner_id', session.user.id)
+        .eq('status','completed')
+        .order('updated_at',{ascending:false})
+      if(!error && data) {
+        const mapped: HistoryJob[] = data.map((j:any)=>({
+          id:          j.id,
+          title:       j.title,
+          category:    j.category,
+          emoji:       getCatEmoji(j.category),
+          area:        j.area,
+          tradesperson:j.bids?.[0]?.profiles?.full_name||'Tradesperson',
+          price:       j.bids?.[0]?.amount||0,
+          rating:      5,
+          date:        new Date(j.updated_at).toLocaleDateString('en-ZA',{day:'numeric',month:'short',year:'numeric'}),
+        }))
+        setHistoryJobs(mapped)
+      }
+    } catch(e){ console.log('History error:',e) }
+  }
+
+  function toast(msg:string,sub:string,color:string){
     const id=Date.now()
     setToasts(t=>[...t,{id,msg,color}])
     setTimeout(()=>setToasts(t=>t.filter(x=>x.id!==id)),4500)
   }
 
-  function sendCounter(jobId:string, bidId:string, originalPrice:number){
-    const amt = counterAmts[bidId]
-    if(!amt) return
-    const offered = parseInt(amt)
+  function sendCounter(jobId:string,bidId:string,originalPrice:number){
+    const amt=counterAmts[bidId]; if(!amt) return
     setCounterResp(r=>({...r,[bidId]:'sending'}))
     setTimeout(()=>{
-      if(offered >= originalPrice * 0.82){
+      if(parseInt(amt)>=originalPrice*0.82){
         setCounterResp(r=>({...r,[bidId]:'accepted'}))
-        toast('Counter accepted!',`R${offered} agreed — ready to pay`,'#3DAA6A')
+        toast('Counter accepted!',`R${amt} agreed — ready to pay`,'#3DAA6A')
       } else {
         setCounterResp(r=>({...r,[bidId]:'declined'}))
       }
     },1800)
   }
 
-  function acceptBid(jobId:string, bidId:string, bidName:string, price:number){
+  function acceptBid(jobId:string,bidId:string,bidName:string){
     setAcceptedBid(a=>({...a,[jobId]:bidId}))
     setJobs(j=>j.map(job=>job.id===jobId?{...job,status:'accepted'}:job))
-    toast('Bid accepted!',`${bidName.split(' ')[0]} is on his way · Pay to confirm`,'#3DAA6A')
+    toast('Bid accepted!',`${bidName.split(' ')[0]} is on the way · Pay to confirm`,'#3DAA6A')
   }
 
-  function releasePayment(jobId:string){
-    setPaidJobs(p=>({...p,[jobId]:true}))
-    setJobs(j=>j.map(job=>job.id===jobId?{...job,status:'completed'}:job))
-    toast('Payment released!','Job marked complete. Leave a review 🌟','#3DAA6A')
-    setReviewJob(jobId)
+  async function releasePayment(jobId:string, amount:number){
+    const yoco = new (window as any).YocoSDK({
+      publicKey: process.env.NEXT_PUBLIC_YOCO_PUBLIC_KEY||'pk_test_c70ac83fqWJLLjJdfd54',
+    })
+    yoco.showPopup({
+      amountInCents: amount*100,
+      currency: 'ZAR',
+      name: 'Lungisa',
+      description: `Payment for: ${jobs.find(j=>j.id===jobId)?.title}`,
+      callback: async (result:any)=>{
+        if(result.error){ toast('Payment failed',result.error.message,'#E24B4A'); return }
+        setPaidJobs(p=>({...p,[jobId]:true}))
+        setJobs(j=>j.map(job=>job.id===jobId?{...job,status:'completed'}:job))
+        toast('Payment successful!','Job confirmed 🎉','#3DAA6A')
+        setReviewJob(jobId)
+        loadHistoryJobs()
+      }
+    })
   }
 
   function submitReview(){
@@ -110,7 +229,11 @@ export default function HomeDashboard() {
   }
 
   const activeJobs  = jobs.filter(j=>j.status!=='completed')
-  const totalSpent  = HISTORY_JOBS.reduce((s,j)=>s+j.price,0)
+  const allBids     = activeJobs.flatMap(j=>j.bids)
+  const avgBidPrice = allBids.length>0 ? Math.round(allBids.reduce((s,b)=>s+b.price,0)/allBids.length) : 0
+  const totalSpent  = historyJobs.reduce((s,j)=>s+j.price,0)
+  const displayName = profile?.full_name||'—'
+  const displayInitials = displayName.split(' ').map((n:string)=>n[0]).join('').substring(0,2).toUpperCase()||'?'
 
   const css = `
     @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap');
@@ -127,7 +250,7 @@ export default function HomeDashboard() {
     .sidenav{width:240px;flex-shrink:0;background:var(--charcoal);display:flex;flex-direction:column;border-right:1px solid rgba(255,255,255,.05);position:sticky;top:0;height:100vh;overflow-y:auto}
     .sn-logo{padding:24px 20px 18px;border-bottom:1px solid rgba(255,255,255,.06);display:flex;align-items:center;gap:9px}
     .sn-hex{width:28px;height:28px;background:var(--terra);clip-path:polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%);display:flex;align-items:center;justify-content:center;flex-shrink:0}
-    .sn-word{font-family:var(--fd);font-size:22px;letter-spacing:2px;color:var(--cream)}
+    .sn-word{font-family:var(--fd);font-size:22px;letter-spacing:2px;color:var(--cream);text-decoration:none}
     .sn-profile{padding:18px 20px;border-bottom:1px solid rgba(255,255,255,.06);display:flex;align-items:center;gap:10px}
     .sn-ava{width:42px;height:42px;border-radius:50%;background:var(--terra);display:flex;align-items:center;justify-content:center;font-family:var(--fd);font-size:18px;color:#fff;border:2px solid rgba(196,89,58,.4);flex-shrink:0}
     .sn-name{font-family:var(--fc);font-size:14px;font-weight:700;color:var(--cream);line-height:1.2}
@@ -137,9 +260,9 @@ export default function HomeDashboard() {
     .sn-item{display:flex;align-items:center;gap:10px;padding:11px 20px;cursor:pointer;font-family:var(--fc);font-size:13px;font-weight:600;letter-spacing:.5px;color:rgba(245,240,232,.45);border-left:3px solid transparent;transition:all .15s}
     .sn-item:hover{color:rgba(245,240,232,.8);background:rgba(255,255,255,.03)}
     .sn-item.active{color:var(--cream);border-left-color:var(--terra);background:rgba(196,89,58,.08)}
-    .sn-badge{margin-left:auto;background:var(--terra);color:#fff;font-size:10px;font-family:var(--fc);font-weight:700;padding:2px 7px;border-radius:10px}
+    .sn-badge{margin-left:auto;background:var(--terra);color:#fff;font-family:var(--fc);font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px}
     .main{flex:1;overflow-x:hidden;background:var(--cream)}
-    .topbar{background:var(--white);border-bottom:1px solid var(--cream-d);padding:0 32px;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:40;box-shadow:0 1px 0 var(--cream-d)}
+    .topbar{background:var(--white);border-bottom:1px solid var(--cream-d);padding:0 32px;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:40}
     .page-title{font-family:var(--fd);font-size:24px;letter-spacing:1.5px;color:var(--charcoal)}
     .post-btn{font-family:var(--fc);font-size:13px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;background:var(--terra);color:#fff;border:none;padding:10px 22px;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:8px;transition:background .15s}
     .post-btn:hover{background:var(--terra-l)}
@@ -153,19 +276,14 @@ export default function HomeDashboard() {
     .stat-delta{font-size:11px;color:var(--charcoal-l);margin-top:5px;font-family:var(--fc);font-weight:500}
     .sec-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
     .sec-title{font-family:var(--fd);font-size:22px;letter-spacing:1.5px;color:var(--charcoal)}
-    .job-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:28px}
-    .job-card{background:var(--white);border-radius:12px;border:1.5px solid var(--cream-d);overflow:hidden;cursor:pointer;transition:all .2s}
+    .job-card{background:var(--white);border-radius:12px;border:1.5px solid var(--cream-d);overflow:hidden;cursor:pointer;transition:all .2s;margin-bottom:12px}
     .job-card:hover{border-color:var(--terra-l);box-shadow:0 4px 20px rgba(196,89,58,.08)}
     .job-card.selected{border-color:var(--terra)}
-    .job-card.new-anim{animation:newJob .5s ease both}
-    @keyframes newJob{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
     .jc-top{padding:18px 20px 14px;display:flex;align-items:flex-start;gap:12px}
     .jc-urg{width:4px;height:52px;border-radius:2px;flex-shrink:0;margin-top:2px}
-    .jc-info{flex:1;min-width:0}
     .jc-cat{font-family:var(--fc);font-size:9px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--charcoal-l);margin-bottom:4px}
     .jc-title{font-family:var(--fc);font-size:17px;font-weight:700;color:var(--charcoal);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .jc-meta{font-size:12px;color:var(--charcoal-l)}
-    .jc-status{font-family:var(--fc);font-size:10px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;padding:4px 10px;border-radius:4px}
     .jc-bot{padding:10px 20px;background:var(--cream);border-top:1px solid var(--cream-d);display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--charcoal-l)}
     .bid-count{font-family:var(--fc);font-size:13px;font-weight:700;color:var(--terra)}
     .detail-panel{background:var(--white);border-radius:12px;border:1.5px solid var(--cream-d);overflow:hidden}
@@ -206,10 +324,7 @@ export default function HomeDashboard() {
     .pay-btn:hover{border-color:var(--terra);background:rgba(196,89,58,.02)}
     .pay-lbl{font-family:var(--fc);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--charcoal)}
     .pay-sub{font-size:11px;color:var(--charcoal-l);margin-top:2px}
-    .empty-state{text-align:center;padding:60px 20px;color:var(--charcoal-l)}
-    .empty-icon{font-size:40px;margin-bottom:16px}
-    .empty-title{font-family:var(--fd);font-size:28px;letter-spacing:1px;color:var(--charcoal);margin-bottom:8px}
-    .empty-sub{font-size:15px;color:var(--charcoal-l);margin-bottom:24px}
+    .empty-state{text-align:center;padding:80px 20px;color:var(--charcoal-l)}
     .hist-row{background:var(--white);border-radius:10px;border:1px solid var(--cream-d);padding:16px 20px;margin-bottom:10px;display:flex;align-items:center;gap:16px}
     .hist-ico{width:40px;height:40px;border-radius:10px;background:rgba(196,89,58,.1);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
     .hist-title{font-family:var(--fc);font-size:15px;font-weight:700;color:var(--charcoal);margin-bottom:2px}
@@ -228,22 +343,16 @@ export default function HomeDashboard() {
     .toast-stack{position:fixed;bottom:24px;right:24px;z-index:200;pointer-events:none}
     .toast-item{background:var(--charcoal);border-radius:10px;border:1px solid rgba(255,255,255,.1);padding:12px 16px;margin-bottom:8px;display:flex;align-items:center;gap:10px;max-width:280px;animation:toastIn .3s ease both}
     @keyframes toastIn{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:translateX(0)}}
-    @keyframes bidIn{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:translateX(0)}}
-    .bid-in{animation:bidIn .4s ease both}
-    @media(max-width:900px){
-      .sidenav{display:none}
-      .stat-strip{grid-template-columns:1fr 1fr}
-      .job-grid{grid-template-columns:1fr}
-      .content{padding:20px 16px}
-      .topbar{padding:0 16px}
-    }
+    .loading-state{display:flex;align-items:center;justify-content:center;padding:80px;color:var(--charcoal-l);font-family:var(--fc);font-size:13px;letter-spacing:1px;gap:12px}
+    .spin{display:inline-block;width:20px;height:20px;border:2px solid var(--cream-d);border-top-color:var(--terra);border-radius:50%;animation:spin .6s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    @media(max-width:900px){.sidenav{display:none}.stat-strip{grid-template-columns:1fr 1fr}.content{padding:20px 16px}.topbar{padding:0 16px}}
   `
 
   return (
     <>
       <style>{css}</style>
       <div className="shell">
-
         {/* SIDEBAR */}
         <nav className="sidenav">
           <div className="sn-logo">
@@ -252,26 +361,26 @@ export default function HomeDashboard() {
                 <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
               </svg>
             </div>
-            <span className="sn-word">LUNGISA</span>
+            <a href="/" className="sn-word">LUNGISA</a>
           </div>
           <div className="sn-profile">
-            <div className="sn-ava">TM</div>
+            <div className="sn-ava">{displayInitials}</div>
             <div>
-              <div className="sn-name">Thabo Molefi</div>
-              <div className="sn-sub">Homeowner · Soweto</div>
+              <div className="sn-name">{displayName}</div>
+              <div className="sn-sub">Homeowner · {profile?.area||'Johannesburg'}</div>
             </div>
           </div>
           <div className="sn-menu">
             <div className="sn-sec">My Jobs</div>
             {[
-              {id:'active',icon:'🏠',label:'Active Jobs',badge:activeJobs.filter(j=>j.bids.length>0).length},
-              {id:'history',icon:'📋',label:'Job History'},
+              {id:'active', icon:'🏠', label:'Active Jobs', badge:activeJobs.filter(j=>j.bids.length>0).length},
+              {id:'history',icon:'📋',label:'Job History', badge:historyJobs.length},
               {id:'profile',icon:'👤',label:'My Profile'},
             ].map(item=>(
               <div key={item.id} className={`sn-item ${tab===item.id?'active':''}`} onClick={()=>setTab(item.id as Tab)}>
                 <span style={{fontSize:14}}>{item.icon}</span>
                 {item.label}
-                {item.badge&&item.badge>0&&<span className="sn-badge">{item.badge}</span>}
+                {item.badge!==undefined&&item.badge>0&&<span className="sn-badge">{item.badge}</span>}
               </div>
             ))}
             <div className="sn-sec">Quick actions</div>
@@ -296,16 +405,15 @@ export default function HomeDashboard() {
 
           <div className="content">
 
-            {/* ── ACTIVE JOBS TAB ── */}
+            {/* ACTIVE JOBS */}
             {tab==='active'&&(
               <>
-                {/* Stats */}
                 <div className="stat-strip">
                   {[
-                    {eye:'Active jobs',val:String(activeJobs.length),cls:'terra',delta:'2 receiving bids'},
-                    {eye:'Total bids',val:String(jobs.reduce((s,j)=>s+j.bids.length,0)),cls:'',delta:'Across all jobs'},
-                    {eye:'Avg bid price',val:'R823',cls:'green',delta:'vs R900 budget'},
-                    {eye:'Jobs completed',val:'3',cls:'',delta:'This month'},
+                    {eye:'Active jobs',   val:String(activeJobs.length),                              cls:'terra', delta:activeJobs.length>0?`${activeJobs.filter(j=>j.bids.length>0).length} receiving bids`:'Post your first job'},
+                    {eye:'Total bids',    val:String(allBids.length),                                 cls:'',      delta:allBids.length>0?'Across all your jobs':'No bids yet'},
+                    {eye:'Avg bid price', val:avgBidPrice>0?`R${avgBidPrice.toLocaleString()}`:'—',   cls:'green', delta:avgBidPrice>0?'Current average':'No bids yet'},
+                    {eye:'Jobs completed',val:String(historyJobs.length),                             cls:'',      delta:historyJobs.length>0?`R${totalSpent.toLocaleString()} total spent`:'Complete your first job'},
                   ].map(s=>(
                     <div key={s.eye} className="stat-card">
                       <div className="stat-eye">{s.eye}</div>
@@ -315,63 +423,56 @@ export default function HomeDashboard() {
                   ))}
                 </div>
 
-                {activeJobs.length===0?(
+                {loading?(
+                  <div className="loading-state"><div className="spin"/><span>Loading your jobs...</span></div>
+                ):activeJobs.length===0?(
                   <div className="empty-state">
-                    <div className="empty-icon">🏠</div>
-                    <div className="empty-title">No active jobs</div>
-                    <p className="empty-sub">Post a job and get competitive bids from vetted tradespeople.</p>
+                    <div style={{fontSize:48,marginBottom:16}}>🏠</div>
+                    <div style={{fontFamily:'var(--fd)',fontSize:32,color:'var(--charcoal)',marginBottom:8,letterSpacing:1}}>No active jobs</div>
+                    <p style={{fontSize:15,maxWidth:400,margin:'0 auto 28px',lineHeight:1.6}}>Post your first job and start receiving competitive bids from vetted tradespeople in your area.</p>
                     <button className="btn btn-terra" onClick={()=>router.push('/post')}>Post your first job →</button>
                   </div>
                 ):(
-                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:24,alignItems:'start'}} className="job-detail-grid">
-                    {/* Job cards */}
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:24,alignItems:'start'}}>
                     <div>
-                      <div className="sec-hdr">
-                        <div className="sec-title">Your jobs</div>
-                      </div>
+                      <div className="sec-hdr"><div className="sec-title">Your jobs</div></div>
                       {activeJobs.map(job=>(
-                        <div key={job.id}
-                          className={`job-card ${selectedJob?.id===job.id?'selected':''} ${newBidAnim&&job.id==='2'?'new-anim':''}`}
-                          onClick={()=>setSelectedJob(job)}>
+                        <div key={job.id} className={`job-card ${selectedJob?.id===job.id?'selected':''}`} onClick={()=>setSelectedJob(job)}>
                           <div className="jc-top">
                             <div className="jc-urg" style={{background:job.urgColor}}/>
-                            <div className="jc-info">
+                            <div style={{flex:1,minWidth:0}}>
                               <div className="jc-cat">{job.emoji} {job.category}</div>
                               <div className="jc-title">{job.title}</div>
                               <div className="jc-meta">📍 {job.area} · Posted {job.posted}</div>
                             </div>
                             <div>
-                              <div className="jc-status" style={{
-                                background:job.bids.length>0?'rgba(196,89,58,.1)':'rgba(255,255,255,.1)',
-                                color:job.bids.length>0?'var(--terra-d)':'var(--charcoal-l)',
-                              }}>
+                              <div style={{fontFamily:'var(--fc)',fontSize:10,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',padding:'4px 10px',borderRadius:4,background:job.bids.length>0?'rgba(196,89,58,.1)':'rgba(0,0,0,.06)',color:job.bids.length>0?'var(--terra-d)':'var(--charcoal-l)'}}>
                                 {job.bids.length>0?`${job.bids.length} bids`:'Waiting'}
                               </div>
                             </div>
                           </div>
                           <div className="jc-bot">
-                            <span>Budget: <strong>R{job.budget}</strong></span>
+                            <span>Budget: <strong>R{job.budget.toLocaleString()}</strong></span>
                             <span className="bid-count">{job.bids.length>0?`${job.bids.length} bid${job.bids.length!==1?'s':''} received`:'No bids yet'}</span>
                           </div>
                         </div>
                       ))}
                     </div>
 
-                    {/* Bid detail panel */}
                     <div>
                       {selectedJob?(
                         <div className="detail-panel">
                           <div className="dp-header">
                             <div className="dp-eye">{selectedJob.emoji} {selectedJob.category} · {selectedJob.area}</div>
                             <div className="dp-title">{selectedJob.title}</div>
-                            <div className="dp-meta">Budget R{selectedJob.budget} · {selectedJob.urgency} · Posted {selectedJob.posted}</div>
+                            <div className="dp-meta">Budget R{selectedJob.budget.toLocaleString()} · {selectedJob.urgency} · Posted {selectedJob.posted}</div>
                           </div>
                           <div className="dp-body">
                             {selectedJob.bids.length===0?(
                               <div style={{textAlign:'center',padding:'40px 0',color:'var(--charcoal-l)'}}>
                                 <div style={{fontSize:32,marginBottom:12}}>⏳</div>
                                 <div style={{fontFamily:'var(--fc)',fontSize:16,fontWeight:700,color:'var(--charcoal)',marginBottom:6}}>Waiting for bids</div>
-                                <p style={{fontSize:13,lineHeight:1.6}}>Tradespeople in your area are being notified via WhatsApp. First bids usually arrive within 5 minutes.</p>
+                                <p style={{fontSize:13,lineHeight:1.6}}>Tradespeople in your area are being notified. First bids usually arrive within 5 minutes.</p>
                               </div>
                             ):(
                               <>
@@ -379,26 +480,24 @@ export default function HomeDashboard() {
                                   <span style={{width:14,height:2,background:'var(--terra)',display:'inline-block'}}/>
                                   {selectedJob.bids.length} bid{selectedJob.bids.length!==1?'s':''} received
                                 </div>
-
                                 {selectedJob.bids.map((bid,i)=>{
-                                  const isAccepted = acceptedBid[selectedJob.id]===bid.id
-                                  const isPaid = paidJobs[selectedJob.id]
-                                  const resp = counterResp[bid.id]
+                                  const isAccepted=acceptedBid[selectedJob.id]===bid.id
+                                  const isPaid=paidJobs[selectedJob.id]
+                                  const resp=counterResp[bid.id]
                                   return (
-                                    <div key={bid.id} className={`bid-card bid-in ${isAccepted?'accepted':''}`} style={{animationDelay:`${i*0.1}s`}}>
+                                    <div key={bid.id} className={`bid-card ${isAccepted?'accepted':''}`}>
                                       <div className="bc-top">
                                         <div className="bc-ava" style={{background:bid.bg}}>{bid.init}</div>
                                         <div style={{flex:1}}>
                                           <div className="bc-name">{bid.name}</div>
                                           <div className="bc-trade">{bid.trade}</div>
-                                          <div className="bc-stars">{bid.rating} <span style={{color:'var(--charcoal-l)',fontSize:11}}>{bid.ratingNum} · {bid.jobs} jobs</span></div>
+                                          <div className="bc-stars">★★★★★ <span style={{color:'var(--charcoal-l)',fontSize:11}}>{bid.ratingNum} · {bid.jobs} jobs</span></div>
                                         </div>
                                         <div>
                                           <div className="bc-price">R{bid.price}</div>
                                           <div className="bc-eta">ETA: {bid.eta}</div>
                                         </div>
                                       </div>
-
                                       {!isAccepted&&!acceptedBid[selectedJob.id]&&(
                                         <>
                                           <div className="counter-row">
@@ -409,45 +508,35 @@ export default function HomeDashboard() {
                                               onChange={e=>setCounterAmts(a=>({...a,[bid.id]:e.target.value}))}/>
                                           </div>
                                           <div className="bc-actions">
-                                            <button className="btn btn-terra" onClick={()=>sendCounter(selectedJob.id,bid.id,bid.price)}>
-                                              Counter-offer
-                                            </button>
-                                            <button className="btn btn-ghost" onClick={()=>acceptBid(selectedJob.id,bid.id,bid.name,bid.price)}>
-                                              Accept R{bid.price}
-                                            </button>
+                                            <button className="btn btn-terra" onClick={()=>sendCounter(selectedJob.id,bid.id,bid.price)}>Counter-offer</button>
+                                            <button className="btn btn-ghost" onClick={()=>acceptBid(selectedJob.id,bid.id,bid.name)}>Accept R{bid.price}</button>
                                           </div>
-                                          {resp==='sending'&&<div className="counter-resp" style={{color:'var(--charcoal-l)',fontSize:13,marginTop:8}}>Sending offer...</div>}
-                                          {resp==='accepted'&&<div className="counter-resp resp-ok">✓ <strong>{bid.name.split(' ')[0]} accepted R{counterAmts[bid.id]}.</strong> Ready to pay and confirm.</div>}
-                                          {resp==='declined'&&<div className="counter-resp resp-no">✗ Declined. Try a higher amount or accept the original price.</div>}
+                                          {resp==='sending'&&<div style={{color:'var(--charcoal-l)',fontSize:13,marginTop:8}}>Sending offer...</div>}
+                                          {resp==='accepted'&&<div className="counter-resp resp-ok">✓ <strong>{bid.name.split(' ')[0]} accepted R{counterAmts[bid.id]}.</strong> Ready to pay.</div>}
+                                          {resp==='declined'&&<div className="counter-resp resp-no">✗ Declined. Try a higher amount.</div>}
                                         </>
                                       )}
-
                                       {isAccepted&&!isPaid&&(
                                         <>
                                           <div style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'var(--green)',marginBottom:10}}>✓ Bid accepted</div>
-                                          <div className="escrow-note">
-                                            🔒 Your payment will be held in escrow. <strong>{bid.name.split(' ')[0]}</strong> only gets paid when you confirm the job is complete.
-                                          </div>
+                                          <div className="escrow-note">🔒 Your payment will be held in escrow. <strong>{bid.name.split(' ')[0]}</strong> only gets paid when you confirm the job is complete.</div>
                                           <div className="pay-grid">
-                                            <div className="pay-btn" onClick={()=>releasePayment(selectedJob.id)}>
+                                            <div className="pay-btn" onClick={()=>releasePayment(selectedJob.id, bid.price)}>
                                               <div className="pay-lbl">Pay by card</div>
                                               <div className="pay-sub">Visa · Mastercard</div>
                                             </div>
-                                            <div className="pay-btn" onClick={()=>releasePayment(selectedJob.id)}>
+                                            <div className="pay-btn" onClick={()=>releasePayment(selectedJob.id, bid.price)}>
                                               <div className="pay-lbl">Pay by EFT</div>
                                               <div className="pay-sub">Instant via Ozow</div>
                                             </div>
                                           </div>
                                         </>
                                       )}
-
                                       {isAccepted&&isPaid&&(
                                         <div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'14px 16px',fontSize:13,color:'#1a6e35',lineHeight:1.5}}>
-                                          ✓ Payment held in escrow. <strong>{bid.name.split(' ')[0]}</strong> is on his way.
+                                          ✓ Payment held in escrow. <strong>{bid.name.split(' ')[0]}</strong> is on the way.
                                           <div style={{marginTop:10}}>
-                                            <button className="btn btn-green" onClick={()=>setReviewJob(selectedJob.id)}>
-                                              Confirm job complete & release payment
-                                            </button>
+                                            <button className="btn btn-green" onClick={()=>setReviewJob(selectedJob.id)}>Confirm job complete & release payment</button>
                                           </div>
                                         </div>
                                       )}
@@ -470,18 +559,30 @@ export default function HomeDashboard() {
               </>
             )}
 
-            {/* ── HISTORY TAB ── */}
+            {/* HISTORY */}
             {tab==='history'&&(
               <>
-                <div style={{background:'var(--white)',borderRadius:10,border:'1px solid var(--cream-d)',padding:'20px 24px',marginBottom:20,display:'flex',gap:32}}>
-                  {[{label:'Total spent',val:`R${totalSpent.toLocaleString()}`},{label:'Jobs completed',val:'3'},{label:'Avg rating given',val:'★ 4.7'}].map(s=>(
-                    <div key={s.label}>
-                      <div style={{fontFamily:'var(--fc)',fontSize:9,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'var(--charcoal-l)',marginBottom:6}}>{s.label}</div>
-                      <div style={{fontFamily:'var(--fd)',fontSize:28,color:'var(--terra)'}}>{s.val}</div>
-                    </div>
-                  ))}
-                </div>
-                {HISTORY_JOBS.map(j=>(
+                {historyJobs.length>0&&(
+                  <div style={{background:'var(--white)',borderRadius:10,border:'1px solid var(--cream-d)',padding:'20px 24px',marginBottom:20,display:'flex',gap:32}}>
+                    {[
+                      {label:'Total spent',     val:`R${totalSpent.toLocaleString()}`},
+                      {label:'Jobs completed',  val:String(historyJobs.length)},
+                      {label:'Avg job value',   val:historyJobs.length>0?`R${Math.round(totalSpent/historyJobs.length).toLocaleString()}`:'—'},
+                    ].map(s=>(
+                      <div key={s.label}>
+                        <div style={{fontFamily:'var(--fc)',fontSize:9,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'var(--charcoal-l)',marginBottom:6}}>{s.label}</div>
+                        <div style={{fontFamily:'var(--fd)',fontSize:28,color:'var(--terra)'}}>{s.val}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {historyJobs.length===0?(
+                  <div className="empty-state">
+                    <div style={{fontSize:48,marginBottom:16}}>📋</div>
+                    <div style={{fontFamily:'var(--fd)',fontSize:32,color:'var(--charcoal)',marginBottom:8,letterSpacing:1}}>No completed jobs yet</div>
+                    <p style={{fontSize:15,maxWidth:400,margin:'0 auto',lineHeight:1.6}}>Your completed jobs and payment history will appear here.</p>
+                  </div>
+                ):historyJobs.map(j=>(
                   <div key={j.id} className="hist-row">
                     <div className="hist-ico">{j.emoji}</div>
                     <div style={{flex:1}}>
@@ -497,18 +598,24 @@ export default function HomeDashboard() {
               </>
             )}
 
-            {/* ── PROFILE TAB ── */}
+            {/* PROFILE */}
             {tab==='profile'&&(
               <div style={{background:'var(--white)',borderRadius:12,border:'1px solid var(--cream-d)',padding:32,maxWidth:560}}>
                 <div style={{display:'flex',alignItems:'center',gap:16,marginBottom:24,paddingBottom:20,borderBottom:'1px solid var(--cream-d)'}}>
-                  <div style={{width:64,height:64,borderRadius:'50%',background:'var(--terra)',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'var(--fd)',fontSize:28,color:'#fff'}}>TM</div>
+                  <div style={{width:64,height:64,borderRadius:'50%',background:'var(--terra)',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'var(--fd)',fontSize:28,color:'#fff'}}>{displayInitials}</div>
                   <div>
-                    <div style={{fontFamily:'var(--fd)',fontSize:28,letterSpacing:1,color:'var(--charcoal)',lineHeight:1}}>THABO MOLEFI</div>
-                    <div style={{fontSize:13,color:'var(--charcoal-l)',marginTop:4}}>Homeowner · Soweto, JHB</div>
-                    <div style={{fontSize:13,color:'var(--terra)',marginTop:3}}>Member since April 2026</div>
+                    <div style={{fontFamily:'var(--fd)',fontSize:28,letterSpacing:1,color:'var(--charcoal)',lineHeight:1}}>{displayName.toUpperCase()}</div>
+                    <div style={{fontSize:13,color:'var(--charcoal-l)',marginTop:4}}>Homeowner · {profile?.area||'Johannesburg'}</div>
+                    <div style={{fontSize:13,color:'var(--terra)',marginTop:3}}>Member since {profile?.created_at?new Date(profile.created_at).toLocaleDateString('en-ZA',{month:'long',year:'numeric'}):'—'}</div>
                   </div>
                 </div>
-                {[{label:'Email',val:'thabo@email.com'},{label:'Phone',val:'+27 82 345 6789'},{label:'Area',val:'Soweto, Johannesburg'},{label:'Jobs posted',val:'5'},{label:'Jobs completed',val:'3'}].map(r=>(
+                {[
+                  {label:'Email',          val:profile?.email||'—'},
+                  {label:'Phone',          val:profile?.phone||'—'},
+                  {label:'Area',           val:profile?.area||'—'},
+                  {label:'Jobs posted',    val:String(jobs.length)},
+                  {label:'Jobs completed', val:String(historyJobs.length)},
+                ].map(r=>(
                   <div key={r.label} style={{display:'flex',justifyContent:'space-between',padding:'10px 0',borderBottom:'1px solid var(--cream-d)'}}>
                     <span style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'var(--charcoal-l)'}}>{r.label}</span>
                     <span style={{fontSize:14,color:'var(--charcoal)',fontWeight:500}}>{r.val}</span>
@@ -555,4 +662,3 @@ export default function HomeDashboard() {
     </>
   )
 }
-
