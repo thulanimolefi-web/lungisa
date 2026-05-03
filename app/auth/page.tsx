@@ -48,29 +48,55 @@ export default function AuthPage() {
     if(!validate()) return
     try {
       const { error } = await supabase.auth.signInWithOtp({
-        phone: '+27' + phone.replace(/^0/, ''),
+        email: email,
+        options: {
+          shouldCreateUser: true,
+          data: {
+            full_name: fname + ' ' + lname,
+            role: role,
+            area: area,
+            phone: phone,
+          }
+        }
       })
-      if(error) { setErrors({phone: error.message}); return }
+      if(error) { setErrors({email: error.message}); return }
     } catch(e) {
-      // fallback for demo mode
+      console.log('Auth error:', e)
     }
     setScreen('otp'); startTimer()
   }
 
   async function handleOtp() {
     const code = otp.join('')
-    // Demo mode: accept 123456
-    if(code === '123456') { setOtpErr(''); setScreen('success'); return }
     try {
-      const { error } = await supabase.auth.verifyOtp({
-        phone: '+27' + phone.replace(/^0/, ''),
+      const { data, error } = await supabase.auth.verifyOtp({
+        email: email,
         token: code,
-        type: 'sms',
+        type: 'email',
       })
-      if(error) { setOtpErr('Incorrect code. Try 123456 for demo.'); return }
+      if(error) { setOtpErr('Incorrect code. Check your email.'); return }
+      if(data.user) {
+        // Save profile to database
+        await supabase.from('profiles').upsert({
+          id: data.user.id,
+          role: role,
+          full_name: fname + ' ' + lname,
+          phone: phone,
+          email: email,
+          area: area,
+          city: 'Johannesburg',
+        })
+        if(role === 'tradesperson') {
+          await supabase.from('tradesperson_profiles').upsert({
+            id: data.user.id,
+            trade_category: trade.toLowerCase(),
+            service_areas: [area],
+          })
+        }
+      }
       setOtpErr(''); setScreen('success')
     } catch(e) {
-      setOtpErr('Incorrect code. Try 123456 for demo.')
+      setOtpErr('Incorrect code. Please try again.')
     }
   }
 
@@ -272,7 +298,7 @@ export default function AuthPage() {
               <div className="pg"><div className="pd done"/><div className="pd done"/><div className="pd active"/><div className="pd"/></div>
               <div className="se">Phone verification</div>
               <h1 className="st">ENTER<br/>CODE</h1>
-              <div className="os">Code sent via WhatsApp to<br/><strong>+27 {phone}</strong></div>
+              <div className="os">Code sent via WhatsApp to<br/><strong>{email}</strong></div>
               <div className="ow">
                 {otp.map((v,i)=>(
                   <input key={i} id={`otp-${i}`} className="ob" type="text" maxLength={1} value={v}
@@ -284,7 +310,7 @@ export default function AuthPage() {
               {timerOn&&<div className="ot">Resend in <strong>{counter}s</strong></div>}
               {!timerOn&&<div className="ot"><button style={{background:'none',border:'none',cursor:'pointer',color:'var(--terra)',fontFamily:'var(--fc)',fontSize:13,fontWeight:600,letterSpacing:1,textTransform:'uppercase'}} onClick={()=>{setOtp(['','','','','','']);startTimer()}}>Resend code</button></div>}
               {otpErr&&<div className="err" style={{textAlign:'center',marginBottom:12}}>{otpErr}</div>}
-              <div style={{fontSize:12,color:'var(--charcoal-l)',textAlign:'center',marginBottom:12}}>Demo mode: use code <strong>123456</strong></div>
+              <div style={{fontSize:12,color:'var(--charcoal-l)',textAlign:'center',marginBottom:12}}>Check your email for the 6-digit code</div><div style={{fontSize:12,color:'var(--charcoal-l)',textAlign:'center',marginBottom:12}}>Check your email for the 6-digit code</div>
               <button className="bm bt" onClick={handleOtp} disabled={otp.join('').length<6}>Verify &amp; Continue</button>
               <div className="as" style={{marginTop:16}}><button onClick={()=>setScreen('signup')}>← Change number</button></div>
             </div>
