@@ -152,7 +152,18 @@ export default function PostJob() {
 
   return (
     <>
-      <style>{}</style>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap');
+        *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+        :root{--terra:#C4593A;--terra-l:#E07A5F;--cream:#F5F0E8;--charcoal:#2C2C28;--charcoal-l:#5A5952;--fb:'Barlow',sans-serif;--fc:'Barlow Condensed',sans-serif;--fd:'Bebas Neue',sans-serif;}
+        input::placeholder,textarea::placeholder{color:rgba(245,240,232,.25)}
+        select option{background:#2C2C28;color:#F5F0E8}
+        @keyframes bidSlide{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+        @keyframes toastIn{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:translateX(0)}}
+        .bid-card-anim{animation:bidSlide .4s ease both}
+        .toast-anim{animation:toastIn .3s ease both}
+        @media(max-width:900px){.page-grid{grid-template-columns:1fr!important}.sidebar-col{display:none}}
+      `}</style>
 
       <div style={S.wrap}>
         {/* NAV */}
@@ -401,7 +412,7 @@ export default function PostJob() {
                       {[['Job',title||'Home repair'],['Location',`${area}, JHB`],['ETA',selectedBid.eta],['Agreed price',`R${finalPrice}`],['Lungisa fee','R0 (free for homeowners)']].map(([l,v])=>(
                         <div key={l} style={{display:'flex',justifyContent:'space-between',padding:'8px 0',borderBottom:'1px solid rgba(255,255,255,.06)'}}>
                           <span style={{fontSize:13,color:'rgba(245,240,232,.45)'}}>{l}</span>
-                          <span style={{fontSize:l==='Agreed price'?20:13,color:l==='Agreed price'?'var(--terra-l)':'var(--cream)',fontFamily:l==='Agreed price'?'var(--fd)':undefined}}>{v}</span>
+                          <span style={{color:l==='Agreed price'?'var(--terra-l)':'var(--cream)',fontFamily:l==='Agreed price'?'var(--fd)':undefined,fontSize:l==='Agreed price'?20:13}}>{v}</span>
                         </div>
                       ))}
                     </div>
@@ -420,8 +431,7 @@ export default function PostJob() {
                     <div style={{width:72,height:72,borderRadius:'50%',background:'rgba(61,170,106,.12)',border:'2px solid rgba(61,170,106,.3)',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 16px',fontSize:32}}>✓</div>
                     <div style={{fontFamily:'var(--fd)',fontSize:44,letterSpacing:2,color:'var(--cream)',marginBottom:8}}>JOB IS<br/>LIVE.</div>
                     <p style={{fontSize:14,color:'rgba(245,240,232,.5)',marginBottom:28}}>{selectedBid.name.split(' ')[0]} is on his way. You&apos;ll get a WhatsApp when he&apos;s 30 minutes away.</p>
-                    <button style={{...S.btn('primary'),maxWidth:260,margin:'0 auto'}} onClick={()=>router.push('/home')}onClick={()=>router.push('/home')}
-                    >
+                    <button style={{...S.btn('primary'),maxWidth:260,margin:'0 auto'}} onClick={()=>{goStep(0);setLiveBids([]);setBidCount(0);setTitle('');setDesc('');setArea('');setPhotos([]);setAccepted(false);setPaid(false);setSelectedBid(null)}}>
                       Post another job
                     </button>
                   </div>
