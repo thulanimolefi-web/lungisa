@@ -25,6 +25,7 @@ export default function AuthPage() {
   const [counter, setCounter] = useState(60)
   const [timerOn, setTimerOn] = useState(false)
   const [otpErr, setOtpErr]   = useState('')
+  const [loading, setLoading] = useState(false)
 
   function startTimer() {
     setCounter(60); setTimerOn(true)
@@ -46,6 +47,7 @@ export default function AuthPage() {
 
   async function handleSignup() {
     if(!validate()) return
+    setLoading(true)
     try {
       const { error } = await supabase.auth.signInWithOtp({
         email: email,
@@ -59,45 +61,84 @@ export default function AuthPage() {
           }
         }
       })
-      if(error) { setErrors({email: error.message}); return }
+      if(error) {
+        setErrors({email: error.message})
+        setLoading(false)
+        return
+      }
+      setScreen('otp')
+      startTimer()
     } catch(e) {
-      console.log('Auth error:', e)
+      console.log('Signup error:', e)
+      setErrors({email: 'Something went wrong. Please try again.'})
     }
-    setScreen('otp'); startTimer()
+    setLoading(false)
   }
 
   async function handleOtp() {
     const code = otp.join('')
+    if(code.length < 6) return
+    setLoading(true)
     try {
       const { data, error } = await supabase.auth.verifyOtp({
         email: email,
         token: code,
         type: 'email',
       })
-      if(error) { setOtpErr('Incorrect code. Check your email.'); return }
+      if(error) {
+        setOtpErr('Incorrect code. Please check your email and try again.')
+        setLoading(false)
+        return
+      }
       if(data.user) {
         // Save profile to database
-        await supabase.from('profiles').upsert({
+        const { error: profileError } = await supabase.from('profiles').upsert({
           id: data.user.id,
           role: role,
           full_name: fname + ' ' + lname,
-          phone: phone,
+          phone: '+27' + phone.replace(/^0/, ''),
           email: email,
           area: area,
           city: 'Johannesburg',
         })
+        if(profileError) console.log('Profile error:', profileError)
+
+        // If tradesperson save extended profile
         if(role === 'tradesperson') {
           await supabase.from('tradesperson_profiles').upsert({
             id: data.user.id,
-            trade_category: trade.toLowerCase(),
+            trade_category: trade.toLowerCase() as any,
             service_areas: [area],
+            years_experience: 0,
           })
         }
       }
-      setOtpErr(''); setScreen('success')
+      setOtpErr('')
+      setScreen('success')
     } catch(e) {
-      setOtpErr('Incorrect code. Please try again.')
+      console.log('OTP error:', e)
+      setOtpErr('Something went wrong. Please try again.')
     }
+    setLoading(false)
+  }
+
+  async function handleLogin() {
+    if(!email || !email.includes('@')) {
+      setErrors({email: 'Enter a valid email'})
+      return
+    }
+    setLoading(true)
+    try {
+      const { error } = await supabase.auth.signInWithOtp({
+        email: email,
+      })
+      if(error) { setErrors({email: error.message}); setLoading(false); return }
+      setScreen('otp')
+      startTimer()
+    } catch(e) {
+      setErrors({email: 'Something went wrong. Please try again.'})
+    }
+    setLoading(false)
   }
 
   function handleOtpInput(val: string, idx: number) {
@@ -167,9 +208,11 @@ export default function AuthPage() {
     .os strong{color:var(--charcoal);display:block;font-size:15px;margin-top:2px}
     .ot{font-family:var(--fc);font-size:13px;color:var(--charcoal-l);text-align:center;margin-bottom:16px}
     .bm{width:100%;padding:15px;border:none;border-radius:8px;font-family:var(--fc);font-size:16px;font-weight:700;letter-spacing:2px;text-transform:uppercase;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:8px}
+    .bm:disabled{opacity:.6;cursor:not-allowed}
     .bt{background:var(--terra);color:var(--white)}
-    .bt:hover{background:var(--terra-l)}
+    .bt:hover:not(:disabled){background:var(--terra-l)}
     .bg{background:transparent;color:var(--charcoal);border:1.5px solid var(--cream-dd);margin-bottom:10px}
+    .bg:hover:not(:disabled){border-color:var(--charcoal-l)}
     .bsu{background:var(--green);color:#fff}
     .as{text-align:center;margin-top:20px;font-size:14px;color:var(--charcoal-l)}
     .as button{background:none;border:none;cursor:pointer;font-weight:600;color:var(--terra);text-decoration:underline;font-size:14px;font-family:var(--fb)}
@@ -184,6 +227,8 @@ export default function AuthPage() {
     .pd{width:8px;height:8px;border-radius:50%;background:var(--cream-d);transition:all .25s}
     .pd.active{background:var(--terra);width:24px;border-radius:4px}
     .pd.done{background:var(--terra);opacity:.4}
+    .spin{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
     @media(max-width:800px){.al{display:none}.ar{padding:32px 24px}}
   `
 
@@ -216,6 +261,7 @@ export default function AuthPage() {
       <div className="ar">
         <div className="ap">
 
+          {/* ROLE */}
           {screen==='role'&&(
             <div>
               <div className="se">Welcome to Lungisa</div>
@@ -241,12 +287,13 @@ export default function AuthPage() {
             </div>
           )}
 
+          {/* SIGNUP */}
           {screen==='signup'&&(
             <div>
               <div className="pg"><div className="pd done"/><div className="pd active"/><div className="pd"/><div className="pd"/></div>
               <div className="se">New {role}</div>
               <h1 className="st">CREATE<br/>ACCOUNT</h1>
-              <p className="ss">We&apos;ll send a one-time code to verify your number.</p>
+              <p className="ss">We&apos;ll send a one-time code to your email to verify your account.</p>
               <div className="fr">
                 <div className="fg">
                   <label className="fl2">First name</label>
@@ -288,17 +335,23 @@ export default function AuthPage() {
                   </div>
                 </div>
               )}
-              <button className="bm bt" onClick={handleSignup}>Send verification code →</button>
+              <button className="bm bt" onClick={handleSignup} disabled={loading}>
+                {loading?<span className="spin"/>:'Send verification code →'}
+              </button>
               <div className="as" style={{marginTop:16}}><button onClick={()=>setScreen('role')}>← Back</button></div>
             </div>
           )}
 
+          {/* OTP */}
           {screen==='otp'&&(
             <div>
               <div className="pg"><div className="pd done"/><div className="pd done"/><div className="pd active"/><div className="pd"/></div>
-              <div className="se">Phone verification</div>
+              <div className="se">Email verification</div>
               <h1 className="st">ENTER<br/>CODE</h1>
-              <div className="os">Code sent via WhatsApp to<br/><strong>{email}</strong></div>
+              <div className="os">
+                6-digit code sent to<br/>
+                <strong>{email}</strong>
+              </div>
               <div className="ow">
                 {otp.map((v,i)=>(
                   <input key={i} id={`otp-${i}`} className="ob" type="text" maxLength={1} value={v}
@@ -307,44 +360,59 @@ export default function AuthPage() {
                   />
                 ))}
               </div>
-              {timerOn&&<div className="ot">Resend in <strong>{counter}s</strong></div>}
-              {!timerOn&&<div className="ot"><button style={{background:'none',border:'none',cursor:'pointer',color:'var(--terra)',fontFamily:'var(--fc)',fontSize:13,fontWeight:600,letterSpacing:1,textTransform:'uppercase'}} onClick={()=>{setOtp(['','','','','','']);startTimer()}}>Resend code</button></div>}
+              {timerOn&&<div className="ot">Resend code in <strong>{counter}s</strong></div>}
+              {!timerOn&&(
+                <div className="ot">
+                  <button style={{background:'none',border:'none',cursor:'pointer',color:'var(--terra)',fontFamily:'var(--fc)',fontSize:13,fontWeight:600,letterSpacing:1,textTransform:'uppercase'}}
+                    onClick={()=>{setOtp(['','','','','','']);handleSignup()}}>
+                    Resend code
+                  </button>
+                </div>
+              )}
               {otpErr&&<div className="err" style={{textAlign:'center',marginBottom:12}}>{otpErr}</div>}
-              <div style={{fontSize:12,color:'var(--charcoal-l)',textAlign:'center',marginBottom:12}}>Check your email for the 6-digit code</div><div style={{fontSize:12,color:'var(--charcoal-l)',textAlign:'center',marginBottom:12}}>Check your email for the 6-digit code</div>
-              <button className="bm bt" onClick={handleOtp} disabled={otp.join('').length<6}>Verify &amp; Continue</button>
-              <div className="as" style={{marginTop:16}}><button onClick={()=>setScreen('signup')}>← Change number</button></div>
+              <div style={{fontSize:12,color:'var(--charcoal-l)',textAlign:'center',marginBottom:16,lineHeight:1.6}}>
+                Check your inbox (and spam folder) for an email from Supabase with your 6-digit code.
+              </div>
+              <button className="bm bt" onClick={handleOtp} disabled={otp.join('').length<6||loading}>
+                {loading?<span className="spin"/>:'Verify & Continue'}
+              </button>
+              <div className="as" style={{marginTop:16}}><button onClick={()=>setScreen('signup')}>← Change email</button></div>
             </div>
           )}
 
+          {/* SUCCESS */}
           {screen==='success'&&(
             <div style={{textAlign:'center'}}>
               <div className="pg"><div className="pd done"/><div className="pd done"/><div className="pd done"/><div className="pd active"/></div>
               <div className="sr"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#C4593A" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
               <div className="se" style={{justifyContent:'center'}}>Account created</div>
               <h1 className="st">YOU&apos;RE<br/>IN.</h1>
-              <p className="ss">Welcome to Lungisa, <strong>{fname||'friend'}</strong>.</p>
+              <p className="ss">Welcome to Lungisa, <strong>{fname||'friend'}</strong>. Your account is ready.</p>
               <ul className="cl" style={{textAlign:'left'}}>
                 <li><div className="ci"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#3DAA6A" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>Account verified</li>
-                <li><div className="ci"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#3DAA6A" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>Profile created</li>
+                <li><div className="ci"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#3DAA6A" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>Profile saved to database</li>
                 <li><div className="ci"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#3DAA6A" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>Escrow wallet activated</li>
               </ul>
-              <button className="bm bsu" onClick={()=>router.push(role==='homeowner'?'/post':'/dashboard')}>Go to my dashboard →</button>
+              <button className="bm bsu" onClick={()=>router.push(role==='homeowner'?'/home':'/dashboard')}>
+                Go to my dashboard →
+              </button>
             </div>
           )}
 
+          {/* LOGIN */}
           {screen==='login'&&(
             <div>
               <div className="se">Welcome back</div>
               <h1 className="st">SIGN<br/>IN</h1>
-              <p className="ss">Use your phone number to sign in.</p>
+              <p className="ss">Enter your email and we&apos;ll send you a one-time sign-in code.</p>
               <div className="fg">
-                <label className="fl2">Mobile number</label>
-                <div className="ip">
-                  <span className="ipl">🇿🇦 +27</span>
-                  <input className="ipi" type="tel" placeholder="82 345 6789" value={phone} onChange={e=>setPhone(e.target.value)}/>
-                </div>
+                <label className="fl2">Email address</label>
+                <input className="fi2" type="email" placeholder="thabo@email.com" value={email} onChange={e=>setEmail(e.target.value)}/>
+                {errors.email&&<div className="err">{errors.email}</div>}
               </div>
-              <button className="bm bt" style={{marginBottom:10}} onClick={()=>{setScreen('otp');startTimer()}}>Send one-time code →</button>
+              <button className="bm bt" style={{marginBottom:10}} onClick={handleLogin} disabled={loading}>
+                {loading?<span className="spin"/>:'Send one-time code →'}
+              </button>
               <div className="as">Don&apos;t have an account? <button onClick={()=>setScreen('role')}>Create one free</button></div>
             </div>
           )}
