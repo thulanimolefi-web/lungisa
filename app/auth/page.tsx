@@ -371,7 +371,7 @@ export default function AuthPage() {
               )}
               {otpErr&&<div className="err" style={{textAlign:'center',marginBottom:12}}>{otpErr}</div>}
               <div style={{fontSize:12,color:'var(--charcoal-l)',textAlign:'center',marginBottom:16,lineHeight:1.6}}>
-                Check your inbox (and spam folder) for an email from Supabase with your 6-digit code.
+                Check your inbox (and spam folder) for your 6-digit code.
               </div>
               <button className="bm bt" onClick={handleOtp} disabled={otp.join('').length<6||loading}>
                 {loading?<span className="spin"/>:'Verify & Continue'}
@@ -393,7 +393,10 @@ export default function AuthPage() {
                 <li><div className="ci"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#3DAA6A" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>Profile saved to database</li>
                 <li><div className="ci"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#3DAA6A" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>Escrow wallet activated</li>
               </ul>
-              <button className="bm bsu" onClick={()=>router.push(role==='homeowner'?'/home':'/dashboard')}>
+              <button className="bm bsu" onClick={async()=>{
+                await new Promise(r=>setTimeout(r,800))
+                router.push(role==='homeowner'?'/home':'/dashboard')
+              }}>
                 Go to my dashboard →
               </button>
             </div>
