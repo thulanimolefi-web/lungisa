@@ -74,7 +74,7 @@ export default function HomeDashboard() {
     loadProfile()
     loadRealJobs()
     loadHistoryJobs()
-
+  
     const channel = supabase
       .channel('home-bids')
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'bids'},()=>{
@@ -82,8 +82,9 @@ export default function HomeDashboard() {
         toast('New bid received!','A tradesperson just bid on your job 🎉','#E8A020')
       })
       .subscribe()
-
+  
     return ()=>{ supabase.removeChannel(channel) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   },[])
 
   async function loadProfile() {

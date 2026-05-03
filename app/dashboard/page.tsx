@@ -43,7 +43,7 @@ export default function Dashboard() {
     loadRealJobs()
     loadMyBids()
     loadEarnings()
-
+  
     const channel = supabase
       .channel('dashboard-jobs')
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'jobs'},()=>{
@@ -51,8 +51,9 @@ export default function Dashboard() {
         toast('New job posted!','A new job just appeared in your area',true)
       })
       .subscribe()
-
-    return ()=>supabase.removeChannel(channel)
+  
+    return ()=>{ supabase.removeChannel(channel) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   },[])
 
   async function loadProfile(){
