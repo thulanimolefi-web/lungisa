@@ -420,7 +420,8 @@ export default function PostJob() {
                     <div style={{width:72,height:72,borderRadius:'50%',background:'rgba(61,170,106,.12)',border:'2px solid rgba(61,170,106,.3)',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 16px',fontSize:32}}>✓</div>
                     <div style={{fontFamily:'var(--fd)',fontSize:44,letterSpacing:2,color:'var(--cream)',marginBottom:8}}>JOB IS<br/>LIVE.</div>
                     <p style={{fontSize:14,color:'rgba(245,240,232,.5)',marginBottom:28}}>{selectedBid.name.split(' ')[0]} is on his way. You&apos;ll get a WhatsApp when he&apos;s 30 minutes away.</p>
-                    <button style={{...S.btn('primary'),maxWidth:260,margin:'0 auto'}} onClick={()=>{goStep(0);setLiveBids([]);setBidCount(0);setTitle('');setDesc('');setArea('');setPhotos([]);setAccepted(false);setPaid(false);setSelectedBid(null)}}>
+                    <button style={{...S.btn('primary'),maxWidth:260,margin:'0 auto'}} onClick={()=>router.push('/home')}onClick={()=>router.push('/home')}
+                    >
                       Post another job
                     </button>
                   </div>
