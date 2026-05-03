@@ -118,7 +118,7 @@ export default function Home() {
         <div className="nav-links">
           <a href="#how">How it works</a>
           <a href="#trade">For tradespeople</a>
-          <a href="#waitlist" className="nav-cta">Get early access</a>
+          <a href="/auth" className="nav-cta">Get early access</a>
         </div>
       </nav>
 
@@ -133,7 +133,7 @@ export default function Home() {
             Negotiate the price. Pay safely — only released when the job is done.
           </p>
           <div className="hero-btns">
-            <a href="#waitlist" className="btn-p">Get early access</a>
+          <a href="/auth" className="btn-p">Get early access</a>
             <a href="#how" className="btn-s">See how it works</a>
           </div>
           <div className="hero-stats">
