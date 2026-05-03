@@ -1,7 +1,7 @@
 'use client'
 
 import { supabase } from '../lib/supabase'
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 
 type Step = 0 | 1 | 2 | 3 | 4 | 5
@@ -20,12 +20,20 @@ const URGENCIES = [
 ]
 const AREAS = ['Soweto','Sandton','Roodepoort','Midrand','Randburg','Fourways','Boksburg','Pretoria Central','Centurion']
 const TIMES = ['Any time','Morning (7am–12pm)','Afternoon (12pm–5pm)','Evening (5pm–8pm)']
+const AVATAR_COLORS = ['#8B3A2A','#5A3A2A','#2A4A3A','#3A4A6A','#6A3A5A','#4A5A2A']
 
-const BIDS = [
-  {init:'TM',name:'Themba Mokoena',trade:'Licensed Plumber · 6 yrs',rating:'★★★★★',num:'4.9',jobs:'47 jobs',price:850,eta:'2 hrs',badge:'Top rated',bg:'#8B3A2A'},
-  {init:'SK',name:'Sipho Khumalo',trade:'Plumber · 3 yrs',rating:'★★★★☆',num:'4.6',jobs:'19 jobs',price:720,eta:'1 hr',badge:'Fastest',bg:'#5A3A2A'},
-  {init:'PN',name:'Patrick Nkosi',trade:'Master Plumber · 11 yrs',rating:'★★★★★',num:'4.8',jobs:'103 jobs',price:900,eta:'3 hrs',badge:'Most experience',bg:'#2A4A3A'},
-]
+type RealBid = {
+  id: string
+  name: string
+  init: string
+  bg: string
+  trade: string
+  rating: string
+  ratingNum: string
+  jobs: number
+  price: number
+  eta: string
+}
 
 export default function PostJob() {
   const router = useRouter()
@@ -44,15 +52,107 @@ export default function PostJob() {
   const [titleErr, setTitleErr]   = useState('')
   const [descErr, setDescErr]     = useState('')
   const [areaErr, setAreaErr]     = useState('')
-  const [liveBids, setLiveBids]   = useState<typeof BIDS>([])
+  const [postedJobId, setPostedJobId] = useState<string|null>(null)
+  const [liveBids, setLiveBids]   = useState<RealBid[]>([])
   const [bidCount, setBidCount]   = useState(0)
-  const [selectedBid, setSelectedBid] = useState<typeof BIDS[0]|null>(null)
+  const [selectedBid, setSelectedBid] = useState<RealBid|null>(null)
   const [counterAmt, setCounterAmt]   = useState('')
   const [counterResp, setCounterResp] = useState('')
   const [finalPrice, setFinalPrice]   = useState(0)
   const [accepted, setAccepted]       = useState(false)
   const [paid, setPaid]               = useState(false)
   const [toasts, setToasts]           = useState<{id:number,title:string,sub:string}[]>([])
+  const [waitingMsg, setWaitingMsg]   = useState('Notifying tradespeople in your area...')
+  const pollRef = useRef<NodeJS.Timeout|null>(null)
+
+  // Poll for real bids after job is posted
+  useEffect(()=>{
+    if(!postedJobId) return
+
+    const waitMessages = [
+      'Notifying tradespeople in your area...',
+      'Tradespeople are reviewing your job...',
+      'First bids usually arrive within 5 minutes...',
+      'Hang tight — tradespeople are checking their schedules...',
+    ]
+    let msgIdx = 0
+    const msgInterval = setInterval(()=>{
+      msgIdx = (msgIdx+1) % waitMessages.length
+      setWaitingMsg(waitMessages[msgIdx])
+    }, 4000)
+
+    // Subscribe to real-time bids
+    const channel = supabase
+      .channel(`bids-${postedJobId}`)
+      .on('postgres_changes',{
+        event: 'INSERT',
+        schema: 'public',
+        table: 'bids',
+        filter: `job_id=eq.${postedJobId}`,
+      }, async (payload)=>{
+        const bid = payload.new as any
+        // Fetch tradesperson details
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('full_name, tradesperson_profiles(trade_category, years_experience, rating_avg, jobs_completed)')
+          .eq('id', bid.tradesperson_id)
+          .single()
+
+        const name = profile?.full_name || 'Tradesperson'
+        const tp   = (profile as any)?.tradesperson_profiles
+        const newBid: RealBid = {
+          id:        bid.id,
+          name,
+          init:      name.split(' ').map((n:string)=>n[0]).join('').substring(0,2).toUpperCase(),
+          bg:        AVATAR_COLORS[Math.floor(Math.random()*AVATAR_COLORS.length)],
+          trade:     `${tp?.trade_category?tp.trade_category.charAt(0).toUpperCase()+tp.trade_category.slice(1):'Tradesperson'} · ${tp?.years_experience||0} yrs`,
+          rating:    '★★★★★',
+          ratingNum: tp?.rating_avg>0?String(tp.rating_avg):'New',
+          jobs:      tp?.jobs_completed||0,
+          price:     bid.amount,
+          eta:       bid.eta_label,
+        }
+        setLiveBids(b=>{
+          if(b.find(x=>x.id===newBid.id)) return b
+          toast('New bid received!',`${name.split(' ')[0]} bid R${bid.amount} · ETA ${bid.eta_label}`)
+          return [...b, newBid]
+        })
+        setBidCount(c=>c+1)
+      })
+      .subscribe()
+
+    // Also poll every 30s as fallback
+    pollRef.current = setInterval(async()=>{
+      const { data } = await supabase
+        .from('bids')
+        .select(`*, profiles!tradesperson_id(full_name, tradesperson_profiles(trade_category, years_experience, rating_avg, jobs_completed))`)
+        .eq('job_id', postedJobId)
+        .order('created_at', {ascending:true})
+      if(data && data.length > 0){
+        const mapped: RealBid[] = data.map((b:any,i:number)=>({
+          id:        b.id,
+          name:      b.profiles?.full_name||'Tradesperson',
+          init:      (b.profiles?.full_name||'T').split(' ').map((n:string)=>n[0]).join('').substring(0,2).toUpperCase(),
+          bg:        AVATAR_COLORS[i%AVATAR_COLORS.length],
+          trade:     `${b.profiles?.tradesperson_profiles?.trade_category?b.profiles.tradesperson_profiles.trade_category.charAt(0).toUpperCase()+b.profiles.tradesperson_profiles.trade_category.slice(1):'Tradesperson'} · ${b.profiles?.tradesperson_profiles?.years_experience||0} yrs`,
+          rating:    '★★★★★',
+          ratingNum: b.profiles?.tradesperson_profiles?.rating_avg>0?String(b.profiles.tradesperson_profiles.rating_avg):'New',
+          jobs:      b.profiles?.tradesperson_profiles?.jobs_completed||0,
+          price:     b.amount,
+          eta:       b.eta_label,
+        }))
+        setLiveBids(mapped)
+        setBidCount(mapped.length)
+      }
+    }, 30000)
+
+    return ()=>{
+      clearInterval(msgInterval)
+      if(pollRef.current) clearInterval(pollRef.current)
+      supabase.removeChannel(channel)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[postedJobId])
 
   function toast(title:string, sub:string) {
     const id = Date.now()
@@ -77,41 +177,29 @@ export default function PostJob() {
   async function postJob() {
     goStep(5)
     toast('Job posted!','Your job is live. Tradespeople are being notified.')
-    
     try {
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data:{ session } } = await supabase.auth.getSession()
       if(session?.user) {
-        await supabase.from('jobs').insert({
+        const { data, error } = await supabase.from('jobs').insert({
           homeowner_id:   session.user.id,
-          title:          title,
+          title,
           description:    desc,
           category:       cat.toLowerCase() as any,
-          urgency:        urgency === 'Today — emergency' ? 'emergency' :
-                          urgency === 'Within 3 days'     ? 'within_3_days' :
-                          urgency === 'This week'          ? 'this_week' : 'flexible',
-          area:           area,
+          urgency:        urgency==='Today — emergency'?'emergency':urgency==='Within 3 days'?'within_3_days':urgency==='This week'?'this_week':'flexible',
+          area,
           city:           'Johannesburg',
           budget_max:     budgetOpen ? null : budget,
-          preferred_date: date || null,
-          preferred_time: time || null,
+          preferred_date: date||null,
+          preferred_time: time||null,
           status:         'open',
-        })
+        }).select('id').single()
+        if(!error && data) {
+          setPostedJobId(data.id)
+        }
       }
     } catch(e) {
       console.log('Job post error:', e)
     }
-  
-    // Continue with bid simulation
-    setLiveBids([]); setBidCount(0); setSelectedBid(null)
-    setCounterResp(''); setAccepted(false); setPaid(false)
-    const delays = [3500,7000,13000]
-    BIDS.forEach((bid,i)=>{
-      setTimeout(()=>{
-        setLiveBids(b=>[...b,bid])
-        setBidCount(c=>c+1)
-        toast('New bid received',`${bid.name} bid R${bid.price} · ETA ${bid.eta}`)
-      }, delays[i])
-    })
   }
 
   function sendCounter() {
@@ -129,15 +217,20 @@ export default function PostJob() {
     },1800)
   }
 
-  function acceptBid(bid:typeof BIDS[0], price:number) {
+  function acceptBid(bid:RealBid, price:number) {
     setSelectedBid(bid); setFinalPrice(price); setAccepted(true)
     window.scrollTo({top:9999,behavior:'smooth'})
+  }
+
+  function resetAndPostAnother() {
+    setStep(0); setLiveBids([]); setBidCount(0); setTitle(''); setDesc('')
+    setArea(''); setPhotos([]); setAccepted(false); setPaid(false)
+    setSelectedBid(null); setPostedJobId(null); setCounterResp(''); setFinalPrice(0)
   }
 
   const S = {
     wrap:{minHeight:'100vh',background:'#1A1A16',fontFamily:'var(--fb)'},
     topnav:{background:'#111110',borderBottom:'1px solid rgba(255,255,255,.05)',padding:'0 28px',height:58,display:'flex',alignItems:'center',justifyContent:'space-between',position:'sticky' as const,top:0,zIndex:40},
-    navLogo:{display:'flex',alignItems:'center',gap:9,textDecoration:'none' as const},
     navWord:{fontFamily:'var(--fd)',fontSize:22,letterSpacing:2,color:'var(--cream)'},
     stepBar:{background:'#111110',borderBottom:'1px solid rgba(255,255,255,.05)',padding:'0 28px',display:'flex',alignItems:'center',overflowX:'auto' as const},
     pageWrap:{maxWidth:1100,margin:'0 auto',padding:'32px 28px',display:'grid' as const,gridTemplateColumns:'1fr 340px',gap:32,alignItems:'start'},
@@ -170,7 +263,6 @@ export default function PostJob() {
     bidAvatar:(bg:string)=>({width:48,height:48,borderRadius:'50%',background:bg,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'var(--fd)',fontSize:18,color:'#fff',flexShrink:0}),
     bidPrice:{fontFamily:'var(--fd)',fontSize:30,color:'var(--terra-l)',lineHeight:1},
     confirmCard:{background:'var(--charcoal)',borderRadius:12,padding:'24px',marginBottom:16},
-    payBtn:{border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:14,background:'rgba(255,255,255,.04)',cursor:'pointer',textAlign:'center' as const,flex:1,transition:'all .18s'},
     toast:{background:'#2C2C28',borderRadius:10,border:'1px solid rgba(255,255,255,.1)',padding:'12px 16px',marginBottom:8,display:'flex',alignItems:'flex-start',gap:10,maxWidth:280},
   }
 
@@ -186,15 +278,21 @@ export default function PostJob() {
         select option{background:#2C2C28;color:#F5F0E8}
         @keyframes bidSlide{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
         @keyframes toastIn{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:translateX(0)}}
+        @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+        @keyframes spin{to{transform:rotate(360deg)}}
         .bid-card-anim{animation:bidSlide .4s ease both}
         .toast-anim{animation:toastIn .3s ease both}
+        .pulse{animation:pulse 1.8s infinite}
+        .spin{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
         @media(max-width:900px){.page-grid{grid-template-columns:1fr!important}.sidebar-col{display:none}}
       `}</style>
 
       <div style={S.wrap}>
         {/* NAV */}
         <nav style={S.topnav}>
-          <a href="/" style={S.navLogo}><span style={S.navWord}>LUNGISA</span></a>
+          <a href="/" style={{display:'flex',alignItems:'center',gap:9,textDecoration:'none'}}>
+            <span style={S.navWord}>LUNGISA</span>
+          </a>
           <div style={{fontFamily:'var(--fc)',fontSize:13,color:'rgba(245,240,232,.5)',letterSpacing:1}}>Post a Job</div>
         </nav>
 
@@ -202,7 +300,7 @@ export default function PostJob() {
         <div style={S.stepBar}>
           {stepLabels.map((label,i)=>(
             <div key={i} onClick={()=>i<=step&&goStep(i as Step)}
-              style={{display:'flex',alignItems:'center',gap:8,padding:'14px 16px 14px 0',cursor:i<=step?'pointer':'default',position:'relative'}}>
+              style={{display:'flex',alignItems:'center',gap:8,padding:'14px 16px 14px 0',cursor:i<=step?'pointer':'default'}}>
               <div style={{width:24,height:24,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'var(--fc)',fontSize:11,fontWeight:700,background:i<step?'var(--terra)':i===step?'var(--terra)':'rgba(255,255,255,.1)',color:i<=step?'#fff':'rgba(245,240,232,.35)',flexShrink:0,transition:'all .25s'}}>
                 {i<step?'✓':i+1}
               </div>
@@ -317,7 +415,7 @@ export default function PostJob() {
                   <div style={{fontSize:13,color:'rgba(245,240,232,.5)'}}>📸 Tap to add photos</div>
                   <div style={{fontSize:11,color:'rgba(245,240,232,.3)',marginTop:4}}>Jobs with photos get 3× more bids</div>
                   {photos.length>0&&<div style={{display:'flex',gap:8,justifyContent:'center',marginTop:12,flexWrap:'wrap'}}>
-                    {photos.map((p,i)=><div key={i} style={{width:56,height:56,borderRadius:8,background:'rgba(255,255,255,.08)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20}}>📷</div>)}
+                    {photos.map((_,i)=><div key={i} style={{width:56,height:56,borderRadius:8,background:'rgba(255,255,255,.08)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20}}>📷</div>)}
                   </div>}
                 </div>
                 <div style={S.btnRow}>
@@ -359,7 +457,7 @@ export default function PostJob() {
                 <div style={S.liveHeader}>
                   <div>
                     <div style={{fontFamily:'var(--fc)',fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'#3DAA6A',display:'flex',alignItems:'center',gap:6,marginBottom:8}}>
-                      <div style={{width:7,height:7,borderRadius:'50%',background:'#3DAA6A'}}/>Live
+                      <div className="pulse" style={{width:7,height:7,borderRadius:'50%',background:'#3DAA6A'}}/>Live
                     </div>
                     <div style={{fontFamily:'var(--fd)',fontSize:24,letterSpacing:1,color:'var(--cream)'}}>{title||'Home repair job'}</div>
                     <div style={{fontSize:13,color:'rgba(245,240,232,.45)',marginTop:2}}>{area}, JHB · {cat} · {urgency}</div>
@@ -371,24 +469,35 @@ export default function PostJob() {
                 </div>
 
                 {bidCount===0&&(
-                  <div style={{textAlign:'center',padding:'40px 20px',color:'rgba(245,240,232,.3)',fontFamily:'var(--fc)',fontSize:14,letterSpacing:1}}>
-                    Notifying tradespeople via WhatsApp...
+                  <div style={{textAlign:'center',padding:'40px 20px',color:'rgba(245,240,232,.4)',fontFamily:'var(--fc)',fontSize:13,letterSpacing:1}}>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,marginBottom:12}}>
+                      <div className="spin"/>
+                      <span>{waitingMsg}</span>
+                    </div>
+                    <div style={{fontSize:11,color:'rgba(245,240,232,.25)',marginTop:8}}>
+                      You&apos;ll get an email and see bids appear here in real time
+                    </div>
+                    <div style={{marginTop:20}}>
+                      <button style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',background:'none',border:'1px solid rgba(255,255,255,.1)',borderRadius:5,padding:'8px 16px',color:'rgba(245,240,232,.4)',cursor:'pointer'}}
+                        onClick={()=>router.push('/home')}>
+                        Go to my dashboard to wait →
+                      </button>
+                    </div>
                   </div>
                 )}
 
                 {liveBids.map((bid,i)=>(
-                  <div key={i} className="bid-card-anim" style={S.bidCard(selectedBid?.name===bid.name)} onClick={()=>setSelectedBid(bid)}>
+                  <div key={bid.id} className="bid-card-anim" style={{...S.bidCard(selectedBid?.id===bid.id),animationDelay:`${i*0.1}s`}} onClick={()=>setSelectedBid(bid)}>
                     <div style={S.bidAvatar(bid.bg)}>{bid.init}</div>
                     <div style={{flex:1}}>
                       <div style={{fontFamily:'var(--fb)',fontSize:15,fontWeight:600,color:'var(--cream)',marginBottom:2}}>{bid.name}</div>
                       <div style={{fontSize:12,color:'rgba(245,240,232,.45)',marginBottom:3}}>{bid.trade}</div>
-                      <div style={{fontSize:12,color:'#E8A020'}}>{bid.rating} <span style={{color:'rgba(245,240,232,.45)'}}>{bid.num}</span></div>
-                      <div style={{fontSize:11,color:'rgba(245,240,232,.4)'}}>{bid.jobs} on Lungisa</div>
+                      <div style={{fontSize:12,color:'#E8A020'}}>{bid.rating} <span style={{color:'rgba(245,240,232,.45)'}}>{bid.ratingNum}</span></div>
+                      <div style={{fontSize:11,color:'rgba(245,240,232,.4)'}}>{bid.jobs} jobs on Lungisa</div>
                     </div>
                     <div style={{textAlign:'right'}}>
                       <div style={S.bidPrice}>R{bid.price}</div>
                       <div style={{fontSize:11,color:'rgba(245,240,232,.4)',marginTop:2}}>ETA: {bid.eta}</div>
-                      <div style={{fontFamily:'var(--fc)',fontSize:9,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',background:'rgba(196,89,58,.15)',color:'var(--terra-l)',padding:'3px 8px',borderRadius:3,marginTop:4,display:'inline-block'}}>{bid.badge}</div>
                     </div>
                   </div>
                 ))}
@@ -432,7 +541,7 @@ export default function PostJob() {
                         <div>
                           <div style={{fontFamily:'var(--fc)',fontSize:18,fontWeight:700,color:'var(--cream)'}}>{selectedBid.name}</div>
                           <div style={{fontSize:12,color:'rgba(245,240,232,.5)',marginTop:2}}>{selectedBid.trade}</div>
-                          <div style={{fontSize:12,color:'#E8A020',marginTop:2}}>{selectedBid.rating} {selectedBid.num}</div>
+                          <div style={{fontSize:12,color:'#E8A020',marginTop:2}}>{selectedBid.rating} {selectedBid.ratingNum}</div>
                         </div>
                       </div>
                       {[['Job',title||'Home repair'],['Location',`${area}, JHB`],['ETA',selectedBid.eta],['Agreed price',`R${finalPrice}`],['Lungisa fee','R0 (free for homeowners)']].map(([l,v])=>(
@@ -456,10 +565,15 @@ export default function PostJob() {
                   <div style={{...S.card,textAlign:'center',padding:'40px 28px'}}>
                     <div style={{width:72,height:72,borderRadius:'50%',background:'rgba(61,170,106,.12)',border:'2px solid rgba(61,170,106,.3)',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 16px',fontSize:32}}>✓</div>
                     <div style={{fontFamily:'var(--fd)',fontSize:44,letterSpacing:2,color:'var(--cream)',marginBottom:8}}>JOB IS<br/>LIVE.</div>
-                    <p style={{fontSize:14,color:'rgba(245,240,232,.5)',marginBottom:28}}>{selectedBid.name.split(' ')[0]} is on his way. You&apos;ll get a WhatsApp when he&apos;s 30 minutes away.</p>
-                    <button style={{...S.btn('primary'),maxWidth:260,margin:'0 auto'}} onClick={()=>{goStep(0);setLiveBids([]);setBidCount(0);setTitle('');setDesc('');setArea('');setPhotos([]);setAccepted(false);setPaid(false);setSelectedBid(null)}}>
-                      Post another job
-                    </button>
+                    <p style={{fontSize:14,color:'rgba(245,240,232,.5)',marginBottom:28}}>{selectedBid.name.split(' ')[0]} is on the way. You&apos;ll get a notification when the job is confirmed.</p>
+                    <div style={{display:'flex',gap:12,justifyContent:'center',flexWrap:'wrap'}}>
+                      <button style={{...S.btn('primary'),flex:'none'}} onClick={()=>router.push('/home')}>
+                        Go to my dashboard →
+                      </button>
+                      <button style={{...S.btn('ghost'),flex:'none'}} onClick={resetAndPostAnother}>
+                        Post another job
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -491,7 +605,7 @@ export default function PostJob() {
         </div>
       </div>
 
-      {/* TOAST NOTIFICATIONS */}
+      {/* TOASTS */}
       <div style={{position:'fixed',bottom:24,right:24,zIndex:200,pointerEvents:'none'}}>
         {toasts.map(t=>(
           <div key={t.id} className="toast-anim" style={S.toast}>
