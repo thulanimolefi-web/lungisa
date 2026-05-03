@@ -1,5 +1,6 @@
 'use client'
 
+import { supabase } from '../lib/supabase'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 
@@ -73,9 +74,34 @@ export default function PostJob() {
     setAreaErr(''); goStep(3)
   }
 
-  function postJob() {
+  async function postJob() {
     goStep(5)
-    toast('Job posted!','Your job is live. Tradespeople are being notified via WhatsApp.')
+    toast('Job posted!','Your job is live. Tradespeople are being notified.')
+    
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if(session?.user) {
+        await supabase.from('jobs').insert({
+          homeowner_id:   session.user.id,
+          title:          title,
+          description:    desc,
+          category:       cat.toLowerCase() as any,
+          urgency:        urgency === 'Today — emergency' ? 'emergency' :
+                          urgency === 'Within 3 days'     ? 'within_3_days' :
+                          urgency === 'This week'          ? 'this_week' : 'flexible',
+          area:           area,
+          city:           'Johannesburg',
+          budget_max:     budgetOpen ? null : budget,
+          preferred_date: date || null,
+          preferred_time: time || null,
+          status:         'open',
+        })
+      }
+    } catch(e) {
+      console.log('Job post error:', e)
+    }
+  
+    // Continue with bid simulation
     setLiveBids([]); setBidCount(0); setSelectedBid(null)
     setCounterResp(''); setAccepted(false); setPaid(false)
     const delays = [3500,7000,13000]
