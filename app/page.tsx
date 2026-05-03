@@ -1,16 +1,6 @@
 'use client'
 
-import { useState } from 'react'
-
 export default function Home() {
-  const [email, setEmail] = useState('')
-  const [msg, setMsg] = useState('')
-
-  function joinWaitlist() {
-    if (!email || !email.includes('@')) { setMsg('Please enter a valid email.'); return }
-    setMsg("✓ You're on the list! We'll email you on launch day.")
-    setEmail('')
-  }
 
   return (
     <>
@@ -82,11 +72,9 @@ export default function Home() {
         .skill-chip{font-family:var(--fc);font-size:14px;font-weight:600;letter-spacing:1px;background:rgba(0,0,0,.15);color:rgba(255,255,255,.85);padding:10px 18px;border-radius:4px;border:1px solid rgba(255,255,255,.15)}
         .waitlist{padding:120px 60px;background:var(--charcoal);text-align:center;position:relative}
         .waitlist-inner{max-width:580px;margin:0 auto;position:relative;z-index:1}
-        .wl-form{display:flex;border-radius:6px;overflow:hidden;border:1px solid rgba(255,255,255,.12);margin-bottom:12px}
-        .wl-input{flex:1;background:rgba(255,255,255,.06);border:none;padding:16px 20px;font-family:var(--fb);font-size:16px;color:var(--cream);outline:none}
-        .wl-input::placeholder{color:rgba(245,240,232,.3)}
-        .wl-btn{font-family:var(--fc);font-size:14px;font-weight:700;letter-spacing:2px;text-transform:uppercase;background:var(--terra);color:var(--white);padding:16px 28px;border:none;cursor:pointer}
-        .wl-note{font-size:12px;color:rgba(245,240,232,.35)}
+        .signup-btns{display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-bottom:32px}
+        .btn-w2{font-family:var(--fc);font-size:15px;font-weight:700;letter-spacing:2px;text-transform:uppercase;background:transparent;color:rgba(245,240,232,.6);padding:14px 28px;border-radius:4px;border:1px solid rgba(255,255,255,.15);cursor:pointer;text-decoration:none;transition:all .2s}
+        .btn-w2:hover{border-color:rgba(255,255,255,.4);color:var(--cream)}
         .city-pills{display:flex;justify-content:center;gap:16px;margin-top:32px;flex-wrap:wrap}
         .city-pill{font-family:var(--fc);font-size:12px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:rgba(245,240,232,.4);border:1px solid rgba(255,255,255,.1);padding:6px 14px;border-radius:20px}
         .city-pill.active{color:var(--terra-l);border-color:rgba(196,89,58,.3)}
@@ -118,7 +106,7 @@ export default function Home() {
         <div className="nav-links">
           <a href="#how">How it works</a>
           <a href="#trade">For tradespeople</a>
-          <a href="/auth" className="nav-cta">Get early access</a>
+          <a href="#waitlist" className="nav-cta">Get early access</a>
         </div>
       </nav>
 
@@ -133,7 +121,7 @@ export default function Home() {
             Negotiate the price. Pay safely — only released when the job is done.
           </p>
           <div className="hero-btns">
-          <a href="/auth" className="btn-p">Get early access</a>
+            <a href="#waitlist" className="btn-p">Get early access</a>
             <a href="#how" className="btn-s">See how it works</a>
           </div>
           <div className="hero-stats">
@@ -211,7 +199,7 @@ export default function Home() {
               <li>Build a verified rating that wins more work</li>
               <li>Free to join — no monthly subscription</li>
             </ul>
-            <a href="#waitlist" className="btn-w">Register as a tradesperson</a>
+            <a href="/join" className="btn-w">Join as a tradesperson →</a>
           </div>
           <div>
             <div className="skill-cloud">
@@ -223,19 +211,18 @@ export default function Home() {
         </div>
       </section>
 
-      {/* WAITLIST */}
+      {/* CTA */}
       <section className="waitlist" id="waitlist">
         <div className="waitlist-inner">
-          <div className="sec-eye">Launching in Johannesburg first</div>
-          <h2 className="sec-h" style={{color:'var(--cream)'}}>BE FIRST<br/>IN LINE</h2>
+          <div className="sec-eye">Live now in Johannesburg</div>
+          <h2 className="sec-h" style={{color:'var(--cream)'}}>GET STARTED<br/>TODAY</h2>
           <p className="sec-b" style={{color:'rgba(245,240,232,0.6)',marginBottom:40}}>
-            We&apos;re onboarding our first 500 homeowners and tradespeople in Joburg. Join the waitlist — no spam, just a launch-day email.
+            Lungisa is live. Post your first job free or join as a tradesperson and start bidding on jobs near you.
           </p>
-          <div className="wl-form">
-            <input className="wl-input" type="email" placeholder="your@email.com" value={email} onChange={e=>setEmail(e.target.value)}/>
-            <button className="wl-btn" onClick={joinWaitlist}>Join Waitlist</button>
+          <div className="signup-btns">
+            <a href="/auth" className="btn-p">Post a job free →</a>
+            <a href="/join" className="btn-w2">Join as tradesperson</a>
           </div>
-          <p className="wl-note">{msg||'No spam. We\'ll only email you on launch day.'}</p>
           <div className="city-pills">
             <span className="city-pill active">Johannesburg ✦</span>
             <span className="city-pill">Cape Town — coming soon</span>
