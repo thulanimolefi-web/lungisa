@@ -157,9 +157,11 @@ export default function Dashboard() {
   async function submitBid(){
     if(!bidPrice||parseInt(bidPrice)<100||!modalJob) return
     const price=parseInt(bidPrice)
+    let userId = ''
     try{
       const {data:{session}}=await supabase.auth.getSession()
       if(session?.user){
+        userId = session.user.id
         await supabase.from('bids').insert({
           job_id:          modalJob.id,
           tradesperson_id: session.user.id,
@@ -168,6 +170,17 @@ export default function Dashboard() {
           note:            bidNote||null,
           status:          'pending',
         })
+        // Email homeowner
+        fetch('/api/send-email', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({
+            jobId:           modalJob.id,
+            amount:          price,
+            eta:             bidEta,
+            tradespersonId:  session.user.id,
+          })
+        }).catch(e=>console.log('Email error:',e))
       }
     }catch(e){console.log('Bid error:',e)}
     setJobs(j=>j.map(x=>x.id===modalJob.id?{...x,submitted:true,submitPrice:price}:x))
