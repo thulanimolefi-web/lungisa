@@ -26,6 +26,7 @@ export default function AuthPage() {
   const [timerOn, setTimerOn] = useState(false)
   const [otpErr, setOtpErr]   = useState('')
   const [loading, setLoading] = useState(false)
+  const [isLoginMode, setIsLoginMode] = useState(false)
 
   function startTimer() {
     setCounter(60); setTimerOn(true)
@@ -90,8 +91,24 @@ export default function AuthPage() {
         setLoading(false)
         return
       }
+
+      if(isLoginMode) {
+        // Returning user — just check their role and redirect
+        if(data.user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', data.user.id)
+            .single()
+          const userRole = profile?.role || 'homeowner'
+          await new Promise(r=>setTimeout(r,1000))
+          window.location.href = userRole === 'tradesperson' ? '/dashboard' : '/home'
+        }
+        return
+      }
+
+      // New user — save profile
       if(data.user) {
-        // Save profile to database
         const { error: profileError } = await supabase.from('profiles').upsert({
           id: data.user.id,
           role: role,
@@ -103,7 +120,6 @@ export default function AuthPage() {
         })
         if(profileError) console.log('Profile error:', profileError)
 
-        // If tradesperson save extended profile
         if(role === 'tradesperson') {
           await supabase.from('tradesperson_profiles').upsert({
             id: data.user.id,
@@ -128,6 +144,7 @@ export default function AuthPage() {
       return
     }
     setLoading(true)
+    setIsLoginMode(true)
     try {
       const { error } = await supabase.auth.signInWithOtp({
         email: email,
