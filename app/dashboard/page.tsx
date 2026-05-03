@@ -65,26 +65,9 @@ export default function Dashboard() {
     setShowCounter(false)
   }
 
-  async function submitBid(){
+  function submitBid(){
     if(!bidPrice||parseInt(bidPrice)<100||!modalJob) return
     const price=parseInt(bidPrice)
-    
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if(session?.user) {
-        await supabase.from('bids').insert({
-          job_id:          modalJob.id.toString(),
-          tradesperson_id: session.user.id,
-          amount:          price,
-          eta_label:       bidEta,
-          note:            bidNote || null,
-          status:          'pending',
-        })
-      }
-    } catch(e) {
-      console.log('Bid error:', e)
-    }
-  
     setJobs(j=>j.map(x=>x.id===modalJob.id?{...x,submitted:true,submitPrice:price}:x))
     setMyBids(b=>[...b,{job:modalJob.title,loc:modalJob.loc,price,status:'Pending',time:'Just now'}])
     toast('Bid submitted!',`R${price} on ${modalJob.title}`,false)
@@ -167,7 +150,18 @@ export default function Dashboard() {
 
   return (
     <>
-      <style>{}</style>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap');
+        *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+        input::placeholder,textarea::placeholder{color:rgba(245,240,232,.25)}
+        @keyframes bidIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+        @keyframes toastIn{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:translateX(0)}}
+        @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+        .bid-in{animation:bidIn .4s ease both}
+        .toast-in{animation:toastIn .3s ease both}
+        .online-dot{animation:pulse 1.8s infinite}
+        @media(max-width:900px){.sidenav{display:none!important}.stat-strip{grid-template-columns:1fr 1fr!important}}
+      `}</style>
 
       <div style={S.shell}>
 
@@ -179,7 +173,7 @@ export default function Dashboard() {
                 <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
               </svg>
             </div>
-            <a href="/" style={{...S.snWord,textDecoration:'none'}}> LUNGISA</a>
+            <span style={S.snWord}>LUNGISA</span>
           </div>
 
           <div style={S.snProfile}>
