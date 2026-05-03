@@ -49,6 +49,7 @@ export default function PostJob() {
   const [budget, setBudget]       = useState(750)
   const [budgetOpen, setBudgetOpen] = useState(false)
   const [photos, setPhotos]       = useState<string[]>([])
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [titleErr, setTitleErr]   = useState('')
   const [descErr, setDescErr]     = useState('')
   const [areaErr, setAreaErr]     = useState('')
@@ -158,6 +159,34 @@ export default function PostJob() {
     const id = Date.now()
     setToasts(t=>[...t,{id,title,sub}])
     setTimeout(()=>setToasts(t=>t.filter(x=>x.id!==id)),4500)
+  }
+
+  async function uploadPhotos(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files||[])
+    if(files.length===0) return
+    setUploadingPhoto(true)
+    try {
+      const urls: string[] = []
+      for(const file of files) {
+        const ext = file.name.split('.').pop()
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${ext}`
+        const { data, error } = await supabase.storage
+          .from('job-photos')
+          .upload(fileName, file, { cacheControl:'3600', upsert:false })
+        if(!error && data) {
+          const { data: urlData } = supabase.storage
+            .from('job-photos')
+            .getPublicUrl(data.path)
+          urls.push(urlData.publicUrl)
+        }
+      }
+      setPhotos(p=>[...p, ...urls])
+      toast('Photos uploaded!',`${urls.length} photo${urls.length>1?'s':''} added`)
+    } catch(e) {
+      console.log('Upload error:', e)
+      toast('Upload failed','Please try again')
+    }
+    setUploadingPhoto(false)
   }
 
   function goStep(n:Step) { setStep(n); window.scrollTo({top:0,behavior:'smooth'}) }
@@ -411,12 +440,30 @@ export default function PostJob() {
                 <button onClick={()=>setBudgetOpen(true)} style={{background:'none',border:'none',cursor:'pointer',fontFamily:'var(--fc)',fontSize:11,fontWeight:600,letterSpacing:1,textTransform:'uppercase',color:'rgba(245,240,232,.4)',textDecoration:'underline',display:'block',margin:'0 auto 20px'}}>
                   Skip — show me all bids
                 </button>
-                <div style={{border:'2px dashed rgba(255,255,255,.1)',borderRadius:10,padding:24,textAlign:'center',cursor:'pointer',marginBottom:8}} onClick={()=>setPhotos(p=>[...p,`Photo ${p.length+1}`])}>
-                  <div style={{fontSize:13,color:'rgba(245,240,232,.5)'}}>📸 Tap to add photos</div>
-                  <div style={{fontSize:11,color:'rgba(245,240,232,.3)',marginTop:4}}>Jobs with photos get 3× more bids</div>
-                  {photos.length>0&&<div style={{display:'flex',gap:8,justifyContent:'center',marginTop:12,flexWrap:'wrap'}}>
-                    {photos.map((_,i)=><div key={i} style={{width:56,height:56,borderRadius:8,background:'rgba(255,255,255,.08)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20}}>📷</div>)}
-                  </div>}
+                <div style={{border:'2px dashed rgba(255,255,255,.1)',borderRadius:10,padding:24,textAlign:'center',marginBottom:8,position:'relative'}}>
+                  <input type="file" accept="image/*" multiple onChange={uploadPhotos}
+                    style={{position:'absolute',inset:0,opacity:0,cursor:'pointer',width:'100%',height:'100%'}}/>
+                  {uploadingPhoto?(
+                    <div style={{fontSize:13,color:'rgba(245,240,232,.5)',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+                      <div className="spin"/>Uploading...
+                    </div>
+                  ):(
+                    <>
+                      <div style={{fontSize:13,color:'rgba(245,240,232,.5)'}}>📸 Tap to add photos</div>
+                      <div style={{fontSize:11,color:'rgba(245,240,232,.3)',marginTop:4}}>Jobs with photos get 3× more bids</div>
+                    </>
+                  )}
+                  {photos.length>0&&(
+                    <div style={{display:'flex',gap:8,justifyContent:'center',marginTop:12,flexWrap:'wrap'}}>
+                      {photos.map((url,i)=>(
+                        <div key={i} style={{width:72,height:72,borderRadius:8,overflow:'hidden',position:'relative',flexShrink:0}}>
+                          <img src={url} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}}/>
+                          <button onClick={e=>{e.stopPropagation();setPhotos(p=>p.filter((_,j)=>j!==i))}}
+                            style={{position:'absolute',top:2,right:2,background:'rgba(0,0,0,.7)',border:'none',borderRadius:'50%',width:18,height:18,cursor:'pointer',color:'#fff',fontSize:10,display:'flex',alignItems:'center',justifyContent:'center',lineHeight:1}}>✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div style={S.btnRow}>
                   <button style={S.btn('ghost')} onClick={()=>goStep(2)}>← Back</button>
