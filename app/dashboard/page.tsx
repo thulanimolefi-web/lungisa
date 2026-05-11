@@ -69,11 +69,39 @@ export default function Dashboard() {
   async function loadRealJobs(){
     setLoading(true)
     try{
-      const {data,error}=await supabase
+      const {data:{session}}=await supabase.auth.getSession()
+      if(!session?.user){ setLoading(false); return }
+  
+      // Get tradesperson's trade and service areas
+      const {data:tp}=await supabase
+        .from('tradesperson_profiles')
+        .select('trade_category, service_areas, secondary_trades')
+        .eq('id',session.user.id)
+        .single()
+  
+      if(!tp){ setLoading(false); return }
+  
+      const tradeCategories = [
+        tp.trade_category,
+        ...(tp.secondary_trades||[])
+      ].filter(Boolean)
+  
+      const serviceAreas = tp.service_areas||[]
+  
+      // Query jobs matching trade AND area
+      let query = supabase
         .from('v_jobs_feed')
         .select('*')
-        .eq('city','Johannesburg')
+        .in('category', tradeCategories)
         .order('created_at',{ascending:false})
+  
+      // Filter by service areas if they have any set
+      if(serviceAreas.length>0){
+        query = query.in('area', serviceAreas)
+      }
+  
+      const {data,error}=await query
+  
       if(!error&&data){
         const mapped:Job[]=data.map((j:any)=>({
           id:           j.id,
