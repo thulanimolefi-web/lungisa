@@ -213,37 +213,49 @@ export default function PostJob() {
     toast('Job posted!','Your job is live. Tradespeople are being notified.')
     try {
       const { data:{ session } } = await supabase.auth.getSession()
-      if(session?.user) {
-        const { data, error } = await supabase.from('jobs').insert({
-          homeowner_id:   session.user.id,
-          title,
-          description:    desc,
-          category:       cat.toLowerCase() as any,
-          urgency:        urgency==='Today — emergency'?'emergency':urgency==='Within 3 days'?'within_3_days':urgency==='This week'?'this_week':'flexible',
-          area,
-          city:           'Johannesburg',
-          budget_max:     budgetOpen ? null : budget,
-          preferred_date: date||null,
-          preferred_time: time||null,
-          status:         'open',
-          expires_at:     new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-        }).select('id').single()
-        if(!error && data) {
-          setPostedJobId(data.id)
-          // Save photo URLs to job_photos table
-          if(photos.length > 0) {
-            await supabase.from('job_photos').insert(
-              photos.map((url, i) => ({
-                job_id:      data.id,
-                storage_url: url,
-                sort_order:  i,
-              }))
-            )
-          }
+      if(!session?.user) {
+        console.log('No session — redirecting to auth')
+        window.location.href = '/auth'
+        return
+      }
+      console.log('Posting job as:', session.user.id, session.user.email)
+      const { data, error } = await supabase.from('jobs').insert({
+        homeowner_id:   session.user.id,
+        title,
+        description:    desc,
+        category:       cat.toLowerCase() as any,
+        urgency:        urgency==='Today — emergency'?'emergency':urgency==='Within 3 days'?'within_3_days':urgency==='This week'?'this_week':'flexible',
+        area,
+        city:           'Johannesburg',
+        budget_max:     budgetOpen ? null : budget,
+        preferred_date: date||null,
+        preferred_time: time||null,
+        status:         'open',
+        expires_at:     new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      }).select('id').single()
+
+      if(error) {
+        console.error('Job insert error:', error)
+        toast('Error posting job', error.message)
+        return
+      }
+
+      if(data) {
+        console.log('Job posted successfully:', data.id)
+        setPostedJobId(data.id)
+        if(photos.length > 0) {
+          const { error: photoError } = await supabase.from('job_photos').insert(
+            photos.map((url, i) => ({
+              job_id:      data.id,
+              storage_url: url,
+              sort_order:  i,
+            }))
+          )
+          if(photoError) console.error('Photo save error:', photoError)
         }
       }
     } catch(e) {
-      console.log('Job post error:', e)
+      console.error('Job post exception:', e)
     }
   }
 
