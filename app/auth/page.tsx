@@ -36,6 +36,8 @@ export default function AuthPage() {
   const [phone, setPhone]         = useState('')
   const [area,  setArea]          = useState('')
   const [trade, setTrade]         = useState('Plumbing')
+  const [trades, setTrades]       = useState<string[]>([])
+  const [areas,  setAreas]        = useState<string[]>([])
   const [password, setPassword]   = useState('')
   const [confirmPw, setConfirmPw] = useState('')
   const [showPw, setShowPw]       = useState(false)
@@ -48,6 +50,22 @@ export default function AuthPage() {
   const [timerOn, setTimerOn]     = useState(false)
   const [otpErr, setOtpErr]       = useState('')
   const [loading, setLoading]     = useState(false)
+
+  function toggleTrade(t:string){
+    setTrades(prev=>{
+      if(prev.includes(t)) return prev.filter(x=>x!==t)
+      if(prev.length>=3) return prev // max 3
+      return [...prev, t]
+    })
+  }
+
+  function toggleArea(a:string){
+    setAreas(prev=>{
+      if(prev.includes(a)) return prev.filter(x=>x!==a)
+      if(prev.length>=3) return prev // max 3
+      return [...prev, a]
+    })
+  }
 
   function startTimer() {
     setCounter(60); setTimerOn(true)
@@ -62,7 +80,9 @@ export default function AuthPage() {
     if(!lname.trim()) e.lname = 'Required'
     if(!email.trim()||!email.includes('@')) e.email = 'Enter a valid email'
     if(!phone.trim()||phone.length<9) e.phone = 'Enter a valid number'
-    if(!area) e.area = 'Select your area'
+    if(role==='homeowner'&&!area) e.area = 'Select your area'
+    if(role==='tradesperson'&&trades.length===0) e.trades = 'Select at least one trade'
+    if(role==='tradesperson'&&areas.length===0) e.areas = 'Select at least one area'
     if(!password||password.length<8) e.password = 'Password must be at least 8 characters'
     if(password!==confirmPw) e.confirmPw = 'Passwords do not match'
     setErrors(e)
@@ -77,7 +97,14 @@ export default function AuthPage() {
         email,
         password,
         options: {
-          data: { full_name: fname+' '+lname, role, area, phone }
+          data: {
+            full_name: fname+' '+lname,
+            role,
+            area: role==='homeowner' ? area : areas[0],
+            phone,
+            trades,
+            areas,
+          }
         }
       })
       if(error) { setErrors({email: error.message}); setLoading(false); return }
@@ -98,20 +125,21 @@ export default function AuthPage() {
       const { data, error } = await supabase.auth.verifyOtp({ email, token:code, type:'email' })
       if(error) { setOtpErr('Incorrect code. Please check your email.'); setLoading(false); return }
       if(data.user) {
+        const primaryArea = role==='homeowner' ? area : (areas[0]||'Johannesburg')
         await supabase.from('profiles').upsert({
           id:        data.user.id,
           role,
           full_name: fname+' '+lname,
           phone:     '+27'+phone.replace(/^0/,''),
           email,
-          area,
+          area:      primaryArea,
           city:      'Johannesburg',
         })
         if(role==='tradesperson') {
           await supabase.from('tradesperson_profiles').upsert({
             id:               data.user.id,
-            trade_category:   trade.toLowerCase() as any,
-            service_areas:    [area],
+            trade_category:   (trades[0]||trade).toLowerCase() as any,
+            service_areas:    areas,
             years_experience: 0,
           })
         }
@@ -406,22 +434,57 @@ export default function AuthPage() {
                 {errors.phone&&<div className="err">{errors.phone}</div>}
               </div>
 
-              <div className="fg">
-                <label className="fl2">Your area</label>
-                <select className="fs" value={area} onChange={e=>setArea(e.target.value)}>
-                  <option value="">Select area</option>
-                  {AREAS.map(a=><option key={a}>{a}</option>)}
-                </select>
-                {errors.area&&<div className="err">{errors.area}</div>}
-              </div>
+              {role==='homeowner'&&(
+                <div className="fg">
+                  <label className="fl2">Your area</label>
+                  <select className="fs" value={area} onChange={e=>setArea(e.target.value)}>
+                    <option value="">Select area</option>
+                    {AREAS.map(a=><option key={a}>{a}</option>)}
+                  </select>
+                  {errors.area&&<div className="err">{errors.area}</div>}
+                </div>
+              )}
 
               {role==='tradesperson'&&(
-                <div className="fg">
-                  <label className="fl2">Your primary trade</label>
-                  <div className="tg">
-                    {TRADES.map(t=><div key={t} className={`tc2 ${trade===t?'sel':''}`} onClick={()=>setTrade(t)}>{t}</div>)}
+                <>
+                  <div className="fg">
+                    <label className="fl2">Your trades <span style={{color:'var(--charcoal-l)',fontWeight:400,textTransform:'none',letterSpacing:0,fontSize:11}}>(select up to 3)</span></label>
+                    <div className="tg">
+                      {TRADES.map(t=>{
+                        const sel=trades.includes(t)
+                        const maxed=trades.length>=3&&!sel
+                        return (
+                          <div key={t} className={`tc2 ${sel?'sel':''}`}
+                            onClick={()=>!maxed&&toggleTrade(t)}
+                            style={{opacity:maxed?.4:1,cursor:maxed?'not-allowed':'pointer'}}>
+                            {t}
+                          </div>
+                        )
+                      })}
+                    </div>
+                    {errors.trades&&<div className="err">{errors.trades}</div>}
+                    {trades.length>0&&<div style={{fontSize:11,color:'var(--terra)',fontFamily:'var(--fc)',fontWeight:600,letterSpacing:1,marginTop:4}}>✓ {trades.join(' · ')}</div>}
                   </div>
-                </div>
+
+                  <div className="fg">
+                    <label className="fl2">Service areas <span style={{color:'var(--charcoal-l)',fontWeight:400,textTransform:'none',letterSpacing:0,fontSize:11}}>(select up to 3)</span></label>
+                    <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:4}}>
+                      {AREAS.map(a=>{
+                        const sel=areas.includes(a)
+                        const maxed=areas.length>=3&&!sel
+                        return (
+                          <div key={a}
+                            style={{border:`1.5px solid ${sel?'var(--terra)':'var(--cream-d)'}`,borderRadius:8,padding:'10px 8px',cursor:maxed?'not-allowed':'pointer',textAlign:'center',background:sel?'rgba(196,89,58,.05)':'var(--white)',transition:'all .15s',fontFamily:'var(--fc)',fontSize:11,fontWeight:600,color:sel?'var(--terra-d)':'var(--charcoal-l)',opacity:maxed?.4:1}}
+                            onClick={()=>!maxed&&toggleArea(a)}>
+                            {a}
+                          </div>
+                        )
+                      })}
+                    </div>
+                    {errors.areas&&<div className="err">{errors.areas}</div>}
+                    {areas.length>0&&<div style={{fontSize:11,color:'var(--terra)',fontFamily:'var(--fc)',fontWeight:600,letterSpacing:1,marginTop:4}}>✓ {areas.join(' · ')}</div>}
+                  </div>
+                </>
               )}
 
               <div className="fg">
