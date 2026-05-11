@@ -43,7 +43,7 @@ export default function Dashboard() {
     loadRealJobs()
     loadMyBids()
     loadEarnings()
-  
+
     const channel = supabase
       .channel('dashboard-jobs')
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'jobs'},()=>{
@@ -51,9 +51,8 @@ export default function Dashboard() {
         toast('New job posted!','A new job just appeared in your area',true)
       })
       .subscribe()
-  
-    return ()=>{ supabase.removeChannel(channel) }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    return ()=>supabase.removeChannel(channel)
   },[])
 
   async function loadProfile(){
@@ -69,40 +68,11 @@ export default function Dashboard() {
   async function loadRealJobs(){
     setLoading(true)
     try{
-      const {data:{session}}=await supabase.auth.getSession()
-      if(!session?.user){ setLoading(false); return }
-  
-      const {data:tp}=await supabase
-      .from('tradesperson_profiles')
-      .select('trade_category, service_areas')
-      .eq('id',session.user.id)
-      .single()
-  
-      if(!tp){ setLoading(false); return }
-  
-      // Build lowercase trade categories
-      const tradeCategories=[tp.trade_category]
-        .filter(Boolean)
-        .map((t:string)=>t.toLowerCase())
-  
-      const serviceAreas=(tp.service_areas||[]).map((a:string)=>a.trim())
-  
-      // Query with explicit lowercase category match
-      let query=supabase
+      const {data,error}=await supabase
         .from('v_jobs_feed')
         .select('*')
+        .eq('city','Johannesburg')
         .order('created_at',{ascending:false})
-  
-      if(tradeCategories.length>0){
-        query=query.in('category',tradeCategories)
-      }
-      if(serviceAreas.length>0){
-        query=query.in('area',serviceAreas)
-      }
-  
-      const {data,error}=await query
-      console.log('Jobs query result:',data,error,{tradeCategories,serviceAreas})
-  
       if(!error&&data){
         const mapped:Job[]=data.map((j:any)=>({
           id:           j.id,
@@ -186,19 +156,23 @@ export default function Dashboard() {
   async function submitBid(){
     if(!bidPrice||parseInt(bidPrice)<100||!modalJob) return
     const price=parseInt(bidPrice)
-    let userId = ''
     try{
       const {data:{session}}=await supabase.auth.getSession()
       if(session?.user){
-        userId = session.user.id
-        await supabase.from('bids').insert({
+        const { data, error } = await supabase.from('bids').insert({
           job_id:          modalJob.id,
           tradesperson_id: session.user.id,
           amount:          price,
           eta_label:       bidEta,
           note:            bidNote||null,
           status:          'pending',
-        })
+        }).select('id').single()
+
+        if(error){ console.log('Bid insert error:', error); toast('Error submitting bid', error.message, false); return }
+
+        // Update job status to bidding
+        await supabase.from('jobs').update({ status:'bidding' }).eq('id', modalJob.id)
+
         // Email homeowner
         fetch('/api/send-email', {
           method: 'POST',
@@ -215,6 +189,7 @@ export default function Dashboard() {
     setJobs(j=>j.map(x=>x.id===modalJob.id?{...x,submitted:true,submitPrice:price}:x))
     setMyBids(b=>[...b,{job:modalJob.title,loc:modalJob.loc,price,status:'Pending',time:'Just now'}])
     toast('Bid submitted!',`R${price} on ${modalJob.title}`,false)
+    setModalJob(null)
     loadMyBids()
   }
 

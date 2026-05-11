@@ -74,7 +74,7 @@ export default function HomeDashboard() {
     loadProfile()
     loadRealJobs()
     loadHistoryJobs()
-  
+
     const channel = supabase
       .channel('home-bids')
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'bids'},()=>{
@@ -82,9 +82,8 @@ export default function HomeDashboard() {
         toast('New bid received!','A tradesperson just bid on your job 🎉','#E8A020')
       })
       .subscribe()
-  
+
     return ()=>{ supabase.removeChannel(channel) }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   },[])
 
   async function loadProfile() {
@@ -198,7 +197,15 @@ export default function HomeDashboard() {
     },1800)
   }
 
-  function acceptBid(jobId:string,bidId:string,bidName:string){
+  async function acceptBid(jobId:string, bidId:string, bidName:string){
+    try {
+      // Update bid status to accepted in Supabase
+      await supabase.from('bids').update({ status:'accepted' }).eq('id', bidId)
+      // Update all other bids for this job to declined
+      await supabase.from('bids').update({ status:'declined' }).eq('job_id', jobId).neq('id', bidId)
+      // Update job status to accepted
+      await supabase.from('jobs').update({ status:'accepted' }).eq('id', jobId)
+    } catch(e){ console.log('Accept bid error:', e) }
     setAcceptedBid(a=>({...a,[jobId]:bidId}))
     setJobs(j=>j.map(job=>job.id===jobId?{...job,status:'accepted'}:job))
     toast('Bid accepted!',`${bidName.split(' ')[0]} is on the way · Pay to confirm`,'#3DAA6A')
@@ -215,6 +222,13 @@ export default function HomeDashboard() {
       description: `Payment for: ${jobs.find(j=>j.id===jobId)?.title}`,
       callback: async (result:any)=>{
         if(result.error){ toast('Payment failed',result.error.message,'#E24B4A'); return }
+        try {
+          // Update job status to completed
+          await supabase.from('jobs').update({ status:'completed' }).eq('id', jobId)
+          // Update bid status to completed
+          const bidId = acceptedBid[jobId]
+          if(bidId) await supabase.from('bids').update({ status:'completed' }).eq('id', bidId)
+        } catch(e){ console.log('Payment update error:', e) }
         setPaidJobs(p=>({...p,[jobId]:true}))
         setJobs(j=>j.map(job=>job.id===jobId?{...job,status:'completed'}:job))
         toast('Payment successful!','Job confirmed 🎉','#3DAA6A')
@@ -224,7 +238,24 @@ export default function HomeDashboard() {
     })
   }
 
-  function submitReview(){
+  async function submitReview(){
+    try {
+      const { data:{ session } } = await supabase.auth.getSession()
+      if(session?.user && reviewJob) {
+        const bidId = acceptedBid[reviewJob]
+        const job = jobs.find(j=>j.id===reviewJob)
+        const bid = job?.bids.find(b=>b.id===bidId)
+        if(bid) {
+          await supabase.from('reviews').insert({
+            job_id:      reviewJob,
+            reviewer_id: session.user.id,
+            reviewee_id: bidId,
+            rating,
+            comment:     reviewText||null,
+          })
+        }
+      }
+    } catch(e){ console.log('Review error:', e) }
     setReviewJob(null)
     toast('Review submitted!','Thank you for your feedback','#C4593A')
   }
