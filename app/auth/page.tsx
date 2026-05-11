@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '../lib/supabase'
 
 type Role = 'homeowner' | 'tradesperson'
-type Screen = 'role' | 'signup' | 'otp' | 'success' | 'login' | 'login-otp'
+type Screen = 'role' | 'signup' | 'otp' | 'success' | 'login' | 'login-otp' | 'forgot' | 'forgot-sent'
 
 const TRADES = ['Plumbing','Electrical','Painting','Carpentry','Roofing','Tiling','Landscaping','General','Solar']
 const AREAS  = ['Soweto','Sandton','Roodepoort','Midrand','Randburg','Fourways','Boksburg','Pretoria Central','Centurion']
@@ -165,6 +165,23 @@ export default function AuthPage() {
       }
     } catch(e) {
       setOtpErr('Something went wrong. Please try again.')
+    }
+    setLoading(false)
+  }
+
+  async function handleForgotPassword() {
+    if(!loginEmail.trim()||!loginEmail.includes('@')) {
+      setErrors({loginEmail:'Enter your email address first'})
+      return
+    }
+    setLoading(true)
+    try {
+      await supabase.auth.resetPasswordForEmail(loginEmail, {
+        redirectTo: 'https://lungiza.co.za/reset-password',
+      })
+      setScreen('forgot-sent')
+    } catch(e) {
+      setErrors({loginEmail:'Something went wrong. Please try again.'})
     }
     setLoading(false)
   }
@@ -528,6 +545,12 @@ export default function AuthPage() {
               <button className="bm bt" style={{marginBottom:10}} onClick={handleLogin} disabled={loading}>
                 {loading?<span className="spin"/>:'Sign in →'}
               </button>
+              <div style={{textAlign:'center',marginBottom:10}}>
+                <button onClick={()=>setScreen('forgot')}
+                  style={{background:'none',border:'none',cursor:'pointer',color:'var(--terra)',fontSize:13,fontFamily:'var(--fb)',fontWeight:500,textDecoration:'underline'}}>
+                  Forgot password?
+                </button>
+              </div>
               <div className="as">Don&apos;t have an account? <button onClick={()=>setScreen('role')}>Create one free</button></div>
             </div>
           )}
@@ -572,6 +595,45 @@ export default function AuthPage() {
               </button>
               <div className="as" style={{marginTop:16}}>
                 <button onClick={()=>{setScreen('login');setOtp(['','','','','','']);setOtpErr('')}}>← Back to login</button>
+              </div>
+            </div>
+          )}
+
+          {/* FORGOT PASSWORD */}
+          {screen==='forgot'&&(
+            <div>
+              <div className="se">Reset password</div>
+              <h1 className="st">FORGOT<br/>PASSWORD?</h1>
+              <p className="ss">Enter your email and we&apos;ll send you a link to reset your password.</p>
+              <div className="fg">
+                <label className="fl2">Email address</label>
+                <input className="fi2" type="email" placeholder="thabo@email.com"
+                  value={loginEmail} onChange={e=>setLoginEmail(e.target.value)}
+                  onKeyDown={e=>e.key==='Enter'&&handleForgotPassword()}/>
+                {errors.loginEmail&&<div className="err">{errors.loginEmail}</div>}
+              </div>
+              <button className="bm bt" style={{marginBottom:10}} onClick={handleForgotPassword} disabled={loading}>
+                {loading?<span className="spin"/>:'Send reset link →'}
+              </button>
+              <div className="as"><button onClick={()=>setScreen('login')}>← Back to login</button></div>
+            </div>
+          )}
+
+          {/* FORGOT SENT */}
+          {screen==='forgot-sent'&&(
+            <div style={{textAlign:'center'}}>
+              <div style={{fontSize:56,marginBottom:16}}>📬</div>
+              <div className="se" style={{justifyContent:'center'}}>Check your inbox</div>
+              <h1 className="st">LINK<br/>SENT.</h1>
+              <p className="ss">We sent a password reset link to <strong>{loginEmail}</strong>. Click the link to set your new password.</p>
+              <div style={{background:'rgba(196,89,58,.06)',border:'1px solid rgba(196,89,58,.15)',borderRadius:8,padding:'12px 16px',fontSize:13,color:'var(--charcoal-l)',lineHeight:1.6,marginBottom:24,textAlign:'left'}}>
+                💡 The link expires in 24 hours. Check your spam folder if you don&apos;t see it.
+              </div>
+              <button className="bm bt" style={{marginBottom:10}} onClick={()=>setScreen('login')}>
+                Back to login →
+              </button>
+              <div className="as">
+                Didn&apos;t receive it? <button onClick={handleForgotPassword}>Resend link</button>
               </div>
             </div>
           )}
