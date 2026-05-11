@@ -72,35 +72,36 @@ export default function Dashboard() {
       const {data:{session}}=await supabase.auth.getSession()
       if(!session?.user){ setLoading(false); return }
   
-      // Get tradesperson's trade and service areas
       const {data:tp}=await supabase
         .from('tradesperson_profiles')
-        .select('trade_category, service_areas, secondary_trades')
+        .select('trade_category, service_areas')
         .eq('id',session.user.id)
         .single()
   
       if(!tp){ setLoading(false); return }
   
-      const tradeCategories = [
-        tp.trade_category,
-        ...(tp.secondary_trades||[])
-      ].filter(Boolean)
+      // Build lowercase trade categories
+      const tradeCategories=[tp.trade_category,...(tp.secondary_trades||[])]
+        .filter(Boolean)
+        .map((t:string)=>t.toLowerCase())
   
-      const serviceAreas = tp.service_areas||[]
+      const serviceAreas=(tp.service_areas||[]).map((a:string)=>a.trim())
   
-      // Query jobs matching trade AND area
-      let query = supabase
+      // Query with explicit lowercase category match
+      let query=supabase
         .from('v_jobs_feed')
         .select('*')
-        .in('category', tradeCategories)
         .order('created_at',{ascending:false})
   
-      // Filter by service areas if they have any set
+      if(tradeCategories.length>0){
+        query=query.in('category',tradeCategories)
+      }
       if(serviceAreas.length>0){
-        query = query.in('area', serviceAreas)
+        query=query.in('area',serviceAreas)
       }
   
       const {data,error}=await query
+      console.log('Jobs query result:',data,error,{tradeCategories,serviceAreas})
   
       if(!error&&data){
         const mapped:Job[]=data.map((j:any)=>({
