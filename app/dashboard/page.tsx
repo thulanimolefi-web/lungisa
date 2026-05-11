@@ -73,15 +73,15 @@ export default function Dashboard() {
       if(!session?.user){ setLoading(false); return }
   
       const {data:tp}=await supabase
-        .from('tradesperson_profiles')
-        .select('trade_category, service_areas')
-        .eq('id',session.user.id)
-        .single()
+      .from('tradesperson_profiles')
+      .select('trade_category, service_areas')
+      .eq('id',session.user.id)
+      .single()
   
       if(!tp){ setLoading(false); return }
   
       // Build lowercase trade categories
-      const tradeCategories=[tp.trade_category,...(tp.secondary_trades||[])]
+      const tradeCategories=[tp.trade_category]
         .filter(Boolean)
         .map((t:string)=>t.toLowerCase())
   
