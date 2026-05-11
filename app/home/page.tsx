@@ -519,9 +519,9 @@ export default function HomeDashboard() {
                                   return (
                                     <div key={bid.id} className={`bid-card ${isAccepted?'accepted':''}`}>
                                       <div className="bc-top">
-                                        <div className="bc-ava" style={{background:bid.bg}}>{bid.init}</div>
+                                        <div className="bc-ava" style={{background:bid.bg,cursor:'pointer'}} onClick={()=>router.push(`/tradesperson/${bid.id}`)}>{bid.init}</div>
                                         <div style={{flex:1}}>
-                                          <div className="bc-name">{bid.name}</div>
+                                          <div className="bc-name" style={{cursor:'pointer',textDecoration:'underline',textDecorationColor:'var(--cream-dd)'}} onClick={()=>router.push(`/tradesperson/${bid.id}`)}>{bid.name}</div>
                                           <div className="bc-trade">{bid.trade}</div>
                                           <div className="bc-stars">★★★★★ <span style={{color:'var(--charcoal-l)',fontSize:11}}>{bid.ratingNum} · {bid.jobs} jobs</span></div>
                                         </div>
