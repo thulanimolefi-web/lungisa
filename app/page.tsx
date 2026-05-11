@@ -106,7 +106,7 @@ export default function Home() {
         <div className="nav-links">
           <a href="#how">How it works</a>
           <a href="#trade">For tradespeople</a>
-          <a href="#waitlist" className="nav-cta">Get early access</a>
+          <a href="/auth" className="nav-cta">Get started</a>
         </div>
       </nav>
 
@@ -115,13 +115,13 @@ export default function Home() {
         <div className="hero-inner">
           <div className="hero-eye">South Africa&apos;s first bidding marketplace for home repairs</div>
           <h1 className="hero-h1">POST<br/>IT. <span>BID</span><br/>IT. FIX IT.</h1>
-          <div className="hero-sub">Post It. Bid It. Fix It.</div>
+          <div className="hero-sub">Joburg&apos;s home repair marketplace</div>
           <p className="hero-body">
             Describe your job. Get competitive bids from <strong>vetted local tradespeople</strong>.
             Negotiate the price. Pay safely — only released when the job is done.
           </p>
           <div className="hero-btns">
-            <a href="#waitlist" className="btn-p">Get early access</a>
+            <a href="/auth" className="btn-p">Post a job free →</a>
             <a href="#how" className="btn-s">See how it works</a>
           </div>
           <div className="hero-stats">

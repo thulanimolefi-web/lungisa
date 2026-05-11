@@ -43,7 +43,7 @@ export default function Dashboard() {
     loadRealJobs()
     loadMyBids()
     loadEarnings()
-  
+
     const channel = supabase
       .channel('dashboard-jobs')
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'jobs'},()=>{
@@ -51,9 +51,8 @@ export default function Dashboard() {
         toast('New job posted!','A new job just appeared in your area',true)
       })
       .subscribe()
-  
-    return ()=>{ supabase.removeChannel(channel) }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    return ()=>supabase.removeChannel(channel)
   },[])
 
   async function loadProfile(){
@@ -382,7 +381,7 @@ export default function Dashboard() {
               <div style={S.secHeader}>
                 <div style={S.secTitle}>
                   Open Jobs
-                  {!loading&&<span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:600,letterSpacing:1.5,background:'rgba(196,89,58,.15)',color:'#E07A5F',border:'1px solid rgba(196,89,58,.25)',padding:'3px 10px',borderRadius:4}}>{visibleJobs.length} near you</span>}
+                  {!loading&&<span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:600,letterSpacing:1.5,background:visibleJobs.length>0?'rgba(196,89,58,.15)':'rgba(255,255,255,.06)',color:visibleJobs.length>0?'#E07A5F':'rgba(245,240,232,.3)',border:`1px solid ${visibleJobs.length>0?'rgba(196,89,58,.25)':'rgba(255,255,255,.08)'}`,padding:'3px 10px',borderRadius:4}}>{visibleJobs.length} near you</span>}
                 </div>
                 <div style={{display:'flex',gap:8}}>
                   {['all','urgent','new'].map(f=>(

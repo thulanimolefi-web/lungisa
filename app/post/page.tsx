@@ -503,6 +503,7 @@ export default function PostJob() {
                               {isVideo?(
                                 <video src={url} style={{width:'100%',height:'100%',objectFit:'cover'}} muted playsInline/>
                               ):(
+                                /* eslint-disable-next-line @next/next/no-img-element */
                                 <img src={url} alt={`Photo ${i+1}`} style={{width:'100%',height:'100%',objectFit:'cover'}}/>
                               )}
                               {isVideo&&(
@@ -568,6 +569,7 @@ export default function PostJob() {
                     <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
                       {photos.map((url,i)=>(
                         <div key={i} style={{width:60,height:60,borderRadius:8,overflow:'hidden',border:'1px solid rgba(61,170,106,.3)'}}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img src={url} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}}/>
                         </div>
                       ))}

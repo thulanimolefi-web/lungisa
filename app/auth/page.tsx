@@ -499,7 +499,7 @@ export default function AuthPage() {
               <div className="sr"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#C4593A" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
               <div className="se" style={{justifyContent:'center'}}>Account created</div>
               <h1 className="st">YOU&apos;RE<br/>IN.</h1>
-              <p className="ss">Welcome to Lungisa, <strong>{fname||'friend'}</strong>. Your account is ready.</p>
+              <p className="ss">Welcome to Lungisa, <strong>{fname&&fname.trim()!==''?fname:'there'}</strong>. Your account is ready.</p>
               <ul className="cl" style={{textAlign:'left'}}>
                 <li><div className="ci"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#3DAA6A" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>Account verified</li>
                 <li><div className="ci"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#3DAA6A" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>Password set — login with email + password</li>
