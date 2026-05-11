@@ -59,7 +59,21 @@ export default function Dashboard() {
     try{
       const {data:{session}}=await supabase.auth.getSession()
       if(session?.user){
-        const {data}=await supabase.from('profiles').select('*, tradesperson_profiles(*)').eq('id',session.user.id).single()
+        const {data}=await supabase
+          .from('profiles')
+          .select(`
+            *,
+            tradesperson_profiles(
+              trade_category,
+              service_areas,
+              years_experience,
+              rating_avg,
+              rating_count,
+              jobs_completed
+            )
+          `)
+          .eq('id',session.user.id)
+          .single()
         if(data) setProfile(data)
       }
     }catch(e){console.log('Profile error:',e)}
@@ -68,11 +82,33 @@ export default function Dashboard() {
   async function loadRealJobs(){
     setLoading(true)
     try{
-      const {data,error}=await supabase
+      const {data:{session}}=await supabase.auth.getSession()
+      if(!session?.user){ setLoading(false); return }
+
+      const {data:tp}=await supabase
+        .from('tradesperson_profiles')
+        .select('trade_category, service_areas')
+        .eq('id',session.user.id)
+        .single()
+
+      let query=supabase
         .from('v_jobs_feed')
         .select('*')
-        .eq('city','Johannesburg')
         .order('created_at',{ascending:false})
+
+      if(tp?.trade_category){
+        const tradeCategories=[tp.trade_category].filter(Boolean).map((t:string)=>t.toLowerCase())
+        query=query.in('category',tradeCategories)
+      }
+
+      if(tp?.service_areas&&tp.service_areas.length>0){
+        const serviceAreas=tp.service_areas.map((a:string)=>a.trim())
+        query=query.in('area',serviceAreas)
+      }
+
+      const {data,error}=await query
+      console.log('Jobs loaded:', data?.length, 'error:', error, 'trade:', tp?.trade_category, 'areas:', tp?.service_areas)
+
       if(!error&&data){
         const mapped:Job[]=data.map((j:any)=>({
           id:           j.id,
