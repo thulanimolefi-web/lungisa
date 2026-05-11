@@ -169,7 +169,9 @@ export default function PostJob() {
       const urls: string[] = []
       for(const file of files) {
         const ext = file.name.split('.').pop()
-        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${ext}`
+        const isVideo = file.type.startsWith('video/')
+        const folder = isVideo ? 'videos' : 'images'
+        const fileName = `${folder}/${Date.now()}-${Math.random().toString(36).substring(2)}.${ext}`
         const { data, error } = await supabase.storage
           .from('job-photos')
           .upload(fileName, file, { cacheControl:'3600', upsert:false })
@@ -181,7 +183,10 @@ export default function PostJob() {
         }
       }
       setPhotos(p=>[...p, ...urls])
-      toast('Photos uploaded!',`${urls.length} photo${urls.length>1?'s':''} added`)
+      const imgCount = urls.filter(u=>!u.includes('/videos/')).length
+      const vidCount = urls.filter(u=>u.includes('/videos/')).length
+      const msg = [imgCount>0?`${imgCount} photo${imgCount>1?'s':''}`:null, vidCount>0?`${vidCount} video${vidCount>1?'s':''}`:null].filter(Boolean).join(' + ')
+      toast('Media uploaded!', `${msg} attached to your job`)
     } catch(e) {
       console.log('Upload error:', e)
       toast('Upload failed','Please try again')
@@ -450,53 +455,70 @@ export default function PostJob() {
                 <button onClick={()=>setBudgetOpen(true)} style={{background:'none',border:'none',cursor:'pointer',fontFamily:'var(--fc)',fontSize:11,fontWeight:600,letterSpacing:1,textTransform:'uppercase',color:'rgba(245,240,232,.4)',textDecoration:'underline',display:'block',margin:'0 auto 20px'}}>
                   Skip — show me all bids
                 </button>
-                {/* Photo upload area */}
+                {/* Photo/Video upload area */}
                 <div style={{marginBottom:8}}>
-                  {/* Upload zone */}
                   <div style={{border:`2px dashed ${photos.length>0?'rgba(61,170,106,.4)':'rgba(255,255,255,.1)'}`,borderRadius:10,padding:photos.length>0?16:24,textAlign:'center',position:'relative',transition:'all .2s',background:photos.length>0?'rgba(61,170,106,.04)':'transparent'}}>
-                    <input type="file" accept="image/*" multiple onChange={uploadPhotos}
+                    <input type="file" accept="image/*,video/*" multiple capture="environment" onChange={uploadPhotos}
                       style={{position:'absolute',inset:0,opacity:0,cursor:'pointer',width:'100%',height:'100%',zIndex:2}}/>
                     {uploadingPhoto?(
                       <div style={{fontSize:13,color:'rgba(245,240,232,.5)',display:'flex',alignItems:'center',justifyContent:'center',gap:8,padding:'8px 0'}}>
-                        <div className="spin"/>Uploading photos...
+                        <div className="spin"/>Uploading...
                       </div>
                     ):photos.length===0?(
                       <>
-                        <div style={{fontSize:24,marginBottom:8}}>📸</div>
-                        <div style={{fontSize:13,color:'rgba(245,240,232,.6)',fontWeight:600}}>Tap to add photos</div>
-                        <div style={{fontSize:11,color:'rgba(245,240,232,.3)',marginTop:4}}>Jobs with photos get 3× more bids</div>
+                        <div style={{fontSize:28,marginBottom:8}}>📸</div>
+                        <div style={{fontSize:13,color:'rgba(245,240,232,.7)',fontWeight:600,marginBottom:4}}>Tap to add photos or video</div>
+                        <div style={{fontSize:11,color:'rgba(245,240,232,.3)'}}>Jobs with media get 3× more bids · Images and videos supported</div>
+                        <div style={{display:'flex',justifyContent:'center',gap:12,marginTop:12}}>
+                          <span style={{fontFamily:'var(--fc)',fontSize:9,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(245,240,232,.3)',border:'1px solid rgba(255,255,255,.08)',padding:'4px 8px',borderRadius:3}}>📷 Photo</span>
+                          <span style={{fontFamily:'var(--fc)',fontSize:9,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(245,240,232,.3)',border:'1px solid rgba(255,255,255,.08)',padding:'4px 8px',borderRadius:3}}>🎥 Video</span>
+                          <span style={{fontFamily:'var(--fc)',fontSize:9,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(245,240,232,.3)',border:'1px solid rgba(255,255,255,.08)',padding:'4px 8px',borderRadius:3}}>📱 Camera</span>
+                        </div>
                       </>
                     ):(
                       <div style={{fontSize:12,color:'rgba(61,170,106,.8)',fontFamily:'var(--fc)',fontWeight:600,letterSpacing:1,textTransform:'uppercase',marginBottom:10,display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
-                        <span style={{fontSize:14}}>✓</span> {photos.length} photo{photos.length>1?'s':''} attached · Tap to add more
+                        <span>✓</span> {photos.length} file{photos.length>1?'s':''} attached · Tap to add more
                       </div>
                     )}
 
-                    {/* Photo thumbnails */}
                     {photos.length>0&&(
-                      <div style={{display:'flex',gap:8,justifyContent:'center',flexWrap:'wrap',marginTop:photos.length>0&&!uploadingPhoto?0:8}}>
-                        {photos.map((url,i)=>(
-                          <div key={i} style={{width:80,height:80,borderRadius:10,overflow:'hidden',position:'relative',flexShrink:0,border:'2px solid rgba(61,170,106,.3)',boxShadow:'0 2px 8px rgba(0,0,0,.3)'}}>
-                            <img src={url} alt={`Photo ${i+1}`} style={{width:'100%',height:'100%',objectFit:'cover'}}/>
-                            <button
-                              onClick={e=>{e.stopPropagation();setPhotos(p=>p.filter((_,j)=>j!==i))}}
-                              style={{position:'absolute',top:3,right:3,background:'rgba(0,0,0,.75)',border:'none',borderRadius:'50%',width:20,height:20,cursor:'pointer',color:'#fff',fontSize:11,display:'flex',alignItems:'center',justifyContent:'center',zIndex:3,lineHeight:1}}>
-                              ✕
-                            </button>
-                            <div style={{position:'absolute',bottom:3,left:3,background:'rgba(0,0,0,.6)',borderRadius:3,padding:'1px 5px',fontSize:9,color:'rgba(255,255,255,.8)',fontFamily:'var(--fc)',fontWeight:600}}>
-                              {i+1}
+                      <div style={{display:'flex',gap:8,justifyContent:'center',flexWrap:'wrap',marginTop:4}}>
+                        {photos.map((url,i)=>{
+                          const isVideo = url.includes('/videos/')
+                          return (
+                            <div key={i} style={{width:80,height:80,borderRadius:10,overflow:'hidden',position:'relative',flexShrink:0,border:'2px solid rgba(61,170,106,.3)',boxShadow:'0 2px 8px rgba(0,0,0,.3)',background:'#1A1A16'}}>
+                              {isVideo?(
+                                <video src={url} style={{width:'100%',height:'100%',objectFit:'cover'}} muted playsInline/>
+                              ):(
+                                <img src={url} alt={`Photo ${i+1}`} style={{width:'100%',height:'100%',objectFit:'cover'}}/>
+                              )}
+                              {isVideo&&(
+                                <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,.3)'}}>
+                                  <span style={{fontSize:20}}>▶️</span>
+                                </div>
+                              )}
+                              <button
+                                onClick={e=>{e.stopPropagation();setPhotos(p=>p.filter((_,j)=>j!==i))}}
+                                style={{position:'absolute',top:3,right:3,background:'rgba(0,0,0,.75)',border:'none',borderRadius:'50%',width:20,height:20,cursor:'pointer',color:'#fff',fontSize:11,display:'flex',alignItems:'center',justifyContent:'center',zIndex:3,lineHeight:1}}>
+                                ✕
+                              </button>
+                              <div style={{position:'absolute',bottom:3,left:3,background:'rgba(0,0,0,.6)',borderRadius:3,padding:'1px 5px',fontSize:9,color:'rgba(255,255,255,.8)',fontFamily:'var(--fc)',fontWeight:600}}>
+                                {isVideo?'🎥':'📷'}
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          )
+                        })}
                       </div>
                     )}
                   </div>
 
-                  {/* Photo count badge */}
                   {photos.length>0&&(
                     <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:8,padding:'8px 12px',background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:6}}>
                       <div style={{fontSize:12,color:'rgba(61,170,106,.9)',fontFamily:'var(--fc)',fontWeight:600,letterSpacing:.5,display:'flex',alignItems:'center',gap:6}}>
-                        <span>✓</span> {photos.length} photo{photos.length>1?'s':''} ready to upload
+                        <span>✓</span>
+                        {photos.filter(u=>!u.includes('/videos/')).length>0&&`${photos.filter(u=>!u.includes('/videos/')).length} photo${photos.filter(u=>!u.includes('/videos/')).length>1?'s':''}`}
+                        {photos.filter(u=>u.includes('/videos/')).length>0&&` ${photos.filter(u=>u.includes('/videos/')).length} video${photos.filter(u=>u.includes('/videos/')).length>1?'s':''}`}
+                        {' '}ready
                       </div>
                       <button onClick={()=>setPhotos([])} style={{background:'none',border:'none',cursor:'pointer',fontSize:11,color:'rgba(245,240,232,.3)',fontFamily:'var(--fc)',fontWeight:600,letterSpacing:1,textTransform:'uppercase'}}>
                         Clear all
