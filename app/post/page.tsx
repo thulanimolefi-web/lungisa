@@ -226,6 +226,7 @@ export default function PostJob() {
           preferred_date: date||null,
           preferred_time: time||null,
           status:         'open',
+          expires_at:     new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
         }).select('id').single()
         if(!error && data) {
           setPostedJobId(data.id)
