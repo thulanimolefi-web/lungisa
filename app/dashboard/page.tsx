@@ -66,7 +66,8 @@ export default function Dashboard() {
       })
       .subscribe()
 
-    return ()=>supabase.removeChannel(channel)
+    return ()=>{ supabase.removeChannel(channel) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   },[])
 
   async function loadProfile(){
