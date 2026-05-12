@@ -291,7 +291,7 @@ export default function Dashboard() {
       }
     }catch(e){console.log('Bid error:',e)}
     setJobs(j=>j.map(x=>x.id===modalJob.id?{...x,submitted:true,submitPrice:price}:x))
-    setMyBids(b=>[...b,{job:modalJob.title,loc:modalJob.loc,price,status:'Pending',time:'Just now'}])
+    setMyBids(b=>[...b,{id:'temp-'+Date.now(),job:modalJob.title,loc:modalJob.loc,price,status:'Pending',time:'Just now',counterAmount:null,counterBy:null,jobId:modalJob.id}])
     toast('Bid submitted!',`R${price} on ${modalJob.title}`,false)
     setModalJob(null)
     loadMyBids()
