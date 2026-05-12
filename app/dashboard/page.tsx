@@ -4,7 +4,17 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
 type View = 'feed' | 'bids' | 'earnings' | 'profile'
-type Bid = { job: string; loc: string; price: number; status: string; time: string }
+type Bid = {
+  id: string
+  job: string
+  loc: string
+  price: number
+  status: string
+  time: string
+  counterAmount: number|null
+  counterBy: string|null
+  jobId: string
+}
 type Job = {
   id: any; cat: string; emoji: string; urgency: string; urgencyLabel: string; urgColor: string
   title: string; loc: string; dist: string; budget: string; budgetNum: number; desc: string
@@ -35,6 +45,7 @@ export default function Dashboard() {
   const [profile, setProfile]     = useState<any>(null)
   const [loading, setLoading]     = useState(true)
   const [earnings, setEarnings]   = useState({thisWeek:0,totalJobs:0,avgJobValue:0,inEscrow:0})
+  const [counterInputs, setCounterInputs] = useState<Record<string,string>>({})
 
   const ETAS = ['30 mins','1 hour','2 hours','Half day','Tomorrow']
 
@@ -50,10 +61,12 @@ export default function Dashboard() {
         loadRealJobs()
         toast('New job posted!','A new job just appeared in your area',true)
       })
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'bids'},()=>{
+        loadMyBids()
+      })
       .subscribe()
 
-    return ()=>{ supabase.removeChannel(channel) }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    return ()=>supabase.removeChannel(channel)
   },[])
 
   async function loadProfile(){
@@ -144,16 +157,20 @@ export default function Dashboard() {
       if(!session?.user) return
       const {data,error}=await supabase
         .from('bids')
-        .select('*, jobs(title, area)')
+        .select('*, jobs(id, title, area)')
         .eq('tradesperson_id',session.user.id)
         .order('created_at',{ascending:false})
       if(!error&&data){
         setMyBids(data.map((b:any)=>({
-          job:    b.jobs?.title||'Job',
-          loc:    b.jobs?.area||'JHB',
-          price:  b.amount,
-          status: b.status.charAt(0).toUpperCase()+b.status.slice(1),
-          time:   getTimeAgo(b.created_at),
+          id:            b.id,
+          job:           b.jobs?.title||'Job',
+          loc:           b.jobs?.area||'JHB',
+          price:         b.amount,
+          status:        b.status.charAt(0).toUpperCase()+b.status.slice(1),
+          time:          getTimeAgo(b.created_at),
+          counterAmount: b.counter_amount||null,
+          counterBy:     b.counter_by||null,
+          jobId:         b.jobs?.id||b.job_id,
         })))
       }
     }catch(e){console.log('Bids error:',e)}
@@ -189,6 +206,57 @@ export default function Dashboard() {
   }
 
   function openModal(job:Job){ setModalJob(job); setBidPrice(''); setBidNote(''); setBidEta('30 mins'); setShowCounter(false) }
+
+  async function acceptCounter(bidId:string, amount:number, jobTitle:string){
+    // Tradesperson accepts homeowner's counter
+    try{
+      const {data:{session}}=await supabase.auth.getSession()
+      if(session?.user){
+        await supabase.from('bids').update({
+          status:       'accepted',
+          final_amount: amount,
+        }).eq('id', bidId)
+        toast('Counter accepted!',`R${amount} on ${jobTitle}`,false)
+        loadMyBids()
+      }
+    }catch(e){ console.log('Accept counter error:', e) }
+  }
+
+  async function declineCounter(bidId:string, jobTitle:string){
+    try{
+      await supabase.from('bids').update({ status:'declined' }).eq('id', bidId)
+      toast('Counter declined','Homeowner will be notified',false)
+      loadMyBids()
+    }catch(e){ console.log('Decline counter error:', e) }
+  }
+
+  async function sendBackCounter(bidId:string, amount:number, jobTitle:string){
+    try{
+      const { data: bid } = await supabase.from('bids').select('job_id, jobs(homeowner_id)').eq('id', bidId).single()
+      await supabase.from('bids').update({
+        counter_amount:  amount,
+        counter_by:      'tradesperson',
+        counter_message: `Tradesperson counter-offered R${amount}`,
+        status:          'countered',
+      }).eq('id', bidId)
+      // Email homeowner
+      const {data:{session}}=await supabase.auth.getSession()
+      fetch('/api/send-email', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          type:           'counter_offer',
+          bidId,
+          counterAmount:  amount,
+          counterBy:      'tradesperson',
+          jobTitle,
+          homeownerId:    (bid?.jobs as any)?.homeowner_id,
+          tradespersonId: session?.user?.id,
+        })
+      }).catch(e=>console.log('Email error:',e))
+      toast('Counter sent!',`R${amount} sent to homeowner`,false)
+      loadMyBids()
+    }catch(e){ console.log('Counter back error:', e) }
+  }
 
   async function submitBid(){
     if(!bidPrice||parseInt(bidPrice)<100||!modalJob) return
@@ -435,6 +503,14 @@ export default function Dashboard() {
           {/* MY BIDS */}
           {view==='bids'&&(
             <div style={S.content}>
+              {/* Action required banner */}
+              {myBids.some(b=>b.status==='Countered'&&b.counterBy==='homeowner')&&(
+                <div style={{background:'rgba(232,160,32,.1)',border:'1px solid rgba(232,160,32,.25)',borderRadius:8,padding:'12px 16px',marginBottom:16,display:'flex',alignItems:'center',gap:10,fontSize:13,color:'#E8A020'}}>
+                  <span style={{fontSize:18}}>⚡</span>
+                  <span><strong>{myBids.filter(b=>b.status==='Countered'&&b.counterBy==='homeowner').length} counter-offer{myBids.filter(b=>b.status==='Countered'&&b.counterBy==='homeowner').length>1?'s':''}</strong> waiting for your response</span>
+                </div>
+              )}
+
               {myBids.length===0?(
                 <div style={{textAlign:'center',padding:'80px 20px',color:'rgba(245,240,232,.3)',fontFamily:"'Barlow Condensed',sans-serif"}}>
                   <div style={{fontSize:40,marginBottom:16}}>💸</div>
@@ -442,18 +518,91 @@ export default function Dashboard() {
                   <p style={{fontSize:13,lineHeight:1.6,marginBottom:20}}>Go to the Job Feed and start bidding on jobs near you.</p>
                   <button style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:13,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:'#C4593A',color:'#fff',border:'none',padding:'10px 24px',borderRadius:6,cursor:'pointer'}} onClick={()=>setView('feed')}>Browse jobs →</button>
                 </div>
-              ):myBids.map((b,i)=>(
-                <div key={i} style={{background:'#222220',borderRadius:10,border:'1px solid rgba(255,255,255,.06)',padding:'16px 20px',marginBottom:10,display:'flex',alignItems:'center',gap:14}}>
-                  <div style={{flex:1}}>
-                    <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:15,fontWeight:700,color:'#F5F0E8',marginBottom:2}}>{b.job}</div>
-                    <div style={{fontSize:12,color:'rgba(245,240,232,.4)'}}>{b.loc} · {b.time}</div>
+              ):myBids.map((b,i)=>{
+                const hasCounter=b.status==='Countered'&&b.counterBy==='homeowner'&&b.counterAmount
+                const iSentCounter=b.status==='Countered'&&b.counterBy==='tradesperson'
+                return (
+                  <div key={i} style={{background:'#222220',borderRadius:10,border:`1px solid ${hasCounter?'rgba(232,160,32,.4)':b.status==='Accepted'?'rgba(61,170,106,.25)':b.status==='Declined'?'rgba(226,75,74,.2)':'rgba(255,255,255,.06)'}`,padding:'16px 20px',marginBottom:12}}>
+
+                    {/* Bid header */}
+                    <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:hasCounter||iSentCounter||b.status==='Accepted'||b.status==='Declined'||b.status==='Completed'?12:0}}>
+                      <div style={{flex:1}}>
+                        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:15,fontWeight:700,color:'#F5F0E8',marginBottom:2}}>{b.job}</div>
+                        <div style={{fontSize:12,color:'rgba(245,240,232,.4)'}}>{b.loc} · {b.time}</div>
+                      </div>
+                      <div style={{textAlign:'right'}}>
+                        <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:'#E07A5F'}}>R{b.price}</div>
+                        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1,textTransform:'uppercase',
+                          color:b.status==='Accepted'?'#3DAA6A':b.status==='Declined'?'#f08080':hasCounter?'#E8A020':iSentCounter?'rgba(232,160,32,.6)':b.status==='Completed'?'#3DAA6A':'rgba(245,240,232,.4)'}}>
+                          {hasCounter?'⚡ Counter received':iSentCounter?'⏳ Counter sent':b.status}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* HOMEOWNER COUNTER — tradesperson must respond */}
+                    {hasCounter&&(
+                      <div style={{background:'rgba(232,160,32,.06)',border:'1px solid rgba(232,160,32,.2)',borderRadius:8,padding:'14px 16px'}}>
+                        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'#E8A020',marginBottom:6}}>Homeowner counter-offered</div>
+                        <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:12}}>
+                          <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:32,color:'#F5F0E8'}}>R{b.counterAmount}</div>
+                          <div style={{fontSize:12,color:'rgba(245,240,232,.4)'}}>vs your bid of R{b.price}</div>
+                        </div>
+                        <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:12}}>
+                          <button onClick={()=>acceptCounter(b.id,b.counterAmount!,b.job)}
+                            style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:'#3DAA6A',color:'#fff',border:'none',padding:'10px 18px',borderRadius:6,cursor:'pointer',flex:1}}>
+                            ✓ Accept R{b.counterAmount}
+                          </button>
+                          <button onClick={()=>declineCounter(b.id,b.job)}
+                            style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:'rgba(226,75,74,.1)',color:'#f08080',border:'1px solid rgba(226,75,74,.2)',padding:'10px 18px',borderRadius:6,cursor:'pointer'}}>
+                            ✗ Decline
+                          </button>
+                        </div>
+                        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(245,240,232,.35)',marginBottom:8}}>Or counter back:</div>
+                        <div style={{display:'flex',gap:0,alignItems:'stretch'}}>
+                          <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:'rgba(245,240,232,.3)',background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',borderRadius:'6px 0 0 6px',padding:'10px 14px',flexShrink:0,borderRight:'none',display:'flex',alignItems:'center'}}>R</div>
+                          <input type="number"
+                            placeholder={b.counterAmount?String(Math.round((b.price+b.counterAmount)/2)):String(Math.round(b.price*0.95))}
+                            value={counterInputs[b.id]||''}
+                            onChange={e=>setCounterInputs(c=>({...c,[b.id]:e.target.value}))}
+                            style={{flex:1,background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',borderRadius:0,padding:'10px 12px',fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:'#F5F0E8',outline:'none',borderLeft:'none',borderRight:'none'}}/>
+                          <button onClick={()=>{if(counterInputs[b.id])sendBackCounter(b.id,parseInt(counterInputs[b.id]),b.job)}}
+                            style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:'#C4593A',color:'#fff',border:'none',padding:'10px 16px',borderRadius:'0 6px 6px 0',cursor:'pointer',flexShrink:0}}>
+                            Counter
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* I SENT A COUNTER — waiting */}
+                    {iSentCounter&&(
+                      <div style={{background:'rgba(196,89,58,.06)',border:'1px solid rgba(196,89,58,.15)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(245,240,232,.6)',lineHeight:1.5}}>
+                        ⏳ Counter of <strong style={{color:'#F5F0E8'}}>R{b.counterAmount}</strong> sent. Waiting for homeowner to respond...
+                      </div>
+                    )}
+
+                    {/* ACCEPTED */}
+                    {b.status==='Accepted'&&(
+                      <div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(61,170,106,.9)',lineHeight:1.5}}>
+                        ✓ Bid accepted! Payment is in escrow. Complete the job and you&apos;ll get paid.
+                      </div>
+                    )}
+
+                    {/* DECLINED */}
+                    {b.status==='Declined'&&(
+                      <div style={{background:'rgba(226,75,74,.06)',border:'1px solid rgba(226,75,74,.15)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(226,75,74,.7)',lineHeight:1.5}}>
+                        ✗ Not accepted this time. Keep bidding on new jobs.
+                      </div>
+                    )}
+
+                    {/* COMPLETED */}
+                    {b.status==='Completed'&&(
+                      <div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(61,170,106,.9)',lineHeight:1.5}}>
+                        ✓ Job completed · Payment released · R{b.price} earned
+                      </div>
+                    )}
                   </div>
-                  <div style={{textAlign:'right'}}>
-                    <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:'#E07A5F'}}>R{b.price}</div>
-                    <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1,textTransform:'uppercase',color:b.status==='Accepted'?'#3DAA6A':b.status==='Declined'?'#f08080':'rgba(245,240,232,.4)'}}>{b.status}</div>
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
 

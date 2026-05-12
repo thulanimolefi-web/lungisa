@@ -204,6 +204,21 @@ export default function HomeDashboard() {
       }).eq('id', bidId)
       if(error){ console.log('Counter error:', error); setCounterResp(r=>({...r,[bidId]:'error'})); return }
       setCounterResp(r=>({...r,[bidId]:'sent'}))
+      // Email tradesperson
+      const { data:{ session } } = await supabase.auth.getSession()
+      const bid = jobs.find(j=>j.id===jobId)?.bids.find(b=>b.id===bidId)
+      fetch('/api/send-email', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          type:           'counter_offer',
+          bidId,
+          counterAmount:  parseInt(amt),
+          counterBy:      'homeowner',
+          jobTitle:       jobs.find(j=>j.id===jobId)?.title||'Job',
+          homeownerId:    session?.user?.id,
+          tradespersonId: bidId,
+        })
+      }).catch(e=>console.log('Email error:',e))
       toast('Counter sent!',`Waiting for ${jobs.find(j=>j.id===jobId)?.bids.find(b=>b.id===bidId)?.name.split(' ')[0]} to respond`,'#E8A020')
     } catch(e){
       console.log('Counter error:', e)
@@ -224,12 +239,22 @@ export default function HomeDashboard() {
 
   async function acceptBid(jobId:string, bidId:string, bidName:string){
     try {
-      // Update bid status to accepted in Supabase
       await supabase.from('bids').update({ status:'accepted' }).eq('id', bidId)
-      // Update all other bids for this job to declined
       await supabase.from('bids').update({ status:'declined' }).eq('job_id', jobId).neq('id', bidId)
-      // Update job status to accepted
       await supabase.from('jobs').update({ status:'accepted' }).eq('id', jobId)
+      // Email tradesperson
+      const { data:{ session } } = await supabase.auth.getSession()
+      const bid = jobs.find(j=>j.id===jobId)?.bids.find(b=>b.id===bidId)
+      fetch('/api/send-email', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          type:            'bid_accepted',
+          bidId,
+          amount:          bid?.price||0,
+          jobTitle:        jobs.find(j=>j.id===jobId)?.title||'Job',
+          tradespersonId:  bidId,
+        })
+      }).catch(e=>console.log('Email error:',e))
     } catch(e){ console.log('Accept bid error:', e) }
     setAcceptedBid(a=>({...a,[jobId]:bidId}))
     setJobs(j=>j.map(job=>job.id===jobId?{...job,status:'accepted'}:job))
@@ -248,11 +273,23 @@ export default function HomeDashboard() {
       callback: async (result:any)=>{
         if(result.error){ toast('Payment failed',result.error.message,'#E24B4A'); return }
         try {
-          // Update job status to completed
           await supabase.from('jobs').update({ status:'completed' }).eq('id', jobId)
-          // Update bid status to completed
           const bidId = acceptedBid[jobId]
           if(bidId) await supabase.from('bids').update({ status:'completed' }).eq('id', bidId)
+          // Email both parties
+          const { data:{ session } } = await supabase.auth.getSession()
+          const job = jobs.find(j=>j.id===jobId)
+          const bid = job?.bids.find(b=>b.id===bidId)
+          fetch('/api/send-email', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({
+              type:            'payment_confirmed',
+              jobId,
+              amount,
+              homeownerId:     session?.user?.id,
+              tradespersonId:  bidId,
+            })
+          }).catch(e=>console.log('Email error:',e))
         } catch(e){ console.log('Payment update error:', e) }
         setPaidJobs(p=>({...p,[jobId]:true}))
         setJobs(j=>j.map(job=>job.id===jobId?{...job,status:'completed'}:job))
