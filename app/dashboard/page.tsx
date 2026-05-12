@@ -9,7 +9,7 @@ type Bid = {
   job: string
   loc: string
   price: number
-  status: string
+  status: string   // raw lowercase from Supabase e.g. 'pending','countered','accepted','declined','completed'
   time: string
   counterAmount: number|null
   counterBy: string|null
@@ -74,17 +74,7 @@ export default function Dashboard() {
       if(session?.user){
         const {data}=await supabase
           .from('profiles')
-          .select(`
-            *,
-            tradesperson_profiles(
-              trade_category,
-              service_areas,
-              years_experience,
-              rating_avg,
-              rating_count,
-              jobs_completed
-            )
-          `)
+          .select(`*, tradesperson_profiles(trade_category,service_areas,years_experience,rating_avg,rating_count,jobs_completed)`)
           .eq('id',session.user.id)
           .single()
         if(data) setProfile(data)
@@ -110,20 +100,15 @@ export default function Dashboard() {
         .order('created_at',{ascending:false})
 
       if(tp?.trade_category){
-        const tradeCategories=[tp.trade_category].filter(Boolean).map((t:string)=>t.toLowerCase())
-        query=query.in('category',tradeCategories)
+        query=query.in('category',[tp.trade_category].filter(Boolean).map((t:string)=>t.toLowerCase()))
       }
-
       if(tp?.service_areas&&tp.service_areas.length>0){
-        const serviceAreas=tp.service_areas.map((a:string)=>a.trim())
-        query=query.in('area',serviceAreas)
+        query=query.in('area',tp.service_areas.map((a:string)=>a.trim()))
       }
 
       const {data,error}=await query
-      console.log('Jobs loaded:', data?.length, 'error:', error, 'trade:', tp?.trade_category, 'areas:', tp?.service_areas)
-
       if(!error&&data){
-        const mapped:Job[]=data.map((j:any)=>({
+        setJobs(data.map((j:any)=>({
           id:           j.id,
           cat:          j.category.charAt(0).toUpperCase()+j.category.slice(1),
           emoji:        getCatEmoji(j.category),
@@ -143,8 +128,7 @@ export default function Dashboard() {
           timing:       j.preferred_time||'Flexible',
           submitted:    false,
           submitPrice:  0,
-        }))
-        setJobs(mapped)
+        })))
       }
     }catch(e){console.log('Jobs error:',e)}
     setLoading(false)
@@ -165,7 +149,8 @@ export default function Dashboard() {
           job:           b.jobs?.title||'Job',
           loc:           b.jobs?.area||'JHB',
           price:         b.amount,
-          status:        b.status.charAt(0).toUpperCase()+b.status.slice(1),
+          // ── Keep status raw/lowercase — all comparisons use lowercase ──
+          status:        (b.status||'pending').toLowerCase(),
           time:          getTimeAgo(b.created_at),
           counterAmount: b.counter_amount||null,
           counterBy:     b.counter_by||null,
@@ -179,20 +164,17 @@ export default function Dashboard() {
     try{
       const {data:{session}}=await supabase.auth.getSession()
       if(!session?.user) return
-      const {data}=await supabase
-        .from('payments')
-        .select('*')
-        .eq('tradesperson_id',session.user.id)
+      const {data}=await supabase.from('payments').select('*').eq('tradesperson_id',session.user.id)
       if(data){
         const released=data.filter((p:any)=>p.status==='released')
         const held=data.filter((p:any)=>p.status==='held')
         const weekAgo=Date.now()-7*24*60*60*1000
         const thisWeek=released.filter((p:any)=>new Date(p.created_at).getTime()>weekAgo)
         setEarnings({
-          thisWeek:   thisWeek.reduce((s:number,p:any)=>s+p.net_amount,0),
-          totalJobs:  released.length,
-          avgJobValue:released.length>0?Math.round(released.reduce((s:number,p:any)=>s+p.net_amount,0)/released.length):0,
-          inEscrow:   held.reduce((s:number,p:any)=>s+p.net_amount,0),
+          thisWeek:    thisWeek.reduce((s:number,p:any)=>s+p.net_amount,0),
+          totalJobs:   released.length,
+          avgJobValue: released.length>0?Math.round(released.reduce((s:number,p:any)=>s+p.net_amount,0)/released.length):0,
+          inEscrow:    held.reduce((s:number,p:any)=>s+p.net_amount,0),
         })
       }
     }catch(e){console.log('Earnings error:',e)}
@@ -206,52 +188,60 @@ export default function Dashboard() {
 
   function openModal(job:Job){ setModalJob(job); setBidPrice(''); setBidNote(''); setBidEta('30 mins') }
 
-  async function acceptCounter(bidId:string, amount:number, jobTitle:string){
-    // Tradesperson accepts homeowner's counter
+  // ── Tradesperson accepts homeowner's counter ──
+  async function acceptCounter(bid:Bid){
+    const amount = bid.counterAmount!
     try{
-      const {data:{session}}=await supabase.auth.getSession()
-      if(session?.user){
-        await supabase.from('bids').update({
-          status:       'accepted',
-          final_amount: amount,
-        }).eq('id', bidId)
-        toast('Counter accepted!',`R${amount} on ${jobTitle}`,false)
-        loadMyBids()
-      }
+      // 1. Mark this bid accepted with final amount
+      await supabase.from('bids').update({
+        status:       'accepted',
+        final_amount: amount,
+      }).eq('id', bid.id)
+      // 2. Decline all other bids on the same job
+      await supabase.from('bids').update({ status:'declined' })
+        .eq('job_id', bid.jobId)
+        .neq('id', bid.id)
+      // 3. Update job status so homeowner sees accepted state
+      await supabase.from('jobs').update({ status:'accepted' }).eq('id', bid.jobId)
+      toast('Counter accepted!',`R${amount} agreed · Homeowner will pay to confirm`,false)
+      loadMyBids()
     }catch(e){ console.log('Accept counter error:', e) }
   }
 
-  async function declineCounter(bidId:string, jobTitle:string){
+  // ── Tradesperson declines the counter ──
+  async function declineCounter(bid:Bid){
     try{
-      await supabase.from('bids').update({ status:'declined' }).eq('id', bidId)
-      toast('Counter declined','Homeowner will be notified',false)
+      await supabase.from('bids').update({ status:'declined' }).eq('id', bid.id)
+      toast('Counter declined','Homeowner has been notified',false)
       loadMyBids()
     }catch(e){ console.log('Decline counter error:', e) }
   }
 
-  async function sendBackCounter(bidId:string, amount:number, jobTitle:string){
+  // ── Tradesperson counters back ──
+  async function sendBackCounter(bid:Bid){
+    const raw = counterInputs[bid.id]
+    const amount = parseInt(raw||'0')
+    if(!amount||amount<1) return
     try{
-      const { data: bid } = await supabase.from('bids').select('job_id, jobs(homeowner_id)').eq('id', bidId).single()
       await supabase.from('bids').update({
         counter_amount:  amount,
         counter_by:      'tradesperson',
         counter_message: `Tradesperson counter-offered R${amount}`,
         status:          'countered',
-      }).eq('id', bidId)
+      }).eq('id', bid.id)
       // Email homeowner
       const {data:{session}}=await supabase.auth.getSession()
-      fetch('/api/send-email', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({
-          type:           'counter_offer',
-          bidId,
-          counterAmount:  amount,
-          counterBy:      'tradesperson',
-          jobTitle,
-          homeownerId:    (bid?.jobs as any)?.homeowner_id,
-          tradespersonId: session?.user?.id,
+      const {data:jobData}=await supabase.from('jobs').select('homeowner_id').eq('id',bid.jobId).single()
+      fetch('/api/send-email',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          type:'counter_offer', bidId:bid.id, counterAmount:amount,
+          counterBy:'tradesperson', jobTitle:bid.job,
+          homeownerId:(jobData as any)?.homeowner_id,
+          tradespersonId:session?.user?.id,
         })
       }).catch(e=>console.log('Email error:',e))
+      setCounterInputs(c=>({...c,[bid.id]:''}))
       toast('Counter sent!',`R${amount} sent to homeowner`,false)
       loadMyBids()
     }catch(e){ console.log('Counter back error:', e) }
@@ -263,35 +253,23 @@ export default function Dashboard() {
     try{
       const {data:{session}}=await supabase.auth.getSession()
       if(session?.user){
-        const { data, error } = await supabase.from('bids').insert({
+        const {error}=await supabase.from('bids').insert({
           job_id:          modalJob.id,
           tradesperson_id: session.user.id,
           amount:          price,
           eta_label:       bidEta,
           note:            bidNote||null,
           status:          'pending',
-        }).select('id').single()
-
-        if(error){ console.log('Bid insert error:', error); toast('Error submitting bid', error.message, false); return }
-
-        // Update job status to bidding
+        })
+        if(error){ toast('Error submitting bid',error.message,false); return }
         await supabase.from('jobs').update({ status:'bidding' }).eq('id', modalJob.id)
-
-        // Email homeowner
-        fetch('/api/send-email', {
-          method: 'POST',
-          headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({
-            jobId:           modalJob.id,
-            amount:          price,
-            eta:             bidEta,
-            tradespersonId:  session.user.id,
-          })
+        fetch('/api/send-email',{
+          method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({jobId:modalJob.id,amount:price,eta:bidEta,tradespersonId:session.user.id})
         }).catch(e=>console.log('Email error:',e))
       }
     }catch(e){console.log('Bid error:',e)}
     setJobs(j=>j.map(x=>x.id===modalJob.id?{...x,submitted:true,submitPrice:price}:x))
-    setMyBids(b=>[...b,{id:'temp-'+Date.now(),job:modalJob.title,loc:modalJob.loc,price,status:'Pending',time:'Just now',counterAmount:null,counterBy:null,jobId:modalJob.id}])
     toast('Bid submitted!',`R${price} on ${modalJob.title}`,false)
     setModalJob(null)
     loadMyBids()
@@ -302,6 +280,8 @@ export default function Dashboard() {
     if(filter==='new') return j.bids===0&&!j.submitted
     return true
   })
+
+  const countersPending = myBids.filter(b=>b.status==='countered'&&b.counterBy==='homeowner')
 
   const displayName=profile?.full_name||'—'
   const displayTrade=profile?.tradesperson_profiles?.trade_category
@@ -354,15 +334,14 @@ export default function Dashboard() {
     bidNoteInput:{width:'100%',background:'rgba(255,255,255,.04)',border:'1px solid rgba(255,255,255,.1)',borderRadius:8,padding:'10px 14px',fontFamily:"'Barlow',sans-serif",fontSize:13,color:'#F5F0E8',outline:'none',resize:'none' as const,height:80,lineHeight:1.55},
     earningsPreview:{background:'rgba(61,170,106,.07)',border:'1px solid rgba(61,170,106,.18)',borderRadius:8,padding:'12px 14px',marginTop:12,display:'flex',justifyContent:'space-between',alignItems:'center'},
     btn:(variant:'terra'|'ghost')=>({padding:'12px 22px',borderRadius:8,fontFamily:"'Barlow Condensed',sans-serif",fontSize:13,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase' as const,cursor:'pointer',border:'none',background:variant==='terra'?'#C4593A':'rgba(255,255,255,.06)',color:variant==='ghost'?'rgba(245,240,232,.6)':'#fff',flex:variant!=='ghost'?1:undefined,display:'flex',alignItems:'center',justifyContent:'center' as const,gap:8,transition:'all .15s'}),
-    toast:(alert:boolean)=>({background:'#2C2C28',borderRadius:10,border:'1px solid rgba(255,255,255,.1)',padding:'12px 16px',marginBottom:8,display:'flex',alignItems:'flex-start',gap:10,maxWidth:280}),
   }
 
   const viewTitles:Record<View,string>={feed:'JOB FEED',bids:'MY BIDS',earnings:'EARNINGS',profile:'MY PROFILE'}
   const navItems=[
-    {view:'feed' as View,   icon:'🏠',label:'Job Feed',  badge:jobs.filter(j=>!j.submitted).length},
-    {view:'bids' as View,   icon:'💸',label:'My Bids',   badge:myBids.length},
-    {view:'earnings' as View,icon:'📈',label:'Earnings'},
-    {view:'profile' as View, icon:'👤',label:'My Profile'},
+    {view:'feed'     as View, icon:'🏠', label:'Job Feed',  badge:jobs.filter(j=>!j.submitted).length},
+    {view:'bids'     as View, icon:'💸', label:'My Bids',   badge:countersPending.length>0?countersPending.length:myBids.length},
+    {view:'earnings' as View, icon:'📈', label:'Earnings'},
+    {view:'profile'  as View, icon:'👤', label:'My Profile'},
   ]
 
   return (
@@ -406,7 +385,11 @@ export default function Dashboard() {
               <div key={item.view} style={S.snItem(view===item.view)} onClick={()=>setView(item.view)}>
                 <span style={{fontSize:14}}>{item.icon}</span>
                 {item.label}
-                {item.badge!==undefined&&item.badge>0&&<span style={{marginLeft:'auto',background:'#C4593A',color:'#fff',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:10}}>{item.badge}</span>}
+                {item.badge!==undefined&&item.badge>0&&(
+                  <span style={{marginLeft:'auto',background:countersPending.length>0&&item.view==='bids'?'#E8A020':'#C4593A',color:'#fff',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:10}}>
+                    {item.badge}
+                  </span>
+                )}
               </div>
             ))}
           </div>
@@ -431,10 +414,10 @@ export default function Dashboard() {
             <div style={S.content}>
               <div style={{...S.statStrip}} className="stat-strip">
                 {[
-                  {label:'This week',  val:earnings.thisWeek>0?`R${earnings.thisWeek.toLocaleString()}`:'R0',          color:'#52C47F', delta:earnings.thisWeek>0?'Earned this week':'Complete your first job'},
-                  {label:'Bids placed',val:String(myBids.length),                                                       color:'#E07A5F', delta:myBids.length>0?`${myBids.filter(b=>b.status==='Accepted').length} accepted`:'Start bidding on jobs'},
-                  {label:'Win rate',   val:myBids.length>0?`${Math.round((myBids.filter(b=>b.status==='Accepted').length/myBids.length)*100)}%`:'—', color:'#E8A020', delta:myBids.length>0?'Acceptance rate':'No bids yet'},
-                  {label:'Rating',     val:profile?.tradesperson_profiles?.rating_avg>0?String(profile.tradesperson_profiles.rating_avg):'New', color:'#F5F0E8', delta:profile?.tradesperson_profiles?.rating_count>0?`${profile.tradesperson_profiles.rating_count} reviews`:'No reviews yet'},
+                  {label:'This week',   val:earnings.thisWeek>0?`R${earnings.thisWeek.toLocaleString()}`:'R0',          color:'#52C47F', delta:earnings.thisWeek>0?'Earned this week':'Complete your first job'},
+                  {label:'Bids placed', val:String(myBids.length),                                                       color:'#E07A5F', delta:myBids.length>0?`${myBids.filter(b=>b.status==='accepted').length} accepted`:'Start bidding on jobs'},
+                  {label:'Win rate',    val:myBids.length>0?`${Math.round((myBids.filter(b=>b.status==='accepted').length/myBids.length)*100)}%`:'—', color:'#E8A020', delta:myBids.length>0?'Acceptance rate':'No bids yet'},
+                  {label:'Rating',      val:profile?.tradesperson_profiles?.rating_avg>0?String(profile.tradesperson_profiles.rating_avg):'New', color:'#F5F0E8', delta:profile?.tradesperson_profiles?.rating_count>0?`${profile.tradesperson_profiles.rating_count} reviews`:'No reviews yet'},
                 ].map(s=>(
                   <div key={s.label} style={S.statCard}>
                     <div style={S.statEye}>{s.label}</div>
@@ -461,10 +444,10 @@ export default function Dashboard() {
                   <div className="spin"/> Loading jobs...
                 </div>
               ):visibleJobs.length===0?(
-                <div style={{textAlign:'center',padding:'60px 20px',color:'rgba(245,240,232,.3)',fontFamily:"'Barlow Condensed',sans-serif",fontSize:14,letterSpacing:1}}>
+                <div style={{textAlign:'center',padding:'60px 20px',color:'rgba(245,240,232,.3)'}}>
                   <div style={{fontSize:40,marginBottom:16}}>🔍</div>
                   <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:28,color:'rgba(245,240,232,.4)',marginBottom:8}}>No jobs right now</div>
-                  <p style={{fontSize:13,lineHeight:1.6}}>New jobs are posted daily. Check back soon or{' '}
+                  <p style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:13,lineHeight:1.6}}>New jobs are posted daily. Check back soon or{' '}
                     <span style={{color:'#E07A5F',cursor:'pointer'}} onClick={loadRealJobs}>refresh</span>.
                   </p>
                 </div>
@@ -500,29 +483,41 @@ export default function Dashboard() {
           {/* MY BIDS */}
           {view==='bids'&&(
             <div style={S.content}>
+
               {/* Action required banner */}
-              {myBids.some(b=>b.status==='Countered'&&b.counterBy==='homeowner')&&(
-                <div style={{background:'rgba(232,160,32,.1)',border:'1px solid rgba(232,160,32,.25)',borderRadius:8,padding:'12px 16px',marginBottom:16,display:'flex',alignItems:'center',gap:10,fontSize:13,color:'#E8A020'}}>
+              {countersPending.length>0&&(
+                <div style={{background:'rgba(232,160,32,.1)',border:'1px solid rgba(232,160,32,.3)',borderRadius:8,padding:'12px 16px',marginBottom:16,display:'flex',alignItems:'center',gap:10,fontSize:13,color:'#E8A020'}}>
                   <span style={{fontSize:18}}>⚡</span>
-                  <span><strong>{myBids.filter(b=>b.status==='Countered'&&b.counterBy==='homeowner').length} counter-offer{myBids.filter(b=>b.status==='Countered'&&b.counterBy==='homeowner').length>1?'s':''}</strong> waiting for your response</span>
+                  <strong>{countersPending.length} counter-offer{countersPending.length>1?'s':''} waiting for your response</strong>
                 </div>
               )}
 
               {myBids.length===0?(
-                <div style={{textAlign:'center',padding:'80px 20px',color:'rgba(245,240,232,.3)',fontFamily:"'Barlow Condensed',sans-serif"}}>
+                <div style={{textAlign:'center',padding:'80px 20px',color:'rgba(245,240,232,.3)'}}>
                   <div style={{fontSize:40,marginBottom:16}}>💸</div>
                   <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:28,color:'rgba(245,240,232,.4)',marginBottom:8}}>No bids yet</div>
-                  <p style={{fontSize:13,lineHeight:1.6,marginBottom:20}}>Go to the Job Feed and start bidding on jobs near you.</p>
+                  <p style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:13,lineHeight:1.6,marginBottom:20}}>Go to the Job Feed and start bidding on jobs near you.</p>
                   <button style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:13,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:'#C4593A',color:'#fff',border:'none',padding:'10px 24px',borderRadius:6,cursor:'pointer'}} onClick={()=>setView('feed')}>Browse jobs →</button>
                 </div>
-              ):myBids.map((b,i)=>{
-                const hasCounter=b.status==='Countered'&&b.counterBy==='homeowner'&&b.counterAmount
-                const iSentCounter=b.status==='Countered'&&b.counterBy==='tradesperson'
+              ):myBids.map((b)=>{
+                // ── All comparisons use lowercase status from DB ──
+                const homeownerCountered = b.status==='countered' && b.counterBy==='homeowner'
+                const iSentCounter       = b.status==='countered' && b.counterBy==='tradesperson'
+                const isAccepted         = b.status==='accepted'
+                const isDeclined         = b.status==='declined'
+                const isCompleted        = b.status==='completed'
+
                 return (
-                  <div key={i} style={{background:'#222220',borderRadius:10,border:`1px solid ${hasCounter?'rgba(232,160,32,.4)':b.status==='Accepted'?'rgba(61,170,106,.25)':b.status==='Declined'?'rgba(226,75,74,.2)':'rgba(255,255,255,.06)'}`,padding:'16px 20px',marginBottom:12}}>
+                  <div key={b.id} style={{
+                    background:'#222220',
+                    borderRadius:10,
+                    border:`1px solid ${homeownerCountered?'rgba(232,160,32,.4)':isAccepted?'rgba(61,170,106,.25)':isDeclined?'rgba(226,75,74,.2)':'rgba(255,255,255,.06)'}`,
+                    padding:'16px 20px',
+                    marginBottom:12,
+                  }}>
 
                     {/* Bid header */}
-                    <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:hasCounter||iSentCounter||b.status==='Accepted'||b.status==='Declined'||b.status==='Completed'?12:0}}>
+                    <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:homeownerCountered||iSentCounter||isAccepted||isDeclined||isCompleted?12:0}}>
                       <div style={{flex:1}}>
                         <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:15,fontWeight:700,color:'#F5F0E8',marginBottom:2}}>{b.job}</div>
                         <div style={{fontSize:12,color:'rgba(245,240,232,.4)'}}>{b.loc} · {b.time}</div>
@@ -530,73 +525,80 @@ export default function Dashboard() {
                       <div style={{textAlign:'right'}}>
                         <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:'#E07A5F'}}>R{b.price}</div>
                         <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1,textTransform:'uppercase',
-                          color:b.status==='Accepted'?'#3DAA6A':b.status==='Declined'?'#f08080':hasCounter?'#E8A020':iSentCounter?'rgba(232,160,32,.6)':b.status==='Completed'?'#3DAA6A':'rgba(245,240,232,.4)'}}>
-                          {hasCounter?'⚡ Counter received':iSentCounter?'⏳ Counter sent':b.status}
+                          color:isAccepted?'#3DAA6A':isDeclined?'#f08080':homeownerCountered?'#E8A020':iSentCounter?'rgba(232,160,32,.6)':isCompleted?'#3DAA6A':'rgba(245,240,232,.4)'}}>
+                          {homeownerCountered?'⚡ Counter received':iSentCounter?'⏳ Counter sent':isAccepted?'Accepted':isDeclined?'Declined':isCompleted?'Completed':'Pending'}
                         </div>
                       </div>
                     </div>
 
-                    {/* HOMEOWNER COUNTER — tradesperson must respond */}
-                    {hasCounter&&(
+                    {/* ── HOMEOWNER COUNTER → tradesperson must respond ── */}
+                    {homeownerCountered&&(
                       <div style={{background:'rgba(232,160,32,.06)',border:'1px solid rgba(232,160,32,.2)',borderRadius:8,padding:'14px 16px'}}>
-                        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'#E8A020',marginBottom:6}}>Homeowner counter-offered</div>
+                        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'#E8A020',marginBottom:6}}>
+                          Homeowner counter-offered
+                        </div>
                         <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:12}}>
                           <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:32,color:'#F5F0E8'}}>R{b.counterAmount}</div>
                           <div style={{fontSize:12,color:'rgba(245,240,232,.4)'}}>vs your bid of R{b.price}</div>
                         </div>
+                        {/* Accept / Decline */}
                         <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:12}}>
-                          <button onClick={()=>acceptCounter(b.id,b.counterAmount!,b.job)}
+                          <button onClick={()=>acceptCounter(b)}
                             style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:'#3DAA6A',color:'#fff',border:'none',padding:'10px 18px',borderRadius:6,cursor:'pointer',flex:1}}>
                             ✓ Accept R{b.counterAmount}
                           </button>
-                          <button onClick={()=>declineCounter(b.id,b.job)}
+                          <button onClick={()=>declineCounter(b)}
                             style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:'rgba(226,75,74,.1)',color:'#f08080',border:'1px solid rgba(226,75,74,.2)',padding:'10px 18px',borderRadius:6,cursor:'pointer'}}>
                             ✗ Decline
                           </button>
                         </div>
-                        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(245,240,232,.35)',marginBottom:8}}>Or counter back:</div>
-                        <div style={{display:'flex',gap:0,alignItems:'stretch'}}>
-                          <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:'rgba(245,240,232,.3)',background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',borderRadius:'6px 0 0 6px',padding:'10px 14px',flexShrink:0,borderRight:'none',display:'flex',alignItems:'center'}}>R</div>
-                          <input type="number"
-                            placeholder={b.counterAmount?String(Math.round((b.price+b.counterAmount)/2)):String(Math.round(b.price*0.95))}
-                            value={counterInputs[b.id]||''}
-                            onChange={e=>setCounterInputs(c=>({...c,[b.id]:e.target.value}))}
-                            style={{flex:1,background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',borderRadius:0,padding:'10px 12px',fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:'#F5F0E8',outline:'none',borderLeft:'none',borderRight:'none'}}/>
-                          <button onClick={()=>{if(counterInputs[b.id])sendBackCounter(b.id,parseInt(counterInputs[b.id]),b.job)}}
-                            style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:'#C4593A',color:'#fff',border:'none',padding:'10px 16px',borderRadius:'0 6px 6px 0',cursor:'pointer',flexShrink:0}}>
-                            Counter
-                          </button>
+                        {/* Counter back */}
+                        <div style={{borderTop:'1px solid rgba(255,255,255,.06)',paddingTop:12}}>
+                          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(245,240,232,.35)',marginBottom:8}}>Or counter back:</div>
+                          <div style={{display:'flex',gap:0,alignItems:'stretch'}}>
+                            <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:'rgba(245,240,232,.3)',background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',borderRadius:'6px 0 0 6px',padding:'10px 14px',flexShrink:0,borderRight:'none',display:'flex',alignItems:'center'}}>R</div>
+                            <input type="number"
+                              placeholder={b.counterAmount?String(Math.round((b.price+b.counterAmount)/2)):String(Math.round(b.price*0.95))}
+                              value={counterInputs[b.id]||''}
+                              onChange={e=>setCounterInputs(c=>({...c,[b.id]:e.target.value}))}
+                              style={{flex:1,background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',borderRadius:0,padding:'10px 12px',fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:'#F5F0E8',outline:'none',borderLeft:'none',borderRight:'none'}}/>
+                            <button onClick={()=>sendBackCounter(b)}
+                              style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:'#C4593A',color:'#fff',border:'none',padding:'10px 16px',borderRadius:'0 6px 6px 0',cursor:'pointer',flexShrink:0}}>
+                              Counter
+                            </button>
+                          </div>
                         </div>
                       </div>
                     )}
 
-                    {/* I SENT A COUNTER — waiting */}
+                    {/* ── I SENT A COUNTER → waiting for homeowner ── */}
                     {iSentCounter&&(
                       <div style={{background:'rgba(196,89,58,.06)',border:'1px solid rgba(196,89,58,.15)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(245,240,232,.6)',lineHeight:1.5}}>
                         ⏳ Counter of <strong style={{color:'#F5F0E8'}}>R{b.counterAmount}</strong> sent. Waiting for homeowner to respond...
                       </div>
                     )}
 
-                    {/* ACCEPTED */}
-                    {b.status==='Accepted'&&(
+                    {/* ── ACCEPTED → waiting for payment ── */}
+                    {isAccepted&&(
                       <div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(61,170,106,.9)',lineHeight:1.5}}>
-                        ✓ Bid accepted! Payment is in escrow. Complete the job and you&apos;ll get paid.
+                        ✓ Bid accepted! Homeowner is confirming payment. Complete the job and you&apos;ll get paid.
                       </div>
                     )}
 
-                    {/* DECLINED */}
-                    {b.status==='Declined'&&(
+                    {/* ── DECLINED ── */}
+                    {isDeclined&&(
                       <div style={{background:'rgba(226,75,74,.06)',border:'1px solid rgba(226,75,74,.15)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(226,75,74,.7)',lineHeight:1.5}}>
                         ✗ Not accepted this time. Keep bidding on new jobs.
                       </div>
                     )}
 
-                    {/* COMPLETED */}
-                    {b.status==='Completed'&&(
+                    {/* ── COMPLETED ── */}
+                    {isCompleted&&(
                       <div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(61,170,106,.9)',lineHeight:1.5}}>
                         ✓ Job completed · Payment released · R{b.price} earned
                       </div>
                     )}
+
                   </div>
                 )
               })}
@@ -651,10 +653,10 @@ export default function Dashboard() {
                 </div>
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
                   {[
-                    {label:'Email',        val:profile?.email||'—'},
-                    {label:'Phone',        val:profile?.phone||'—'},
-                    {label:'Service areas',val:profile?.tradesperson_profiles?.service_areas?.join(' · ')||profile?.area||'—'},
-                    {label:'Member since', val:profile?.created_at?new Date(profile.created_at).toLocaleDateString('en-ZA',{month:'long',year:'numeric'}):'—'},
+                    {label:'Email',         val:profile?.email||'—'},
+                    {label:'Phone',         val:profile?.phone||'—'},
+                    {label:'Service areas', val:profile?.tradesperson_profiles?.service_areas?.join(' · ')||profile?.area||'—'},
+                    {label:'Member since',  val:profile?.created_at?new Date(profile.created_at).toLocaleDateString('en-ZA',{month:'long',year:'numeric'}):'—'},
                   ].map(r=>(
                     <div key={r.label}>
                       <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.35)',marginBottom:5}}>{r.label}</div>
@@ -732,7 +734,7 @@ export default function Dashboard() {
       {/* TOASTS */}
       <div style={{position:'fixed',top:70,right:20,zIndex:200,pointerEvents:'none'}}>
         {toasts.map(t=>(
-          <div key={t.id} className="toast-in" style={S.toast(t.alert)}>
+          <div key={t.id} className="toast-in" style={{background:'#2C2C28',borderRadius:10,border:'1px solid rgba(255,255,255,.1)',padding:'12px 16px',marginBottom:8,display:'flex',alignItems:'flex-start',gap:10,maxWidth:280}}>
             <div style={{width:8,height:8,borderRadius:'50%',background:t.alert?'#E8A020':'#C4593A',marginTop:4,flexShrink:0}}/>
             <div>
               <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:700,color:'#F5F0E8',marginBottom:1}}>{t.title}</div>
