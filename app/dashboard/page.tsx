@@ -307,7 +307,7 @@ export default function Dashboard() {
     snSection:{fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:600,letterSpacing:2.5,textTransform:'uppercase' as const,color:'rgba(245,240,232,.2)',padding:'12px 20px 4px'},
     onlineToggle:(on:boolean)=>({display:'flex',alignItems:'center',justifyContent:'space-between',background:on?'rgba(61,170,106,.08)':'rgba(255,255,255,.04)',border:`1px solid ${on?'rgba(61,170,106,.2)':'rgba(255,255,255,.1)'}`,borderRadius:8,padding:'10px 12px',cursor:'pointer'}),
     onlineLabel:(on:boolean)=>({fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:600,letterSpacing:.5,color:on?'rgba(61,170,106,.9)':'rgba(245,240,232,.3)'}),
-    topbar:{background:'#111110',borderBottom:'1px solid rgba(255,255,255,.05)',padding:'0 28px',height:58,display:'flex',alignItems:'center',justifyContent:'space-between',position:'sticky' as const,top:0,zIndex:40},
+    topbar:{background:'#111110',borderBottom:'1px solid rgba(255,255,255,.05)',padding:'0 28px',height:58,display:'flex',alignItems:'center',justifyContent:'space-between',position:'sticky' as const,top:0,zIndex:300,overflow:'visible'},
     pageTitle:{fontFamily:"'Bebas Neue',sans-serif",fontSize:24,letterSpacing:1.5,color:'#F5F0E8'},
     content:{padding:'24px 28px'},
     statStrip:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:24},
@@ -405,7 +405,9 @@ export default function Dashboard() {
         <div style={{flex:1,overflowX:'hidden'}}>
           <div style={S.topbar}>
             <span style={S.pageTitle}>{viewTitles[view]}</span>
-            <NotificationBell theme="dark" />
+            <div style={{position:'relative',zIndex:350,display:'flex',alignItems:'center',justifyContent:'center',overflow:'visible'}}>
+              <NotificationBell theme="dark" />
+            </div>
           </div>
 
           {/* JOB FEED */}
