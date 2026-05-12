@@ -709,17 +709,6 @@ export default function Dashboard() {
                       {bidPrice?`R ${Math.round(parseInt(bidPrice)*0.9).toLocaleString()}`:'—'}
                     </div>
                   </div>
-                  {showCounter&&(
-                    <div style={{background:'rgba(232,160,32,.07)',border:'1px solid rgba(232,160,32,.2)',borderRadius:8,padding:'12px 14px',marginTop:14,fontSize:13}}>
-                      <div style={{color:'rgba(245,240,232,.75)',marginBottom:10}}>
-                        💬 Homeowner counter-offered <strong style={{color:'#E8A020'}}>R{counterVal}</strong>. Accept or decline?
-                      </div>
-                      <div style={{display:'flex',gap:8}}>
-                        <button onClick={acceptCounter} style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:700,letterSpacing:1,textTransform:'uppercase',padding:'7px 14px',borderRadius:5,border:'none',cursor:'pointer',background:'#3DAA6A',color:'#fff'}}>Accept R{counterVal}</button>
-                        <button onClick={()=>setShowCounter(false)} style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:700,letterSpacing:1,textTransform:'uppercase',padding:'7px 14px',borderRadius:5,border:'none',cursor:'pointer',background:'rgba(255,255,255,.08)',color:'rgba(245,240,232,.6)'}}>Decline</button>
-                      </div>
-                    </div>
-                  )}
                 </>
               ):(
                 <div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'14px 16px',display:'flex',alignItems:'center',gap:10,marginTop:12}}>
