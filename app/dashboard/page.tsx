@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import NotificationBell from '../components/NotificationBell'
 
 type View = 'feed' | 'bids' | 'earnings' | 'profile'
 type Bid = {
@@ -404,9 +405,7 @@ export default function Dashboard() {
         <div style={{flex:1,overflowX:'hidden'}}>
           <div style={S.topbar}>
             <span style={S.pageTitle}>{viewTitles[view]}</span>
-            <div style={{width:34,height:34,borderRadius:8,background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.08)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',position:'relative'}}>
-              🔔
-            </div>
+            <NotificationBell theme="dark" />
           </div>
 
           {/* JOB FEED */}

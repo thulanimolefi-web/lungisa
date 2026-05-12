@@ -27,9 +27,7 @@ function brandedEmail(content: string): string {
           <div style="color:rgba(245,240,232,.5);font-size:11px;letter-spacing:1px">Post It. Bid It. Fix It.</div>
         </div>
       </div>
-      <div style="padding:28px">
-        ${content}
-      </div>
+      <div style="padding:28px">${content}</div>
       <div style="background:#EAE3D6;padding:16px 28px;border-top:1px solid #DDD5C5">
         <p style="color:#D4C9B4;font-size:11px;text-align:center;margin:0">
           © 2026 Lungisa · A VaultLink Africa product · <a href="https://lungiza.co.za" style="color:#C4593A">lungiza.co.za</a>
@@ -48,6 +46,30 @@ async function sendEmail(to: string, subject: string, content: string) {
   })
 }
 
+// ── Write an in-app notification row ────────────────────────────────
+async function notify(
+  userId: string,
+  title: string,
+  message: string,
+  type: string,
+  link: string,
+  payload: Record<string, any> = {}
+) {
+  try {
+    await supabase.from('notifications').insert({
+      user_id:    userId,
+      type,
+      title,
+      message,
+      link,
+      read:       false,
+      payload,
+    })
+  } catch(e) {
+    console.log('Notification insert error:', e)
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
@@ -59,7 +81,7 @@ export async function POST(req: NextRequest) {
 
       const { data: job } = await supabase
         .from('jobs')
-        .select('*, profiles!homeowner_id(full_name, email)')
+        .select('*, profiles!homeowner_id(id, full_name, email)')
         .eq('id', jobId)
         .single()
 
@@ -72,8 +94,20 @@ export async function POST(req: NextRequest) {
       }
 
       const homeownerEmail = (job.profiles as any).email
+      const homeownerId    = (job.profiles as any).id
       const homeownerName  = (job.profiles as any).full_name?.split(' ')[0] || 'there'
 
+      // In-app notification
+      await notify(
+        homeownerId,
+        `New bid on "${job.title}"`,
+        `${tradeName} bid R${Number(amount).toLocaleString()} · ETA ${eta || 'TBD'}`,
+        'new_bid',
+        '/home',
+        { jobId, amount, tradespersonId }
+      )
+
+      // Email
       await sendEmail(
         homeownerEmail,
         `New bid on your job — ${job.title}`,
@@ -97,7 +131,7 @@ export async function POST(req: NextRequest) {
 
     // ─── 2. BID ACCEPTED — notify tradesperson ──────────────────────
     if(type === 'bid_accepted') {
-      const { bidId, amount, jobTitle, tradespersonId } = body
+      const { bidId, amount, jobTitle, jobId, tradespersonId } = body
 
       const { data: trade } = await supabase
         .from('profiles')
@@ -107,6 +141,17 @@ export async function POST(req: NextRequest) {
 
       if(!trade?.email) return NextResponse.json({ error: 'No tradesperson email' })
 
+      // In-app notification
+      await notify(
+        tradespersonId,
+        `Bid accepted — ${jobTitle}`,
+        `Your bid of R${Number(amount).toLocaleString()} was accepted. Payment is in escrow.`,
+        'bid_accepted',
+        '/dashboard',
+        { bidId, amount, jobId }
+      )
+
+      // Email
       await sendEmail(
         trade.email,
         `Your bid was accepted — ${jobTitle}`,
@@ -128,15 +173,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true })
     }
 
-    // ─── 3. COUNTER RECEIVED — notify the other party ──────────────
+    // ─── 3. COUNTER OFFER — notify the other party ──────────────────
     if(type === 'counter_offer') {
-      const { bidId, counterAmount, counterBy, jobTitle, homeownerId, tradespersonId } = body
+      const { bidId, counterAmount, counterBy, jobTitle, jobId, homeownerId, tradespersonId } = body
 
       if(counterBy === 'homeowner') {
-        // Notify tradesperson
         const { data: trade } = await supabase.from('profiles').select('full_name, email').eq('id', tradespersonId).single()
         if(!trade?.email) return NextResponse.json({ error: 'No tradesperson email' })
 
+        // In-app notification
+        await notify(
+          tradespersonId,
+          `Counter-offer on "${jobTitle}"`,
+          `Homeowner offered R${Number(counterAmount).toLocaleString()}. Accept, decline or counter.`,
+          'counter_offer',
+          '/dashboard',
+          { bidId, counterAmount, jobId }
+        )
+
+        // Email
         await sendEmail(
           trade.email,
           `Counter-offer received — ${jobTitle}`,
@@ -152,11 +207,21 @@ export async function POST(req: NextRequest) {
           `
         )
       } else {
-        // Notify homeowner
         const { data: homeowner } = await supabase.from('profiles').select('full_name, email').eq('id', homeownerId).single()
-        const { data: trade } = await supabase.from('profiles').select('full_name').eq('id', tradespersonId).single()
+        const { data: trade }     = await supabase.from('profiles').select('full_name').eq('id', tradespersonId).single()
         if(!homeowner?.email) return NextResponse.json({ error: 'No homeowner email' })
 
+        // In-app notification
+        await notify(
+          homeownerId,
+          `Counter-offer on "${jobTitle}"`,
+          `${trade?.full_name||'Tradesperson'} offered R${Number(counterAmount).toLocaleString()}. Accept, decline or counter.`,
+          'counter_offer',
+          '/home',
+          { bidId, counterAmount, jobId }
+        )
+
+        // Email
         await sendEmail(
           homeowner.email,
           `${trade?.full_name||'Tradesperson'} counter-offered — ${jobTitle}`,
@@ -178,12 +243,30 @@ export async function POST(req: NextRequest) {
     if(type === 'payment_confirmed') {
       const { jobId, amount, homeownerId, tradespersonId } = body
 
-      const { data: job } = await supabase.from('jobs').select('title').eq('id', jobId).single()
+      const { data: job }      = await supabase.from('jobs').select('title').eq('id', jobId).single()
       const { data: homeowner } = await supabase.from('profiles').select('full_name, email').eq('id', homeownerId).single()
-      const { data: trade } = await supabase.from('profiles').select('full_name, email').eq('id', tradespersonId).single()
+      const { data: trade }     = await supabase.from('profiles').select('full_name, email').eq('id', tradespersonId).single()
 
-      const jobTitle = job?.title || 'Home repair job'
+      const jobTitle  = job?.title || 'Home repair job'
       const netAmount = Math.round(Number(amount) * 0.9)
+
+      // In-app notifications for both
+      if(homeownerId) await notify(
+        homeownerId,
+        `Payment confirmed — ${jobTitle}`,
+        `R${Number(amount).toLocaleString()} is held in escrow. Release payment when the job is done.`,
+        'payment_confirmed',
+        '/home',
+        { jobId, amount }
+      )
+      if(tradespersonId) await notify(
+        tradespersonId,
+        `Payment in escrow — ${jobTitle}`,
+        `R${netAmount.toLocaleString()} will be released to you on job completion.`,
+        'payment_confirmed',
+        '/dashboard',
+        { jobId, amount: netAmount }
+      )
 
       // Email homeowner
       if(homeowner?.email) {

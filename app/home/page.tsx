@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../lib/supabase'
+import NotificationBell from '../components/NotificationBell'
+
 
 type Tab = 'active' | 'history' | 'profile'
 
@@ -331,6 +333,7 @@ export default function HomeDashboard() {
     .main{flex:1;overflow-x:hidden;background:var(--cream)}
     .topbar{background:var(--white);border-bottom:1px solid var(--cream-d);padding:0 32px;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:40}
     .page-title{font-family:var(--fd);font-size:24px;letter-spacing:1.5px;color:var(--charcoal)}
+    .topbar-actions{display:flex;align-items:center;gap:14px}
     .post-btn{font-family:var(--fc);font-size:13px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;background:var(--terra);color:#fff;border:none;padding:10px 22px;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:8px;transition:background .15s}
     .post-btn:hover{background:var(--terra-l)}
     .content{padding:28px 32px}
@@ -464,10 +467,13 @@ export default function HomeDashboard() {
         <div className="main">
           <div className="topbar">
             <span className="page-title">{tab==='active'?'ACTIVE JOBS':tab==='history'?'JOB HISTORY':'MY PROFILE'}</span>
-            <button className="post-btn" onClick={()=>router.push('/post')}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Post a Job
-            </button>
+            <div className="topbar-actions">
+              <NotificationBell theme="light" />
+              <button className="post-btn" onClick={()=>router.push('/post')}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Post a Job
+              </button>
+            </div>
           </div>
 
           <div className="content">
