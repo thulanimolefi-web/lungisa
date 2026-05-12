@@ -63,7 +63,7 @@ export default function HomeDashboard() {
   const [selectedJob, setSelectedJob] = useState<JobData|null>(null)
   const [counterAmts, setCounterAmts] = useState<Record<string,string>>({})
   const [counterResp, setCounterResp] = useState<Record<string,string>>({})
-  const [acceptedBid, setAcceptedBid] = useState<Record<string,string>>({})
+  // paidJobs tracks payment confirmed THIS session (after Yoco callback)
   const [paidJobs, setPaidJobs]     = useState<Record<string,boolean>>({})
   const [reviewJob, setReviewJob]   = useState<string|null>(null)
   const [rating, setRating]         = useState(5)
@@ -113,7 +113,7 @@ export default function HomeDashboard() {
         .select(`
           *,
           bids(
-            id, amount, eta_label, note, status, created_at,
+            id, amount, counter_amount, counter_by, eta_label, note, status, created_at,
             profiles!tradesperson_id(
               full_name, avatar_url,
               tradesperson_profiles(trade_category, years_experience, rating_avg, jobs_completed)
@@ -137,23 +137,27 @@ export default function HomeDashboard() {
           status:   j.status,
           posted:   getTimeAgo(j.created_at),
           bids:     (j.bids||[]).map((b:any,bi:number)=>({
-            id:        b.id,
-            name:      b.profiles?.full_name||'Tradesperson',
-            init:      (b.profiles?.full_name||'T').split(' ').map((n:string)=>n[0]).join('').substring(0,2).toUpperCase(),
-            bg:        AVATAR_COLORS[(ji+bi)%AVATAR_COLORS.length],
-            trade:     `${(b.profiles?.tradesperson_profiles?.trade_category||'tradesperson').charAt(0).toUpperCase()+(b.profiles?.tradesperson_profiles?.trade_category||'tradesperson').slice(1)} · ${b.profiles?.tradesperson_profiles?.years_experience||0} yrs`,
-            rating:    '★★★★★',
-            ratingNum: String(b.profiles?.tradesperson_profiles?.rating_avg||'New'),
-            jobs:      b.profiles?.tradesperson_profiles?.jobs_completed||0,
-            price:     b.amount,
-            eta:       b.eta_label,
-            status:    b.status,
+            id:            b.id,
+            name:          b.profiles?.full_name||'Tradesperson',
+            init:          (b.profiles?.full_name||'T').split(' ').map((n:string)=>n[0]).join('').substring(0,2).toUpperCase(),
+            bg:            AVATAR_COLORS[(ji+bi)%AVATAR_COLORS.length],
+            trade:         `${(b.profiles?.tradesperson_profiles?.trade_category||'tradesperson').charAt(0).toUpperCase()+(b.profiles?.tradesperson_profiles?.trade_category||'tradesperson').slice(1)} · ${b.profiles?.tradesperson_profiles?.years_experience||0} yrs`,
+            rating:        '★★★★★',
+            ratingNum:     String(b.profiles?.tradesperson_profiles?.rating_avg||'New'),
+            jobs:          b.profiles?.tradesperson_profiles?.jobs_completed||0,
+            price:         b.amount,
+            eta:           b.eta_label,
+            status:        b.status,
             counterAmount: b.counter_amount||null,
             counterBy:     b.counter_by||null,
           }))
         }))
         setJobs(mapped)
-        if(mapped.length>0&&!selectedJob) setSelectedJob(mapped[0])
+        // Preserve selectedJob with fresh data
+        setSelectedJob(prev => {
+          if(!prev) return mapped.length > 0 ? mapped[0] : null
+          return mapped.find(j => j.id === prev.id) || mapped[0] || null
+        })
       }
     } catch(e){ console.log('Load jobs error:',e) }
     setLoading(false)
@@ -192,7 +196,7 @@ export default function HomeDashboard() {
     setTimeout(()=>setToasts(t=>t.filter(x=>x.id!==id)),4500)
   }
 
-  async function sendCounter(jobId:string, bidId:string, originalPrice:number){
+  async function sendCounter(jobId:string, bidId:string){
     const amt = counterAmts[bidId]
     if(!amt||parseInt(amt)<1) return
     setCounterResp(r=>({...r,[bidId]:'sending'}))
@@ -204,62 +208,38 @@ export default function HomeDashboard() {
         status:          'countered',
       }).eq('id', bidId)
       if(error){ console.log('Counter error:', error); setCounterResp(r=>({...r,[bidId]:'error'})); return }
+      // Only set local state to 'sent' — UI will update via Realtime when tradesperson responds
       setCounterResp(r=>({...r,[bidId]:'sent'}))
-      // Email tradesperson
-      const { data:{ session } } = await supabase.auth.getSession()
-      const bid = jobs.find(j=>j.id===jobId)?.bids.find(b=>b.id===bidId)
-      fetch('/api/send-email', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({
-          type:           'counter_offer',
-          bidId,
-          counterAmount:  parseInt(amt),
-          counterBy:      'homeowner',
-          jobTitle:       jobs.find(j=>j.id===jobId)?.title||'Job',
-          homeownerId:    session?.user?.id,
-          tradespersonId: bidId,
-        })
-      }).catch(e=>console.log('Email error:',e))
-      toast('Counter sent!',`Waiting for ${jobs.find(j=>j.id===jobId)?.bids.find(b=>b.id===bidId)?.name.split(' ')[0]} to respond`,'#E8A020')
+      const tradeName = jobs.find(j=>j.id===jobId)?.bids.find(b=>b.id===bidId)?.name.split(' ')[0]||'the tradesperson'
+      toast(`Counter sent to ${tradeName}!`,'Waiting for their response','#E8A020')
+      // Clear the input
+      setCounterAmts(a=>({...a,[bidId]:''}))
     } catch(e){
       console.log('Counter error:', e)
       setCounterResp(r=>({...r,[bidId]:'error'}))
     }
   }
 
-  async function acceptCounterFromTrade(jobId:string, bidId:string, amount:number, name:string){
+  // Homeowner explicitly accepts the tradesperson's counter-offer
+  async function acceptCounterFromTrade(jobId:string, bidId:string, amount:number){
     try {
       await supabase.from('bids').update({ status:'accepted', final_amount:amount }).eq('id', bidId)
       await supabase.from('bids').update({ status:'declined' }).eq('job_id', jobId).neq('id', bidId)
       await supabase.from('jobs').update({ status:'accepted' }).eq('id', jobId)
+      toast('Counter accepted!','Now pay to confirm the job','#3DAA6A')
+      loadRealJobs()
     } catch(e){ console.log('Accept counter error:', e) }
-    setAcceptedBid(a=>({...a,[jobId]:bidId}))
-    setJobs(j=>j.map(job=>job.id===jobId?{...job,status:'accepted'}:job))
-    toast('Counter accepted!',`R${amount} agreed with ${name.split(' ')[0]} · Pay to confirm`,'#3DAA6A')
   }
 
+  // Homeowner explicitly accepts the original bid price
   async function acceptBid(jobId:string, bidId:string, bidName:string){
     try {
       await supabase.from('bids').update({ status:'accepted' }).eq('id', bidId)
       await supabase.from('bids').update({ status:'declined' }).eq('job_id', jobId).neq('id', bidId)
       await supabase.from('jobs').update({ status:'accepted' }).eq('id', jobId)
-      // Email tradesperson
-      const { data:{ session } } = await supabase.auth.getSession()
-      const bid = jobs.find(j=>j.id===jobId)?.bids.find(b=>b.id===bidId)
-      fetch('/api/send-email', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({
-          type:            'bid_accepted',
-          bidId,
-          amount:          bid?.price||0,
-          jobTitle:        jobs.find(j=>j.id===jobId)?.title||'Job',
-          tradespersonId:  bidId,
-        })
-      }).catch(e=>console.log('Email error:',e))
+      toast('Bid accepted!',`${bidName.split(' ')[0]} is confirmed · Pay to lock in`,'#3DAA6A')
+      loadRealJobs()
     } catch(e){ console.log('Accept bid error:', e) }
-    setAcceptedBid(a=>({...a,[jobId]:bidId}))
-    setJobs(j=>j.map(job=>job.id===jobId?{...job,status:'accepted'}:job))
-    toast('Bid accepted!',`${bidName.split(' ')[0]} is on the way · Pay to confirm`,'#3DAA6A')
   }
 
   async function releasePayment(jobId:string, amount:number){
@@ -275,28 +255,21 @@ export default function HomeDashboard() {
         if(result.error){ toast('Payment failed',result.error.message,'#E24B4A'); return }
         try {
           await supabase.from('jobs').update({ status:'completed' }).eq('id', jobId)
-          const bidId = acceptedBid[jobId]
-          if(bidId) await supabase.from('bids').update({ status:'completed' }).eq('id', bidId)
-          // Email both parties
-          const { data:{ session } } = await supabase.auth.getSession()
+          // Mark the accepted bid as completed
           const job = jobs.find(j=>j.id===jobId)
-          const bid = job?.bids.find(b=>b.id===bidId)
+          const acceptedBid = job?.bids.find(b=>b.status==='accepted')
+          if(acceptedBid) await supabase.from('bids').update({ status:'completed' }).eq('id', acceptedBid.id)
+          const { data:{ session } } = await supabase.auth.getSession()
           fetch('/api/send-email', {
             method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({
-              type:            'payment_confirmed',
-              jobId,
-              amount,
-              homeownerId:     session?.user?.id,
-              tradespersonId:  bidId,
-            })
+            body: JSON.stringify({ type:'payment_confirmed', jobId, amount, homeownerId:session?.user?.id })
           }).catch(e=>console.log('Email error:',e))
         } catch(e){ console.log('Payment update error:', e) }
         setPaidJobs(p=>({...p,[jobId]:true}))
-        setJobs(j=>j.map(job=>job.id===jobId?{...job,status:'completed'}:job))
-        toast('Payment successful!','Job confirmed 🎉','#3DAA6A')
+        toast('Payment confirmed!','Job locked in 🎉','#3DAA6A')
         setReviewJob(jobId)
         loadHistoryJobs()
+        loadRealJobs()
       }
     })
   }
@@ -305,14 +278,13 @@ export default function HomeDashboard() {
     try {
       const { data:{ session } } = await supabase.auth.getSession()
       if(session?.user && reviewJob) {
-        const bidId = acceptedBid[reviewJob]
         const job = jobs.find(j=>j.id===reviewJob)
-        const bid = job?.bids.find(b=>b.id===bidId)
-        if(bid) {
+        const acceptedBid = job?.bids.find(b=>b.status==='accepted'||b.status==='completed')
+        if(acceptedBid) {
           await supabase.from('reviews').insert({
             job_id:      reviewJob,
             reviewer_id: session.user.id,
-            reviewee_id: bidId,
+            reviewee_id: acceptedBid.id,
             rating,
             comment:     reviewText||null,
           })
@@ -505,10 +477,10 @@ export default function HomeDashboard() {
               <>
                 <div className="stat-strip">
                   {[
-                    {eye:'Active jobs',   val:String(activeJobs.length),                              cls:'terra', delta:activeJobs.length>0?`${activeJobs.filter(j=>j.bids.length>0).length} receiving bids`:'Post your first job'},
-                    {eye:'Total bids',    val:String(allBids.length),                                 cls:'',      delta:allBids.length>0?'Across all your jobs':'No bids yet'},
-                    {eye:'Avg bid price', val:avgBidPrice>0?`R${avgBidPrice.toLocaleString()}`:'—',   cls:'green', delta:avgBidPrice>0?'Current average':'No bids yet'},
-                    {eye:'Jobs completed',val:String(historyJobs.length),                             cls:'',      delta:historyJobs.length>0?`R${totalSpent.toLocaleString()} total spent`:'Complete your first job'},
+                    {eye:'Active jobs',    val:String(activeJobs.length),                              cls:'terra', delta:activeJobs.length>0?`${activeJobs.filter(j=>j.bids.length>0).length} receiving bids`:'Post your first job'},
+                    {eye:'Total bids',     val:String(allBids.length),                                 cls:'',      delta:allBids.length>0?'Across all your jobs':'No bids yet'},
+                    {eye:'Avg bid price',  val:avgBidPrice>0?`R${avgBidPrice.toLocaleString()}`:'—',   cls:'green', delta:avgBidPrice>0?'Current average':'No bids yet'},
+                    {eye:'Jobs completed', val:String(historyJobs.length),                             cls:'',      delta:historyJobs.length>0?`R${totalSpent.toLocaleString()} total spent`:'Complete your first job'},
                   ].map(s=>(
                     <div key={s.eye} className="stat-card">
                       <div className="stat-eye">{s.eye}</div>
@@ -575,12 +547,23 @@ export default function HomeDashboard() {
                                   <span style={{width:14,height:2,background:'var(--terra)',display:'inline-block'}}/>
                                   {selectedJob.bids.length} bid{selectedJob.bids.length!==1?'s':''} received
                                 </div>
-                                {selectedJob.bids.map((bid,i)=>{
-                                  const isAccepted=acceptedBid[selectedJob.id]===bid.id
-                                  const isPaid=paidJobs[selectedJob.id]
-                                  const resp=counterResp[bid.id]
-                                  const isCounted = bid.status==='countered' && bid.counterBy==='homeowner'
-                                  const tradeCountered = bid.status==='countered' && bid.counterBy==='tradesperson'
+                                {selectedJob.bids.map((bid)=>{
+                                  // ── Drive ALL state from Supabase bid.status ──
+                                  // 'accepted'  = homeowner accepted (either directly or via counter chain)
+                                  // 'countered' + counterBy='homeowner' = waiting for tradesperson
+                                  // 'countered' + counterBy='tradesperson' = tradesperson countered back
+                                  // 'declined'  = bid declined, hide it
+                                  const isPaid            = paidJobs[selectedJob.id]
+                                  const isAccepted        = bid.status === 'accepted' || bid.status === 'completed'
+                                  const isDeclined        = bid.status === 'declined'
+                                  const homeownerCountered = bid.status === 'countered' && bid.counterBy === 'homeowner'
+                                  const tradeCountered    = bid.status === 'countered' && bid.counterBy === 'tradesperson'
+                                  const isOpen            = bid.status === 'pending' || bid.status === 'open' || (!isAccepted && !isDeclined && !homeownerCountered && !tradeCountered)
+
+                                  // Hide declined bids unless job has no accepted bid yet
+                                  const jobHasAccepted = selectedJob.bids.some(b => b.status === 'accepted' || b.status === 'completed')
+                                  if(isDeclined && jobHasAccepted) return null
+
                                   return (
                                     <div key={bid.id} className={`bid-card ${isAccepted?'accepted':''}`}>
                                       <div className="bc-top">
@@ -596,37 +579,53 @@ export default function HomeDashboard() {
                                         </div>
                                       </div>
 
-                                      {/* Tradesperson countered back */}
-                                      {tradeCountered&&!isAccepted&&!acceptedBid[selectedJob.id]&&(
-                                        <div style={{background:'rgba(232,160,32,.08)',border:'1px solid rgba(232,160,32,.2)',borderRadius:8,padding:'14px 16px',marginBottom:10}}>
+                                      {/* ── TRADESPERSON COUNTERED BACK → homeowner must respond ── */}
+                                      {tradeCountered&&!jobHasAccepted&&(
+                                        <div style={{background:'rgba(232,160,32,.08)',border:'1px solid rgba(232,160,32,.25)',borderRadius:8,padding:'14px 16px',marginBottom:10}}>
                                           <div style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'#E8A020',marginBottom:8}}>
-                                            💬 {bid.name.split(' ')[0]} counter-offered
+                                            💬 {bid.name.split(' ')[0]} countered back
                                           </div>
-                                          <div style={{fontFamily:'var(--fd)',fontSize:28,color:'var(--charcoal)',marginBottom:8}}>R{bid.counterAmount}</div>
-                                          <div style={{fontSize:13,color:'var(--charcoal-l)',marginBottom:12,lineHeight:1.5}}>{bid.counterAmount&&bid.counterAmount<bid.price?`R${bid.price - bid.counterAmount} less than original bid`:''}</div>
-                                          <div className="bc-actions">
-                                            <button className="btn btn-green" onClick={()=>acceptCounterFromTrade(selectedJob.id,bid.id,bid.counterAmount||bid.price,bid.name)}>
+                                          <div style={{fontFamily:'var(--fd)',fontSize:28,color:'var(--charcoal)',marginBottom:4}}>R{bid.counterAmount}</div>
+                                          {bid.counterAmount&&bid.counterAmount<bid.price&&(
+                                            <div style={{fontSize:13,color:'var(--charcoal-l)',marginBottom:12}}>R{bid.price - bid.counterAmount} less than original</div>
+                                          )}
+                                          <div className="bc-actions" style={{marginBottom:10}}>
+                                            <button className="btn btn-green" onClick={()=>acceptCounterFromTrade(selectedJob.id,bid.id,bid.counterAmount||bid.price)}>
                                               Accept R{bid.counterAmount}
                                             </button>
                                             <button className="btn btn-ghost" onClick={()=>acceptBid(selectedJob.id,bid.id,bid.name)}>
                                               Accept original R{bid.price}
                                             </button>
                                           </div>
-                                          <div style={{marginTop:8}}>
+                                          {/* Counter again option */}
+                                          <div style={{borderTop:'1px solid var(--cream-dd)',paddingTop:10,marginTop:4}}>
+                                            <div style={{fontSize:12,color:'var(--charcoal-l)',marginBottom:6}}>Or counter again:</div>
                                             <div className="counter-row">
                                               <div className="counter-r">R</div>
                                               <input className="counter-in" type="number"
-                                                placeholder="Your counter"
+                                                placeholder="Your amount"
                                                 value={counterAmts[bid.id]||''}
                                                 onChange={e=>setCounterAmts(a=>({...a,[bid.id]:e.target.value}))}/>
                                             </div>
-                                            <button className="btn btn-terra" onClick={()=>sendCounter(selectedJob.id,bid.id,bid.price)}>Counter again</button>
+                                            <button className="btn btn-terra" style={{marginTop:4}} onClick={()=>sendCounter(selectedJob.id,bid.id)}>Send counter</button>
                                           </div>
                                         </div>
                                       )}
 
-                                      {/* Normal bid — no counter yet */}
-                                      {!isAccepted&&!acceptedBid[selectedJob.id]&&!isCounted&&!tradeCountered&&(
+                                      {/* ── HOMEOWNER COUNTERED → waiting for tradesperson ── */}
+                                      {homeownerCountered&&(
+                                        <div style={{background:'rgba(232,160,32,.06)',border:'1px solid rgba(232,160,32,.15)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'var(--charcoal-l)',lineHeight:1.5}}>
+                                          ⏳ Counter of <strong style={{color:'var(--charcoal)'}}>R{bid.counterAmount}</strong> sent to {bid.name.split(' ')[0]}. Waiting for their response...
+                                          <div style={{marginTop:8}}>
+                                            <button className="btn btn-ghost" style={{fontSize:11,padding:'6px 12px'}} onClick={()=>acceptBid(selectedJob.id,bid.id,bid.name)}>
+                                              Accept original R{bid.price} instead
+                                            </button>
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* ── OPEN BID → homeowner can counter or accept ── */}
+                                      {isOpen&&!jobHasAccepted&&(
                                         <>
                                           <div className="counter-row">
                                             <div className="counter-r">R</div>
@@ -636,43 +635,37 @@ export default function HomeDashboard() {
                                               onChange={e=>setCounterAmts(a=>({...a,[bid.id]:e.target.value}))}/>
                                           </div>
                                           <div className="bc-actions">
-                                            <button className="btn btn-terra" onClick={()=>sendCounter(selectedJob.id,bid.id,bid.price)}>Counter-offer</button>
-                                            <button className="btn btn-ghost" onClick={()=>acceptBid(selectedJob.id,bid.id,bid.name)}>Accept R{bid.price}</button>
+                                            <button className="btn btn-terra" onClick={()=>sendCounter(selectedJob.id,bid.id)}>
+                                              Send counter-offer
+                                            </button>
+                                            <button className="btn btn-ghost" onClick={()=>acceptBid(selectedJob.id,bid.id,bid.name)}>
+                                              Accept R{bid.price}
+                                            </button>
                                           </div>
-                                          {resp==='sending'&&<div style={{color:'var(--charcoal-l)',fontSize:13,marginTop:8}}>Sending counter...</div>}
-                                          {resp==='sent'&&<div className="counter-resp resp-ok">✓ Counter sent to {bid.name.split(' ')[0]}. Waiting for response...</div>}
-                                          {resp==='error'&&<div className="counter-resp resp-no">✗ Failed to send. Please try again.</div>}
+                                          {counterResp[bid.id]==='sending'&&<div style={{color:'var(--charcoal-l)',fontSize:13,marginTop:8}}>Sending...</div>}
+                                          {counterResp[bid.id]==='error'&&<div className="counter-resp resp-no">✗ Failed to send. Please try again.</div>}
                                         </>
                                       )}
 
-                                      {/* Counter sent — waiting */}
-                                      {isCounted&&!isAccepted&&(
-                                        <div style={{background:'rgba(232,160,32,.06)',border:'1px solid rgba(232,160,32,.15)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'var(--charcoal-l)',lineHeight:1.5}}>
-                                          ⏳ Counter of <strong style={{color:'var(--charcoal)'}}>R{bid.counterAmount}</strong> sent to {bid.name.split(' ')[0]}. Waiting for response...
-                                          <div style={{marginTop:8}}>
-                                            <button className="btn btn-ghost" style={{fontSize:11,padding:'6px 12px'}} onClick={()=>acceptBid(selectedJob.id,bid.id,bid.name)}>
-                                              Accept original R{bid.price} instead
-                                            </button>
-                                          </div>
-                                        </div>
-                                      )}
-
+                                      {/* ── BID ACCEPTED → show payment UI ── */}
                                       {isAccepted&&!isPaid&&(
                                         <>
-                                          <div style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'var(--green)',marginBottom:10}}>✓ Bid accepted</div>
-                                          <div className="escrow-note">🔒 Your payment will be held in escrow. <strong>{bid.name.split(' ')[0]}</strong> only gets paid when you confirm the job is complete.</div>
+                                          <div style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'var(--green)',marginBottom:10}}>✓ Bid accepted — pay to confirm</div>
+                                          <div className="escrow-note">🔒 Your payment is held in escrow. <strong>{bid.name.split(' ')[0]}</strong> only gets paid once you confirm the job is done.</div>
                                           <div className="pay-grid">
-                                            <div className="pay-btn" onClick={()=>releasePayment(selectedJob.id, bid.price)}>
+                                            <div className="pay-btn" onClick={()=>releasePayment(selectedJob.id,bid.price)}>
                                               <div className="pay-lbl">Pay by card</div>
                                               <div className="pay-sub">Visa · Mastercard</div>
                                             </div>
-                                            <div className="pay-btn" onClick={()=>releasePayment(selectedJob.id, bid.price)}>
+                                            <div className="pay-btn" onClick={()=>releasePayment(selectedJob.id,bid.price)}>
                                               <div className="pay-lbl">Pay by EFT</div>
                                               <div className="pay-sub">Instant via Ozow</div>
                                             </div>
                                           </div>
                                         </>
                                       )}
+
+                                      {/* ── PAID → confirm complete ── */}
                                       {isAccepted&&isPaid&&(
                                         <div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'14px 16px',fontSize:13,color:'#1a6e35',lineHeight:1.5}}>
                                           ✓ Payment held in escrow. <strong>{bid.name.split(' ')[0]}</strong> is on the way.
@@ -706,9 +699,9 @@ export default function HomeDashboard() {
                 {historyJobs.length>0&&(
                   <div style={{background:'var(--white)',borderRadius:10,border:'1px solid var(--cream-d)',padding:'20px 24px',marginBottom:20,display:'flex',gap:32}}>
                     {[
-                      {label:'Total spent',     val:`R${totalSpent.toLocaleString()}`},
-                      {label:'Jobs completed',  val:String(historyJobs.length)},
-                      {label:'Avg job value',   val:historyJobs.length>0?`R${Math.round(totalSpent/historyJobs.length).toLocaleString()}`:'—'},
+                      {label:'Total spent',    val:`R${totalSpent.toLocaleString()}`},
+                      {label:'Jobs completed', val:String(historyJobs.length)},
+                      {label:'Avg job value',  val:historyJobs.length>0?`R${Math.round(totalSpent/historyJobs.length).toLocaleString()}`:'—'},
                     ].map(s=>(
                       <div key={s.label}>
                         <div style={{fontFamily:'var(--fc)',fontSize:9,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'var(--charcoal-l)',marginBottom:6}}>{s.label}</div>
