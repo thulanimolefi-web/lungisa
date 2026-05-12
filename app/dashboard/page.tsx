@@ -40,8 +40,6 @@ export default function Dashboard() {
   const [myBids, setMyBids]       = useState<Bid[]>([])
   const [filter, setFilter]       = useState('all')
   const [toasts, setToasts]       = useState<{id:number,title:string,sub:string,alert:boolean}[]>([])
-  const [counterVal, setCounterVal] = useState(0)
-  const [showCounter, setShowCounter] = useState(false)
   const [profile, setProfile]     = useState<any>(null)
   const [loading, setLoading]     = useState(true)
   const [earnings, setEarnings]   = useState({thisWeek:0,totalJobs:0,avgJobValue:0,inEscrow:0})
@@ -206,7 +204,7 @@ export default function Dashboard() {
     setTimeout(()=>setToasts(t=>t.filter(x=>x.id!==id)),4500)
   }
 
-  function openModal(job:Job){ setModalJob(job); setBidPrice(''); setBidNote(''); setBidEta('30 mins'); setShowCounter(false) }
+  function openModal(job:Job){ setModalJob(job); setBidPrice(''); setBidNote(''); setBidEta('30 mins') }
 
   async function acceptCounter(bidId:string, amount:number, jobTitle:string){
     // Tradesperson accepts homeowner's counter
@@ -298,8 +296,6 @@ export default function Dashboard() {
     setModalJob(null)
     loadMyBids()
   }
-
-  function acceptCounter(){ toast('Job confirmed!',`R${counterVal} locked in. Payment in escrow.`,false); setShowCounter(false); setModalJob(null) }
 
   const visibleJobs=jobs.filter(j=>{
     if(filter==='urgent') return j.urgency==='today'||j.urgency==='emergency'
