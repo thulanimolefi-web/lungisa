@@ -10,7 +10,7 @@ type Bid = {
   job: string
   loc: string
   price: number
-  status: string   // raw lowercase from Supabase e.g. 'pending','countered','accepted','declined','completed'
+  status: string
   time: string
   counterAmount: number|null
   counterBy: string|null
@@ -28,7 +28,7 @@ function getCatEmoji(cat:string){const m:Record<string,string>={plumbing:'🔧',
 function getUrgencyLabel(u:string){const m:Record<string,string>={emergency:'Today — emergency',within_3_days:'Within 3 days',this_week:'This week',flexible:'Flexible'};return m[u]||'Flexible'}
 function getUrgencyColor(u:string){const m:Record<string,string>={emergency:'#E24B4A',within_3_days:'#E8A020',this_week:'#3DAA6A',flexible:'#D4C9B4'};return m[u]||'#D4C9B4'}
 function getTimeAgo(d:string){const diff=Date.now()-new Date(d).getTime();const mins=Math.floor(diff/60000);if(mins<60)return`${mins} min ago`;const hrs=Math.floor(mins/60);if(hrs<24)return`${hrs} hr${hrs>1?'s':''} ago`;return`${Math.floor(hrs/24)} day${Math.floor(hrs/24)>1?'s':''} ago`}
-function getJobTags(j:any){const t=[];if(j.urgency==='emergency')t.push({label:'Urgent',color:'rgba(226,75,74,.12)',text:'#f08080'});if((j.photo_count||0)>0)t.push({label:`${j.photo_count} Photo${j.photo_count>1?'s':''}`,color:'rgba(46,127,212,.1)',text:'#6aaee8'});if((j.bid_count||0)>0)t.push({label:`${j.bid_count} bids placed`,color:'rgba(255,255,255,.06)',text:'rgba(245,240,232,.45)'});if((j.bid_count||0)===0)t.push({label:'New',color:'rgba(196,89,58,.15)',text:'var(--terra-l)'});return t}
+function getJobTags(j:any){const t=[];if(j.urgency==='emergency')t.push({label:'Urgent',color:'rgba(226,75,74,.12)',text:'#f08080'});if((j.photo_count||0)>0)t.push({label:`${j.photo_count} Photo${j.photo_count>1?'s':''}`,color:'rgba(46,127,212,.1)',text:'#6aaee8'});if((j.bid_count||0)>0)t.push({label:`${j.bid_count} bids placed`,color:'rgba(255,255,255,.06)',text:'rgba(245,240,232,.45)'});if((j.bid_count||0)===0)t.push({label:'New',color:'rgba(196,89,58,.15)',text:'#E07A5F'});return t}
 
 export default function Dashboard() {
   const [view, setView]           = useState<View>('feed')
@@ -150,7 +150,6 @@ export default function Dashboard() {
           job:           b.jobs?.title||'Job',
           loc:           b.jobs?.area||'JHB',
           price:         b.amount,
-          // ── Keep status raw/lowercase — all comparisons use lowercase ──
           status:        (b.status||'pending').toLowerCase(),
           time:          getTimeAgo(b.created_at),
           counterAmount: b.counter_amount||null,
@@ -189,39 +188,28 @@ export default function Dashboard() {
 
   function openModal(job:Job){ setModalJob(job); setBidPrice(''); setBidNote(''); setBidEta('30 mins') }
 
-  // ── Tradesperson accepts homeowner's counter ──
   async function acceptCounter(bid:Bid){
-    const amount = bid.counterAmount!
+    const amount=bid.counterAmount!
     try{
-      // 1. Mark this bid accepted with final amount
-      await supabase.from('bids').update({
-        status:       'accepted',
-        final_amount: amount,
-      }).eq('id', bid.id)
-      // 2. Decline all other bids on the same job
-      await supabase.from('bids').update({ status:'declined' })
-        .eq('job_id', bid.jobId)
-        .neq('id', bid.id)
-      // 3. Update job status so homeowner sees accepted state
-      await supabase.from('jobs').update({ status:'accepted' }).eq('id', bid.jobId)
+      await supabase.from('bids').update({ status:'accepted', final_amount:amount }).eq('id',bid.id)
+      await supabase.from('bids').update({ status:'declined' }).eq('job_id',bid.jobId).neq('id',bid.id)
+      await supabase.from('jobs').update({ status:'accepted' }).eq('id',bid.jobId)
       toast('Counter accepted!',`R${amount} agreed · Homeowner will pay to confirm`,false)
       loadMyBids()
-    }catch(e){ console.log('Accept counter error:', e) }
+    }catch(e){ console.log('Accept counter error:',e) }
   }
 
-  // ── Tradesperson declines the counter ──
   async function declineCounter(bid:Bid){
     try{
-      await supabase.from('bids').update({ status:'declined' }).eq('id', bid.id)
+      await supabase.from('bids').update({ status:'declined' }).eq('id',bid.id)
       toast('Counter declined','Homeowner has been notified',false)
       loadMyBids()
-    }catch(e){ console.log('Decline counter error:', e) }
+    }catch(e){ console.log('Decline counter error:',e) }
   }
 
-  // ── Tradesperson counters back ──
   async function sendBackCounter(bid:Bid){
-    const raw = counterInputs[bid.id]
-    const amount = parseInt(raw||'0')
+    const raw=counterInputs[bid.id]
+    const amount=parseInt(raw||'0')
     if(!amount||amount<1) return
     try{
       await supabase.from('bids').update({
@@ -229,15 +217,15 @@ export default function Dashboard() {
         counter_by:      'tradesperson',
         counter_message: `Tradesperson counter-offered R${amount}`,
         status:          'countered',
-      }).eq('id', bid.id)
-      // Email homeowner
+      }).eq('id',bid.id)
       const {data:{session}}=await supabase.auth.getSession()
       const {data:jobData}=await supabase.from('jobs').select('homeowner_id').eq('id',bid.jobId).single()
       fetch('/api/send-email',{
         method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({
-          type:'counter_offer', bidId:bid.id, counterAmount:amount,
-          counterBy:'tradesperson', jobTitle:bid.job,
+          type:'counter_offer',bidId:bid.id,counterAmount:amount,
+          counterBy:'tradesperson',jobTitle:bid.job,
+          jobId:bid.jobId,
           homeownerId:(jobData as any)?.homeowner_id,
           tradespersonId:session?.user?.id,
         })
@@ -245,7 +233,7 @@ export default function Dashboard() {
       setCounterInputs(c=>({...c,[bid.id]:''}))
       toast('Counter sent!',`R${amount} sent to homeowner`,false)
       loadMyBids()
-    }catch(e){ console.log('Counter back error:', e) }
+    }catch(e){ console.log('Counter back error:',e) }
   }
 
   async function submitBid(){
@@ -263,7 +251,7 @@ export default function Dashboard() {
           status:          'pending',
         })
         if(error){ toast('Error submitting bid',error.message,false); return }
-        await supabase.from('jobs').update({ status:'bidding' }).eq('id', modalJob.id)
+        await supabase.from('jobs').update({ status:'bidding' }).eq('id',modalJob.id)
         fetch('/api/send-email',{
           method:'POST',headers:{'Content-Type':'application/json'},
           body:JSON.stringify({jobId:modalJob.id,amount:price,eta:bidEta,tradespersonId:session.user.id})
@@ -282,14 +270,14 @@ export default function Dashboard() {
     return true
   })
 
-  const countersPending = myBids.filter(b=>b.status==='countered'&&b.counterBy==='homeowner')
+  const countersPending=myBids.filter(b=>b.status==='countered'&&b.counterBy==='homeowner')
 
   const displayName=profile?.full_name||'—'
   const displayTrade=profile?.tradesperson_profiles?.trade_category
-    ? profile.tradesperson_profiles.trade_category.charAt(0).toUpperCase()+profile.tradesperson_profiles.trade_category.slice(1)
-    : 'Tradesperson'
+    ?profile.tradesperson_profiles.trade_category.charAt(0).toUpperCase()+profile.tradesperson_profiles.trade_category.slice(1)
+    :'Tradesperson'
   const displayInitials=displayName.split(' ').map((n:string)=>n[0]).join('').substring(0,2).toUpperCase()||'?'
-  const displayRating=profile?.tradesperson_profiles?.rating_avg>0?`★ ${profile.tradesperson_profiles.rating_avg}`:' New'
+  const displayRating=profile?.tradesperson_profiles?.rating_avg>0?`★ ${profile.tradesperson_profiles.rating_avg}`:'New'
   const displayJobs=profile?.tradesperson_profiles?.jobs_completed||0
 
   const S={
@@ -307,7 +295,7 @@ export default function Dashboard() {
     snSection:{fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:600,letterSpacing:2.5,textTransform:'uppercase' as const,color:'rgba(245,240,232,.2)',padding:'12px 20px 4px'},
     onlineToggle:(on:boolean)=>({display:'flex',alignItems:'center',justifyContent:'space-between',background:on?'rgba(61,170,106,.08)':'rgba(255,255,255,.04)',border:`1px solid ${on?'rgba(61,170,106,.2)':'rgba(255,255,255,.1)'}`,borderRadius:8,padding:'10px 12px',cursor:'pointer'}),
     onlineLabel:(on:boolean)=>({fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:600,letterSpacing:.5,color:on?'rgba(61,170,106,.9)':'rgba(245,240,232,.3)'}),
-    topbar:{background:'#111110',borderBottom:'1px solid rgba(255,255,255,.05)',padding:'0 28px',height:58,display:'flex',alignItems:'center',justifyContent:'space-between',position:'sticky' as const,top:0,zIndex:300,overflow:'visible'},
+    topbar:{background:'#111110',borderBottom:'1px solid rgba(255,255,255,.05)',padding:'0 28px',height:58,display:'flex',alignItems:'center',justifyContent:'space-between',position:'sticky' as const,top:0,zIndex:40},
     pageTitle:{fontFamily:"'Bebas Neue',sans-serif",fontSize:24,letterSpacing:1.5,color:'#F5F0E8'},
     content:{padding:'24px 28px'},
     statStrip:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,marginBottom:24},
@@ -339,10 +327,10 @@ export default function Dashboard() {
 
   const viewTitles:Record<View,string>={feed:'JOB FEED',bids:'MY BIDS',earnings:'EARNINGS',profile:'MY PROFILE'}
   const navItems=[
-    {view:'feed'     as View, icon:'🏠', label:'Job Feed',  badge:jobs.filter(j=>!j.submitted).length},
-    {view:'bids'     as View, icon:'💸', label:'My Bids',   badge:countersPending.length>0?countersPending.length:myBids.length},
-    {view:'earnings' as View, icon:'📈', label:'Earnings'},
-    {view:'profile'  as View, icon:'👤', label:'My Profile'},
+    {view:'feed'     as View,icon:'🏠',label:'Job Feed',  badge:jobs.filter(j=>!j.submitted).length},
+    {view:'bids'     as View,icon:'💸',label:'My Bids',   badge:countersPending.length>0?countersPending.length:myBids.length},
+    {view:'earnings' as View,icon:'📈',label:'Earnings'},
+    {view:'profile'  as View,icon:'👤',label:'My Profile'},
   ]
 
   return (
@@ -363,6 +351,7 @@ export default function Dashboard() {
       `}</style>
 
       <div style={S.shell}>
+        {/* SIDEBAR */}
         <nav style={S.sidenav} className="sidenav">
           <div style={S.snLogo}>
             <div style={S.snHex}>
@@ -402,12 +391,12 @@ export default function Dashboard() {
           </div>
         </nav>
 
+        {/* MAIN */}
         <div style={{flex:1,overflowX:'hidden'}}>
           <div style={S.topbar}>
             <span style={S.pageTitle}>{viewTitles[view]}</span>
-            <div style={{position:'relative',zIndex:350,display:'flex',alignItems:'center',justifyContent:'center',overflow:'visible'}}>
-              <NotificationBell theme="dark" />
-            </div>
+            {/* ── Live notification bell ── */}
+            <NotificationBell theme="dark" />
           </div>
 
           {/* JOB FEED */}
@@ -415,10 +404,10 @@ export default function Dashboard() {
             <div style={S.content}>
               <div style={{...S.statStrip}} className="stat-strip">
                 {[
-                  {label:'This week',   val:earnings.thisWeek>0?`R${earnings.thisWeek.toLocaleString()}`:'R0',          color:'#52C47F', delta:earnings.thisWeek>0?'Earned this week':'Complete your first job'},
-                  {label:'Bids placed', val:String(myBids.length),                                                       color:'#E07A5F', delta:myBids.length>0?`${myBids.filter(b=>b.status==='accepted').length} accepted`:'Start bidding on jobs'},
-                  {label:'Win rate',    val:myBids.length>0?`${Math.round((myBids.filter(b=>b.status==='accepted').length/myBids.length)*100)}%`:'—', color:'#E8A020', delta:myBids.length>0?'Acceptance rate':'No bids yet'},
-                  {label:'Rating',      val:profile?.tradesperson_profiles?.rating_avg>0?String(profile.tradesperson_profiles.rating_avg):'New', color:'#F5F0E8', delta:profile?.tradesperson_profiles?.rating_count>0?`${profile.tradesperson_profiles.rating_count} reviews`:'No reviews yet'},
+                  {label:'This week',   val:earnings.thisWeek>0?`R${earnings.thisWeek.toLocaleString()}`:'R0',          color:'#52C47F',delta:earnings.thisWeek>0?'Earned this week':'Complete your first job'},
+                  {label:'Bids placed', val:String(myBids.length),                                                       color:'#E07A5F',delta:myBids.length>0?`${myBids.filter(b=>b.status==='accepted').length} accepted`:'Start bidding on jobs'},
+                  {label:'Win rate',    val:myBids.length>0?`${Math.round((myBids.filter(b=>b.status==='accepted').length/myBids.length)*100)}%`:'—',color:'#E8A020',delta:myBids.length>0?'Acceptance rate':'No bids yet'},
+                  {label:'Rating',      val:profile?.tradesperson_profiles?.rating_avg>0?String(profile.tradesperson_profiles.rating_avg):'New',color:'#F5F0E8',delta:profile?.tradesperson_profiles?.rating_count>0?`${profile.tradesperson_profiles.rating_count} reviews`:'No reviews yet'},
                 ].map(s=>(
                   <div key={s.label} style={S.statCard}>
                     <div style={S.statEye}>{s.label}</div>
@@ -484,8 +473,6 @@ export default function Dashboard() {
           {/* MY BIDS */}
           {view==='bids'&&(
             <div style={S.content}>
-
-              {/* Action required banner */}
               {countersPending.length>0&&(
                 <div style={{background:'rgba(232,160,32,.1)',border:'1px solid rgba(232,160,32,.3)',borderRadius:8,padding:'12px 16px',marginBottom:16,display:'flex',alignItems:'center',gap:10,fontSize:13,color:'#E8A020'}}>
                   <span style={{fontSize:18}}>⚡</span>
@@ -501,23 +488,18 @@ export default function Dashboard() {
                   <button style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:13,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:'#C4593A',color:'#fff',border:'none',padding:'10px 24px',borderRadius:6,cursor:'pointer'}} onClick={()=>setView('feed')}>Browse jobs →</button>
                 </div>
               ):myBids.map((b)=>{
-                // ── All comparisons use lowercase status from DB ──
-                const homeownerCountered = b.status==='countered' && b.counterBy==='homeowner'
-                const iSentCounter       = b.status==='countered' && b.counterBy==='tradesperson'
-                const isAccepted         = b.status==='accepted'
-                const isDeclined         = b.status==='declined'
-                const isCompleted        = b.status==='completed'
+                const homeownerCountered=b.status==='countered'&&b.counterBy==='homeowner'
+                const iSentCounter      =b.status==='countered'&&b.counterBy==='tradesperson'
+                const isAccepted        =b.status==='accepted'
+                const isDeclined        =b.status==='declined'
+                const isCompleted       =b.status==='completed'
 
                 return (
                   <div key={b.id} style={{
-                    background:'#222220',
-                    borderRadius:10,
+                    background:'#222220',borderRadius:10,
                     border:`1px solid ${homeownerCountered?'rgba(232,160,32,.4)':isAccepted?'rgba(61,170,106,.25)':isDeclined?'rgba(226,75,74,.2)':'rgba(255,255,255,.06)'}`,
-                    padding:'16px 20px',
-                    marginBottom:12,
+                    padding:'16px 20px',marginBottom:12,
                   }}>
-
-                    {/* Bid header */}
                     <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:homeownerCountered||iSentCounter||isAccepted||isDeclined||isCompleted?12:0}}>
                       <div style={{flex:1}}>
                         <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:15,fontWeight:700,color:'#F5F0E8',marginBottom:2}}>{b.job}</div>
@@ -532,17 +514,13 @@ export default function Dashboard() {
                       </div>
                     </div>
 
-                    {/* ── HOMEOWNER COUNTER → tradesperson must respond ── */}
                     {homeownerCountered&&(
                       <div style={{background:'rgba(232,160,32,.06)',border:'1px solid rgba(232,160,32,.2)',borderRadius:8,padding:'14px 16px'}}>
-                        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'#E8A020',marginBottom:6}}>
-                          Homeowner counter-offered
-                        </div>
+                        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'#E8A020',marginBottom:6}}>Homeowner counter-offered</div>
                         <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:12}}>
                           <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:32,color:'#F5F0E8'}}>R{b.counterAmount}</div>
                           <div style={{fontSize:12,color:'rgba(245,240,232,.4)'}}>vs your bid of R{b.price}</div>
                         </div>
-                        {/* Accept / Decline */}
                         <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:12}}>
                           <button onClick={()=>acceptCounter(b)}
                             style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:'#3DAA6A',color:'#fff',border:'none',padding:'10px 18px',borderRadius:6,cursor:'pointer',flex:1}}>
@@ -553,10 +531,9 @@ export default function Dashboard() {
                             ✗ Decline
                           </button>
                         </div>
-                        {/* Counter back */}
                         <div style={{borderTop:'1px solid rgba(255,255,255,.06)',paddingTop:12}}>
                           <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(245,240,232,.35)',marginBottom:8}}>Or counter back:</div>
-                          <div style={{display:'flex',gap:0,alignItems:'stretch'}}>
+                          <div style={{display:'flex',alignItems:'stretch'}}>
                             <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:'rgba(245,240,232,.3)',background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',borderRadius:'6px 0 0 6px',padding:'10px 14px',flexShrink:0,borderRight:'none',display:'flex',alignItems:'center'}}>R</div>
                             <input type="number"
                               placeholder={b.counterAmount?String(Math.round((b.price+b.counterAmount)/2)):String(Math.round(b.price*0.95))}
@@ -572,34 +549,29 @@ export default function Dashboard() {
                       </div>
                     )}
 
-                    {/* ── I SENT A COUNTER → waiting for homeowner ── */}
                     {iSentCounter&&(
                       <div style={{background:'rgba(196,89,58,.06)',border:'1px solid rgba(196,89,58,.15)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(245,240,232,.6)',lineHeight:1.5}}>
                         ⏳ Counter of <strong style={{color:'#F5F0E8'}}>R{b.counterAmount}</strong> sent. Waiting for homeowner to respond...
                       </div>
                     )}
 
-                    {/* ── ACCEPTED → waiting for payment ── */}
                     {isAccepted&&(
                       <div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(61,170,106,.9)',lineHeight:1.5}}>
                         ✓ Bid accepted! Homeowner is confirming payment. Complete the job and you&apos;ll get paid.
                       </div>
                     )}
 
-                    {/* ── DECLINED ── */}
                     {isDeclined&&(
                       <div style={{background:'rgba(226,75,74,.06)',border:'1px solid rgba(226,75,74,.15)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(226,75,74,.7)',lineHeight:1.5}}>
                         ✗ Not accepted this time. Keep bidding on new jobs.
                       </div>
                     )}
 
-                    {/* ── COMPLETED ── */}
                     {isCompleted&&(
                       <div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(61,170,106,.9)',lineHeight:1.5}}>
                         ✓ Job completed · Payment released · R{b.price} earned
                       </div>
                     )}
-
                   </div>
                 )
               })}
@@ -624,10 +596,10 @@ export default function Dashboard() {
                   </div>
                   <div style={{...S.statStrip}} className="stat-strip">
                     {[
-                      {label:'Jobs done',     val:String(earnings.totalJobs),                                               color:'#52C47F'},
-                      {label:'Avg job value', val:earnings.avgJobValue>0?`R${earnings.avgJobValue.toLocaleString()}`:'—',   color:'#E07A5F'},
-                      {label:'In escrow',     val:earnings.inEscrow>0?`R${earnings.inEscrow.toLocaleString()}`:'R0',        color:'#E8A020'},
-                      {label:'Rating',        val:profile?.tradesperson_profiles?.rating_avg>0?String(profile.tradesperson_profiles.rating_avg):'New', color:'#F5F0E8'},
+                      {label:'Jobs done',     val:String(earnings.totalJobs),                                             color:'#52C47F'},
+                      {label:'Avg job value', val:earnings.avgJobValue>0?`R${earnings.avgJobValue.toLocaleString()}`:'—', color:'#E07A5F'},
+                      {label:'In escrow',     val:earnings.inEscrow>0?`R${earnings.inEscrow.toLocaleString()}`:'R0',      color:'#E8A020'},
+                      {label:'Rating',        val:profile?.tradesperson_profiles?.rating_avg>0?String(profile.tradesperson_profiles.rating_avg):'New',color:'#F5F0E8'},
                     ].map(s=>(
                       <div key={s.label} style={S.statCard}>
                         <div style={S.statEye}>{s.label}</div>
@@ -673,7 +645,7 @@ export default function Dashboard() {
 
       {/* BID MODAL */}
       {modalJob&&(
-        <div style={S.overlay} onClick={e=>{ if(e.target===e.currentTarget) setModalJob(null) }}>
+        <div style={S.overlay} onClick={e=>{if(e.target===e.currentTarget)setModalJob(null)}}>
           <div style={S.modal}>
             <div style={S.mHeader}>
               <div>
