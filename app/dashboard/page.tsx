@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import NotificationBell from '../components/NotificationBell'
+import VerificationBadge from '../components/VerificationBadge'
 
 type View = 'feed' | 'bids' | 'earnings' | 'profile'
 type Bid = {
@@ -75,7 +76,7 @@ export default function Dashboard() {
       if(session?.user){
         const {data}=await supabase
           .from('profiles')
-          .select(`*, tradesperson_profiles(trade_category,service_areas,years_experience,rating_avg,rating_count,jobs_completed)`)
+          .select(`*, tradesperson_profiles(trade_category,service_areas,years_experience,rating_avg,rating_count,jobs_completed,id_verified,verification_status)`)
           .eq('id',session.user.id)
           .single()
         if(data) setProfile(data)
@@ -279,6 +280,7 @@ export default function Dashboard() {
   const displayInitials=displayName.split(' ').map((n:string)=>n[0]).join('').substring(0,2).toUpperCase()||'?'
   const displayRating=profile?.tradesperson_profiles?.rating_avg>0?`★ ${profile.tradesperson_profiles.rating_avg}`:'New'
   const displayJobs=profile?.tradesperson_profiles?.jobs_completed||0
+  const isVerified=profile?.tradesperson_profiles?.id_verified===true
 
   const S={
     shell:{display:'flex',minHeight:'100vh',fontFamily:"'Barlow',sans-serif",background:'#1A1A16'},
@@ -362,11 +364,23 @@ export default function Dashboard() {
             <a href="/" style={S.snWord}>LUNGISA</a>
           </div>
           <div style={S.snProfile}>
-            <div style={S.snAvatar}>{displayInitials}</div>
-            <div>
+            <div style={{position:'relative',flexShrink:0}}>
+              <div style={S.snAvatar}>{displayInitials}</div>
+              {/* Verified dot on avatar */}
+              {isVerified&&(
+                <div style={{position:'absolute',bottom:-2,right:-2,width:14,height:14,borderRadius:'50%',background:'#3DAA6A',border:'2px solid #111110',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                  <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                </div>
+              )}
+            </div>
+            <div style={{flex:1,minWidth:0}}>
               <div style={S.snName}>{displayName}</div>
               <div style={S.snTrade}>{displayTrade}</div>
               <div style={S.snRating}>{displayRating} · {displayJobs} jobs</div>
+              {/* Compact verification badge in sidebar */}
+              <div style={{marginTop:5}}>
+                <VerificationBadge variant="compact" />
+              </div>
             </div>
           </div>
           <div style={{flex:1,padding:'10px 0'}}>
@@ -395,7 +409,6 @@ export default function Dashboard() {
         <div style={{flex:1,overflowX:'hidden'}}>
           <div style={S.topbar}>
             <span style={S.pageTitle}>{viewTitles[view]}</span>
-            {/* ── Live notification bell ── */}
             <NotificationBell theme="dark" />
           </div>
 
@@ -615,11 +628,32 @@ export default function Dashboard() {
           {/* PROFILE */}
           {view==='profile'&&(
             <div style={S.content}>
+
+              {/* ── Verification badge — full card, always first ── */}
+              <VerificationBadge variant="full" />
+
+              {/* Profile details card */}
               <div style={{background:'#222220',borderRadius:12,border:'1px solid rgba(255,255,255,.06)',padding:28}}>
                 <div style={{display:'flex',alignItems:'center',gap:16,marginBottom:24,paddingBottom:20,borderBottom:'1px solid rgba(255,255,255,.06)'}}>
-                  <div style={{width:64,height:64,borderRadius:'50%',background:'#9E3E24',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:"'Bebas Neue',sans-serif",fontSize:28,color:'#fff',border:'3px solid rgba(196,89,58,.3)'}}>{displayInitials}</div>
+                  <div style={{position:'relative',flexShrink:0}}>
+                    <div style={{width:64,height:64,borderRadius:'50%',background:'#9E3E24',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:"'Bebas Neue',sans-serif",fontSize:28,color:'#fff',border:'3px solid rgba(196,89,58,.3)'}}>{displayInitials}</div>
+                    {isVerified&&(
+                      <div style={{position:'absolute',bottom:0,right:0,width:20,height:20,borderRadius:'50%',background:'#3DAA6A',border:'3px solid #222220',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                      </div>
+                    )}
+                  </div>
                   <div>
-                    <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:28,letterSpacing:1,color:'#F5F0E8',lineHeight:1}}>{displayName.toUpperCase()}</div>
+                    <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:28,letterSpacing:1,color:'#F5F0E8',lineHeight:1}}>{displayName.toUpperCase()}</div>
+                      {/* Inline verified chip next to name */}
+                      {isVerified&&(
+                        <span style={{display:'inline-flex',alignItems:'center',gap:4,background:'rgba(61,170,106,.12)',border:'1px solid rgba(61,170,106,.25)',borderRadius:4,padding:'3px 8px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:'#3DAA6A'}}>
+                          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                          Verified
+                        </span>
+                      )}
+                    </div>
                     <div style={{fontSize:13,color:'rgba(245,240,232,.5)',marginTop:4}}>{displayTrade} · {profile?.tradesperson_profiles?.years_experience||0} yrs experience</div>
                     <div style={{fontSize:13,color:'#E8A020',marginTop:3}}>{displayRating} · {displayJobs} completed jobs</div>
                   </div>

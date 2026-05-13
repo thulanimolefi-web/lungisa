@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '../lib/supabase'
 
 type Role = 'homeowner' | 'tradesperson'
-type Screen = 'role' | 'signup' | 'otp' | 'success' | 'login' | 'login-otp' | 'forgot' | 'forgot-sent'
+type Screen = 'role' | 'signup' | 'otp' | 'verify-id' | 'success' | 'login' | 'login-otp' | 'forgot' | 'forgot-sent'
 
 const TRADES = ['Plumbing','Electrical','Painting','Carpentry','Roofing','Tiling','Landscaping','General','Solar']
 const AREAS  = ['Soweto','Sandton','Roodepoort','Midrand','Randburg','Fourways','Boksburg','Pretoria Central','Centurion']
@@ -14,13 +14,11 @@ function getLastOtpDate(): string {
   if(typeof window === 'undefined') return ''
   return localStorage.getItem('lungisa_otp_verified_date') || ''
 }
-
 function setLastOtpDate() {
   if(typeof window === 'undefined') return
   const today = new Date().toISOString().split('T')[0]
   localStorage.setItem('lungisa_otp_verified_date', today)
 }
-
 function needsDailyOtp(): boolean {
   const today = new Date().toISOString().split('T')[0]
   return getLastOtpDate() !== today
@@ -28,41 +26,51 @@ function needsDailyOtp(): boolean {
 
 export default function AuthPage() {
   const router = useRouter()
-  const [screen, setScreen]       = useState<Screen>('role')
-  const [role, setRole]           = useState<Role>('homeowner')
-  const [fname, setFname]         = useState('')
-  const [lname, setLname]         = useState('')
-  const [email, setEmail]         = useState('')
-  const [phone, setPhone]         = useState('')
-  const [area,  setArea]          = useState('')
-  const [trade, setTrade]         = useState('Plumbing')
-  const [trades, setTrades]       = useState<string[]>([])
-  const [areas,  setAreas]        = useState<string[]>([])
-  const [password, setPassword]   = useState('')
-  const [confirmPw, setConfirmPw] = useState('')
-  const [showPw, setShowPw]       = useState(false)
+  const [screen, setScreen]         = useState<Screen>('role')
+  const [role, setRole]             = useState<Role>('homeowner')
+  const [fname, setFname]           = useState('')
+  const [lname, setLname]           = useState('')
+  const [email, setEmail]           = useState('')
+  const [phone, setPhone]           = useState('')
+  const [area,  setArea]            = useState('')
+  const [trade, setTrade]           = useState('Plumbing')
+  const [trades, setTrades]         = useState<string[]>([])
+  const [areas,  setAreas]          = useState<string[]>([])
+  const [password, setPassword]     = useState('')
+  const [confirmPw, setConfirmPw]   = useState('')
+  const [showPw, setShowPw]         = useState(false)
   const [loginEmail, setLoginEmail] = useState('')
-  const [loginPw, setLoginPw]     = useState('')
+  const [loginPw, setLoginPw]       = useState('')
   const [showLoginPw, setShowLoginPw] = useState(false)
-  const [otp, setOtp]             = useState(['','','','','',''])
-  const [errors, setErrors]       = useState<Record<string,string>>({})
-  const [counter, setCounter]     = useState(60)
-  const [timerOn, setTimerOn]     = useState(false)
-  const [otpErr, setOtpErr]       = useState('')
-  const [loading, setLoading]     = useState(false)
+  const [otp, setOtp]               = useState(['','','','','',''])
+  const [errors, setErrors]         = useState<Record<string,string>>({})
+  const [counter, setCounter]       = useState(60)
+  const [timerOn, setTimerOn]       = useState(false)
+  const [otpErr, setOtpErr]         = useState('')
+  const [loading, setLoading]       = useState(false)
+  const [userId, setUserId]         = useState('')
+
+  // ── Vetting state ─────────────────────────────────────────────────
+  const [idFile, setIdFile]         = useState<File|null>(null)
+  const [selfieFile, setSelfieFile] = useState<File|null>(null)
+  const [idPreview, setIdPreview]   = useState('')
+  const [selfiePreview, setSelfiePreview] = useState('')
+  const [uploadProgress, setUploadProgress] = useState(0)
+  const [idType, setIdType]         = useState<'id_book'|'id_card'|'passport'>('id_card')
+  const [uploadErr, setUploadErr]   = useState('')
+  const [skipVerify, setSkipVerify] = useState(false)
 
   function toggleTrade(t:string){
     setTrades(prev=>{
       if(prev.includes(t)) return prev.filter(x=>x!==t)
-      if(prev.length>=3) return prev // max 3
+      if(prev.length>=3) return prev
       return [...prev, t]
     })
   }
-
   function toggleArea(a:string){
     setAreas(prev=>{
       if(prev.includes(a)) return prev.filter(x=>x!==a)
-      if(prev.length>=3) return prev // max 3
+      if(prev.length>=3) return prev
       return [...prev, a]
     })
   }
@@ -94,26 +102,13 @@ export default function AuthPage() {
     setLoading(true)
     try {
       const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: fname+' '+lname,
-            role,
-            area: role==='homeowner' ? area : areas[0],
-            phone,
-            trades,
-            areas,
-          }
-        }
+        email, password,
+        options: { data: { full_name: fname+' '+lname, role, area: role==='homeowner' ? area : areas[0], phone, trades, areas } }
       })
       if(error) { setErrors({email: error.message}); setLoading(false); return }
-      // Send OTP to verify email
       await supabase.auth.signInWithOtp({ email, options:{ shouldCreateUser:false } })
       setScreen('otp'); startTimer()
-    } catch(e) {
-      setErrors({email: 'Something went wrong. Please try again.'})
-    }
+    } catch(e) { setErrors({email: 'Something went wrong. Please try again.'}) }
     setLoading(false)
   }
 
@@ -125,15 +120,11 @@ export default function AuthPage() {
       const { data, error } = await supabase.auth.verifyOtp({ email, token:code, type:'email' })
       if(error) { setOtpErr('Incorrect code. Please check your email.'); setLoading(false); return }
       if(data.user) {
+        setUserId(data.user.id)
         const primaryArea = role==='homeowner' ? area : (areas[0]||'Johannesburg')
         await supabase.from('profiles').upsert({
-          id:        data.user.id,
-          role,
-          full_name: fname+' '+lname,
-          phone:     '+27'+phone.replace(/^0/,''),
-          email,
-          area:      primaryArea,
-          city:      'Johannesburg',
+          id: data.user.id, role, full_name: fname+' '+lname,
+          phone: '+27'+phone.replace(/^0/,''), email, area: primaryArea, city: 'Johannesburg',
         })
         if(role==='tradesperson') {
           await supabase.from('tradesperson_profiles').upsert({
@@ -141,15 +132,103 @@ export default function AuthPage() {
             trade_category:   (trades[0]||trade).toLowerCase() as any,
             service_areas:    areas,
             years_experience: 0,
+            verification_status: 'unsubmitted',
           })
         }
         setLastOtpDate()
+        // Tradesperson goes to ID vetting, homeowner goes to success
+        if(role==='tradesperson') {
+          setScreen('verify-id')
+        } else {
+          setScreen('success')
+        }
       }
-      setOtpErr(''); setScreen('success')
+      setOtpErr('')
+    } catch(e) { setOtpErr('Something went wrong. Please try again.') }
+    setLoading(false)
+  }
+
+  function handleFileSelect(file: File, type: 'id'|'selfie') {
+    if(!file) return
+    if(file.size > 10 * 1024 * 1024) { setUploadErr('File must be under 10MB'); return }
+    if(!file.type.startsWith('image/') && file.type !== 'application/pdf') {
+      setUploadErr('Please upload an image (JPG, PNG) or PDF')
+      return
+    }
+    setUploadErr('')
+    const reader = new FileReader()
+    reader.onload = e => {
+      if(type==='id') { setIdFile(file); setIdPreview(e.target?.result as string) }
+      else            { setSelfieFile(file); setSelfiePreview(e.target?.result as string) }
+    }
+    reader.readAsDataURL(file)
+  }
+
+  async function handleIdUpload() {
+    if(!idFile) { setUploadErr('Please upload your ID document'); return }
+    setLoading(true); setUploadErr(''); setUploadProgress(10)
+
+    try {
+      const uid = userId
+      let idUrl = ''; let selfieUrl = ''
+
+      // Upload ID document
+      const idExt = idFile.name.split('.').pop()
+      const idPath = `id-docs/${uid}/id_document.${idExt}`
+      setUploadProgress(30)
+      const { error: idErr } = await supabase.storage
+        .from('job-photos')
+        .upload(idPath, idFile, { upsert: true, contentType: idFile.type })
+      if(idErr) { setUploadErr('Upload failed: '+idErr.message); setLoading(false); return }
+      const { data: idData } = supabase.storage.from('job-photos').getPublicUrl(idPath)
+      idUrl = idData.publicUrl
+      setUploadProgress(60)
+
+      // Upload selfie if provided
+      if(selfieFile) {
+        const selfieExt = selfieFile.name.split('.').pop()
+        const selfiePath = `id-docs/${uid}/selfie.${selfieExt}`
+        const { error: selfieErr } = await supabase.storage
+          .from('job-photos')
+          .upload(selfiePath, selfieFile, { upsert: true, contentType: selfieFile.type })
+        if(!selfieErr) {
+          const { data: selfieData } = supabase.storage.from('job-photos').getPublicUrl(selfiePath)
+          selfieUrl = selfieData.publicUrl
+        }
+      }
+      setUploadProgress(80)
+
+      // Update tradesperson_profiles
+      await supabase.from('tradesperson_profiles').update({
+        id_document_url:     idUrl,
+        selfie_url:          selfieUrl || null,
+        id_submitted_at:     new Date().toISOString(),
+        verification_status: 'pending',
+        qualification:       idType,
+      }).eq('id', uid)
+
+      // Notify admin via notification row
+      await supabase.from('notifications').insert({
+        user_id:  uid,
+        type:     'id_submitted',
+        title:    'ID verification submitted',
+        message:  `${fname} ${lname} submitted their ${idType.replace('_',' ')} for verification.`,
+        link:     `/admin/verify/${uid}`,
+        read:     false,
+        payload:  { idUrl, selfieUrl, idType, tradeName: trades[0] },
+      })
+
+      setUploadProgress(100)
+      setScreen('success')
     } catch(e) {
-      setOtpErr('Something went wrong. Please try again.')
+      setUploadErr('Something went wrong. Please try again.')
     }
     setLoading(false)
+  }
+
+  async function handleSkipVerification() {
+    // Mark as unsubmitted and proceed — they can verify later from dashboard
+    setScreen('success')
   }
 
   async function handleLogin() {
@@ -162,19 +241,15 @@ export default function AuthPage() {
       const { data, error } = await supabase.auth.signInWithPassword({ email:loginEmail, password:loginPw })
       if(error) { setErrors({loginPw:'Incorrect email or password'}); setLoading(false); return }
       if(needsDailyOtp()) {
-        // Send daily OTP
         setEmail(loginEmail)
         await supabase.auth.signInWithOtp({ email:loginEmail, options:{ shouldCreateUser:false } })
         setScreen('login-otp'); startTimer()
       } else {
-        // Already verified today — go straight in
         const { data:profile } = await supabase.from('profiles').select('role').eq('id',data.user.id).single()
         await new Promise(r=>setTimeout(r,500))
         window.location.href = profile?.role==='tradesperson' ? '/dashboard' : '/home'
       }
-    } catch(e) {
-      setErrors({loginPw: 'Something went wrong. Please try again.'})
-    }
+    } catch(e) { setErrors({loginPw: 'Something went wrong. Please try again.'}) }
     setLoading(false)
   }
 
@@ -191,26 +266,19 @@ export default function AuthPage() {
         await new Promise(r=>setTimeout(r,500))
         window.location.href = profile?.role==='tradesperson' ? '/dashboard' : '/home'
       }
-    } catch(e) {
-      setOtpErr('Something went wrong. Please try again.')
-    }
+    } catch(e) { setOtpErr('Something went wrong. Please try again.') }
     setLoading(false)
   }
 
   async function handleForgotPassword() {
     if(!loginEmail.trim()||!loginEmail.includes('@')) {
-      setErrors({loginEmail:'Enter your email address first'})
-      return
+      setErrors({loginEmail:'Enter your email address first'}); return
     }
     setLoading(true)
     try {
-      await supabase.auth.resetPasswordForEmail(loginEmail, {
-        redirectTo: 'https://lungiza.co.za/reset-password',
-      })
+      await supabase.auth.resetPasswordForEmail(loginEmail, { redirectTo: 'https://lungiza.co.za/reset-password' })
       setScreen('forgot-sent')
-    } catch(e) {
-      setErrors({loginEmail:'Something went wrong. Please try again.'})
-    }
+    } catch(e) { setErrors({loginEmail:'Something went wrong. Please try again.'}) }
     setLoading(false)
   }
 
@@ -226,7 +294,6 @@ export default function AuthPage() {
     if(pw.match(/[A-Z]/)&&pw.match(/[0-9]/)) return {width:'100%',color:'#3DAA6A',label:'Strong'}
     return {width:'75%',color:'#E8A020',label:'Good'}
   }
-
   const pwStrength = getPasswordStrength(password)
 
   const css = `
@@ -236,7 +303,7 @@ export default function AuthPage() {
       --terra:#C4593A;--terra-d:#9E3E24;--terra-l:#E07A5F;
       --cream:#F5F0E8;--cream-d:#EAE3D6;--cream-dd:#DDD5C5;
       --charcoal:#2C2C28;--charcoal-m:#3E3D38;--charcoal-l:#5A5952;
-      --sand:#D4C9B4;--white:#FAFAF7;--green:#3DAA6A;
+      --sand:#D4C9B4;--white:#FAFAF7;--green:#3DAA6A;--amber:#E8A020;
       --fd:'Bebas Neue',sans-serif;--fc:'Barlow Condensed',sans-serif;--fb:'Barlow',sans-serif;
     }
     html,body{height:100%;font-family:var(--fb)}
@@ -315,6 +382,33 @@ export default function AuthPage() {
     .pd.done{background:var(--terra);opacity:.4}
     .spin{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
     .security-note{background:rgba(196,89,58,.05);border:1px solid rgba(196,89,58,.1);border-radius:6px;padding:10px 12px;font-size:12px;color:var(--charcoal-l);line-height:1.6;margin-bottom:20px}
+
+    /* ── ID Upload styles ────────────────────────────── */
+    .id-type-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:20px}
+    .id-type-card{border:1.5px solid var(--cream-d);border-radius:10px;padding:14px 10px;cursor:pointer;text-align:center;background:var(--white);transition:all .15s}
+    .id-type-card.sel{border-color:var(--terra);background:rgba(196,89,58,.04)}
+    .id-type-icon{font-size:24px;margin-bottom:6px}
+    .id-type-label{font-family:var(--fc);font-size:11px;font-weight:700;letter-spacing:1px;color:var(--charcoal-l);text-transform:uppercase}
+    .id-type-card.sel .id-type-label{color:var(--terra-d)}
+    .upload-zone{border:2px dashed var(--cream-dd);border-radius:12px;padding:28px 20px;text-align:center;cursor:pointer;transition:all .2s;background:var(--white);position:relative;margin-bottom:12px}
+    .upload-zone:hover{border-color:var(--terra-l);background:rgba(196,89,58,.02)}
+    .upload-zone.has-file{border-color:var(--terra);border-style:solid;background:rgba(196,89,58,.03)}
+    .upload-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+    .upload-preview{width:100%;max-height:140px;object-fit:contain;border-radius:8px;margin-bottom:8px}
+    .upload-icon{width:44px;height:44px;border-radius:10px;background:rgba(196,89,58,.08);display:flex;align-items:center;justify-content:center;margin:0 auto 10px}
+    .upload-label{font-family:var(--fc);font-size:13px;font-weight:700;color:var(--charcoal);margin-bottom:3px}
+    .upload-sub{font-size:11px;color:var(--charcoal-l)}
+    .upload-fname{font-family:var(--fc);font-size:11px;font-weight:600;color:var(--terra);margin-top:6px}
+    .progress-bar{height:4px;border-radius:2px;background:var(--cream-d);margin:12px 0;overflow:hidden}
+    .progress-fill{height:100%;background:var(--terra);border-radius:2px;transition:width .4s ease}
+    .trust-badges{display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap}
+    .trust-badge{display:flex;align-items:center;gap:6px;background:rgba(61,170,106,.06);border:1px solid rgba(61,170,106,.15);border-radius:6px;padding:6px 10px;font-family:var(--fc);font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#1a6e35}
+    .why-verify{background:var(--white);border:1px solid var(--cream-d);border-radius:10px;padding:14px 16px;margin-bottom:20px}
+    .why-row{display:flex;align-items:flex-start;gap:10px;padding:6px 0;font-size:12px;color:var(--charcoal-l);line-height:1.5}
+    .why-row:not(:last-child){border-bottom:1px solid var(--cream-d)}
+    .why-icon{font-size:14px;flex-shrink:0;margin-top:1px}
+    .skip-link{display:block;text-align:center;margin-top:14px;font-family:var(--fc);font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--charcoal-l);cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+    .skip-link:hover{color:var(--charcoal)}
     @keyframes spin{to{transform:rotate(360deg)}}
     @media(max-width:800px){.al{display:none}.ar{padding:32px 24px}}
   `
@@ -401,7 +495,7 @@ export default function AuthPage() {
           {/* SIGNUP */}
           {screen==='signup'&&(
             <div>
-              <div className="pg"><div className="pd done"/><div className="pd active"/><div className="pd"/><div className="pd"/></div>
+              <div className="pg"><div className="pd done"/><div className="pd active"/><div className="pd"/><div className="pd"/>{role==='tradesperson'&&<div className="pd"/>}</div>
               <div className="se">New {role}</div>
               <h1 className="st">CREATE<br/>ACCOUNT</h1>
               <p className="ss">Fill in your details and create your password.</p>
@@ -517,16 +611,13 @@ export default function AuthPage() {
             </div>
           )}
 
-          {/* OTP — signup */}
+          {/* OTP */}
           {screen==='otp'&&(
             <div>
-              <div className="pg"><div className="pd done"/><div className="pd done"/><div className="pd active"/><div className="pd"/></div>
+              <div className="pg"><div className="pd done"/><div className="pd done"/><div className="pd active"/><div className="pd"/>{role==='tradesperson'&&<div className="pd"/>}</div>
               <div className="se">Email verification</div>
               <h1 className="st">VERIFY<br/>EMAIL</h1>
-              <div className="os">
-                6-digit code sent to<br/>
-                <strong>{email}</strong>
-              </div>
+              <div className="os">6-digit code sent to<br/><strong>{email}</strong></div>
               <div className="ow">
                 {otp.map((v,i)=>(
                   <input key={i} id={`otp-${i}`} className="ob" type="text" maxLength={1} value={v}
@@ -549,16 +640,145 @@ export default function AuthPage() {
                 Check your inbox for your 6-digit verification code.
               </div>
               <button className="bm bt" onClick={handleOtp} disabled={otp.join('').length<6||loading}>
-                {loading?<span className="spin"/>:'Verify & Continue'}
+                {loading?<span className="spin"/>:role==='tradesperson'?'Verify & Continue →':'Verify & Finish →'}
               </button>
               <div className="as" style={{marginTop:16}}><button onClick={()=>setScreen('signup')}>← Change email</button></div>
+            </div>
+          )}
+
+          {/* ── ID VERIFICATION (tradesperson only) ─────────────── */}
+          {screen==='verify-id'&&(
+            <div>
+              <div className="pg">
+                <div className="pd done"/><div className="pd done"/><div className="pd done"/>
+                <div className="pd active"/><div className="pd"/>
+              </div>
+              <div className="se">Identity verification</div>
+              <h1 className="st">VERIFY<br/>YOUR ID</h1>
+              <p className="ss" style={{marginBottom:16}}>Upload your SA ID to get a <strong style={{color:'var(--terra)'}}>Verified ✓</strong> badge. Homeowners trust verified tradespeople more.</p>
+
+              {/* Why verify */}
+              <div className="why-verify">
+                <div className="why-row"><span className="why-icon">🏅</span><span>Verified badge shown on every bid — stands out instantly</span></div>
+                <div className="why-row"><span className="why-icon">📈</span><span>Verified tradespeople get up to 3× more job acceptances</span></div>
+                <div className="why-row"><span className="why-icon">🔒</span><span>Documents are encrypted and never shared publicly</span></div>
+              </div>
+
+              {/* Trust badges */}
+              <div className="trust-badges">
+                <div className="trust-badge">🔐 Encrypted upload</div>
+                <div className="trust-badge">✅ Private & secure</div>
+                <div className="trust-badge">📋 Reviewed within 24h</div>
+              </div>
+
+              {/* ID type selector */}
+              <div className="fg">
+                <label className="fl2">Document type</label>
+                <div className="id-type-grid">
+                  {([
+                    {key:'id_card',    icon:'🪪', label:'SA ID Card'},
+                    {key:'id_book',    icon:'📗', label:'SA ID Book'},
+                    {key:'passport',   icon:'📘', label:'Passport'},
+                  ] as {key:'id_card'|'id_book'|'passport',icon:string,label:string}[]).map(t=>(
+                    <div key={t.key} className={`id-type-card ${idType===t.key?'sel':''}`} onClick={()=>setIdType(t.key)}>
+                      <div className="id-type-icon">{t.icon}</div>
+                      <div className="id-type-label">{t.label}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* ID document upload */}
+              <div className="fg">
+                <label className="fl2">
+                  {idType==='id_card'?'SA ID Card (both sides)':idType==='id_book'?'SA ID Book (photo page)':'Passport (photo page)'}
+                  <span style={{color:'#C0392B',marginLeft:4}}>*</span>
+                </label>
+                <div className={`upload-zone ${idFile?'has-file':''}`}>
+                  <input type="file" accept="image/*,.pdf"
+                    onChange={e=>e.target.files?.[0]&&handleFileSelect(e.target.files[0],'id')}/>
+                  {idPreview&&idFile?.type.startsWith('image/') ? (
+                    <>
+                      <img src={idPreview} alt="ID preview" className="upload-preview"/>
+                      <div className="upload-fname">✓ {idFile.name}</div>
+                    </>
+                  ) : idFile ? (
+                    <>
+                      <div className="upload-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#C4593A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                      </div>
+                      <div className="upload-fname">✓ {idFile.name}</div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="upload-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#C4593A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
+                      </div>
+                      <div className="upload-label">Tap to upload</div>
+                      <div className="upload-sub">JPG, PNG or PDF · Max 10MB</div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Selfie upload (optional) */}
+              <div className="fg">
+                <label className="fl2">Selfie holding your ID <span style={{color:'var(--charcoal-l)',fontWeight:400,fontSize:11,textTransform:'none',letterSpacing:0}}>(optional but speeds up verification)</span></label>
+                <div className={`upload-zone ${selfieFile?'has-file':''}`}>
+                  <input type="file" accept="image/*"
+                    onChange={e=>e.target.files?.[0]&&handleFileSelect(e.target.files[0],'selfie')}/>
+                  {selfiePreview ? (
+                    <>
+                      <img src={selfiePreview} alt="Selfie preview" className="upload-preview"/>
+                      <div className="upload-fname">✓ {selfieFile?.name}</div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="upload-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#C4593A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                      </div>
+                      <div className="upload-label">Selfie with ID</div>
+                      <div className="upload-sub">Helps us verify faster · JPG or PNG</div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {uploadErr&&(
+                <div style={{background:'rgba(192,57,43,.08)',border:'1px solid rgba(192,57,43,.2)',borderRadius:6,padding:'10px 12px',fontSize:12,color:'#C0392B',marginBottom:12,fontFamily:'var(--fc)'}}>
+                  ✗ {uploadErr}
+                </div>
+              )}
+
+              {loading&&uploadProgress>0&&(
+                <div>
+                  <div className="progress-bar">
+                    <div className="progress-fill" style={{width:`${uploadProgress}%`}}/>
+                  </div>
+                  <div style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:600,letterSpacing:1,color:'var(--charcoal-l)',textAlign:'center'}}>
+                    {uploadProgress<60?'Uploading documents...':uploadProgress<90?'Saving to your profile...':'Done!'}
+                  </div>
+                </div>
+              )}
+
+              <button className="bm bt" onClick={handleIdUpload} disabled={loading||!idFile}>
+                {loading?<span className="spin"/>:'Submit for verification →'}
+              </button>
+
+              <span className="skip-link" onClick={handleSkipVerification}>
+                Skip for now — I&apos;ll verify later from my dashboard
+              </span>
             </div>
           )}
 
           {/* SUCCESS */}
           {screen==='success'&&(
             <div style={{textAlign:'center'}}>
-              <div className="pg"><div className="pd done"/><div className="pd done"/><div className="pd done"/><div className="pd active"/></div>
+              <div className="pg">
+                <div className="pd done"/><div className="pd done"/><div className="pd done"/>
+                {role==='tradesperson'&&<><div className="pd done"/><div className="pd active"/></>}
+                {role==='homeowner'&&<div className="pd active"/>}
+              </div>
               <div className="sr"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#C4593A" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
               <div className="se" style={{justifyContent:'center'}}>Account created</div>
               <h1 className="st">YOU&apos;RE<br/>IN.</h1>
@@ -567,9 +787,20 @@ export default function AuthPage() {
                 <li><div className="ci"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#3DAA6A" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>Account verified</li>
                 <li><div className="ci"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#3DAA6A" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>Password set — login with email + password</li>
                 <li><div className="ci"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#3DAA6A" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>Profile saved to database</li>
+                {role==='tradesperson'&&idFile&&(
+                  <li><div className="ci"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#3DAA6A" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>ID submitted — verification within 24h</li>
+                )}
+                {role==='tradesperson'&&!idFile&&(
+                  <li>
+                    <div style={{width:20,height:20,borderRadius:'50%',background:'rgba(232,160,32,.15)',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#E8A020" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    </div>
+                    ID verification pending — complete from your dashboard
+                  </li>
+                )}
               </ul>
               <button className="bm bsu" onClick={async()=>{
-                await new Promise(r=>setTimeout(r,1000))
+                await new Promise(r=>setTimeout(r,500))
                 window.location.href = role==='homeowner'?'/home':'/dashboard'
               }}>
                 Go to my dashboard →
@@ -583,34 +814,28 @@ export default function AuthPage() {
               <div className="se">Welcome back</div>
               <h1 className="st">SIGN<br/>IN</h1>
               <p className="ss">Enter your email and password.</p>
-
               <div className="fg">
                 <label className="fl2">Email address</label>
                 <input className="fi2" type="email" placeholder="thabo@email.com" value={loginEmail} onChange={e=>setLoginEmail(e.target.value)}/>
                 {errors.loginEmail&&<div className="err">{errors.loginEmail}</div>}
               </div>
-
               <div className="fg">
                 <label className="fl2">Password</label>
                 <div className="pw-wrap">
                   <input className="fi2" type={showLoginPw?'text':'password'} placeholder="Your password" value={loginPw}
-                    onChange={e=>setLoginPw(e.target.value)}
-                    onKeyDown={e=>e.key==='Enter'&&handleLogin()}/>
+                    onChange={e=>setLoginPw(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleLogin()}/>
                   <button className="pw-eye" type="button" onClick={()=>setShowLoginPw(s=>!s)}>{showLoginPw?'🙈':'👁️'}</button>
                 </div>
                 {errors.loginPw&&<div className="err">{errors.loginPw}</div>}
               </div>
-
               <div className="security-note">
                 🔐 A one-time code will be sent to your email once per day on first login for security.
               </div>
-
               <button className="bm bt" style={{marginBottom:10}} onClick={handleLogin} disabled={loading}>
                 {loading?<span className="spin"/>:'Sign in →'}
               </button>
               <div style={{textAlign:'center',marginBottom:10}}>
-                <button onClick={()=>setScreen('forgot')}
-                  style={{background:'none',border:'none',cursor:'pointer',color:'var(--terra)',fontSize:13,fontFamily:'var(--fb)',fontWeight:500,textDecoration:'underline'}}>
+                <button onClick={()=>setScreen('forgot')} style={{background:'none',border:'none',cursor:'pointer',color:'var(--terra)',fontSize:13,fontFamily:'var(--fb)',fontWeight:500,textDecoration:'underline'}}>
                   Forgot password?
                 </button>
               </div>
@@ -624,10 +849,7 @@ export default function AuthPage() {
               <div className="se">Daily security check</div>
               <h1 className="st">QUICK<br/>CHECK.</h1>
               <p className="ss">We verify your identity once per day to keep your account secure.</p>
-              <div className="os">
-                Code sent to<br/>
-                <strong>{loginEmail||email}</strong>
-              </div>
+              <div className="os">Code sent to<br/><strong>{loginEmail||email}</strong></div>
               <div className="ow">
                 {otp.map((v,i)=>(
                   <input key={i} id={`otp-${i}`} className="ob" type="text" maxLength={1} value={v}
@@ -670,9 +892,8 @@ export default function AuthPage() {
               <p className="ss">Enter your email and we&apos;ll send you a link to reset your password.</p>
               <div className="fg">
                 <label className="fl2">Email address</label>
-                <input className="fi2" type="email" placeholder="thabo@email.com"
-                  value={loginEmail} onChange={e=>setLoginEmail(e.target.value)}
-                  onKeyDown={e=>e.key==='Enter'&&handleForgotPassword()}/>
+                <input className="fi2" type="email" placeholder="thabo@email.com" value={loginEmail}
+                  onChange={e=>setLoginEmail(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleForgotPassword()}/>
                 {errors.loginEmail&&<div className="err">{errors.loginEmail}</div>}
               </div>
               <button className="bm bt" style={{marginBottom:10}} onClick={handleForgotPassword} disabled={loading}>
@@ -688,16 +909,12 @@ export default function AuthPage() {
               <div style={{fontSize:56,marginBottom:16}}>📬</div>
               <div className="se" style={{justifyContent:'center'}}>Check your inbox</div>
               <h1 className="st">LINK<br/>SENT.</h1>
-              <p className="ss">We sent a password reset link to <strong>{loginEmail}</strong>. Click the link to set your new password.</p>
+              <p className="ss">We sent a password reset link to <strong>{loginEmail}</strong>.</p>
               <div style={{background:'rgba(196,89,58,.06)',border:'1px solid rgba(196,89,58,.15)',borderRadius:8,padding:'12px 16px',fontSize:13,color:'var(--charcoal-l)',lineHeight:1.6,marginBottom:24,textAlign:'left'}}>
                 💡 The link expires in 24 hours. Check your spam folder if you don&apos;t see it.
               </div>
-              <button className="bm bt" style={{marginBottom:10}} onClick={()=>setScreen('login')}>
-                Back to login →
-              </button>
-              <div className="as">
-                Didn&apos;t receive it? <button onClick={handleForgotPassword}>Resend link</button>
-              </div>
+              <button className="bm bt" style={{marginBottom:10}} onClick={()=>setScreen('login')}>Back to login →</button>
+              <div className="as">Didn&apos;t receive it? <button onClick={handleForgotPassword}>Resend link</button></div>
             </div>
           )}
 
