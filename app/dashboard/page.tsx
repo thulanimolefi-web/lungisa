@@ -17,12 +17,18 @@ type Bid = {
   counterBy: string|null
   jobId: string
 }
+// ── Added media to Job type ──────────────────────────────────────
+type JobMedia = {
+  url: string
+  type: 'image' | 'video'
+}
 type Job = {
   id: any; cat: string; emoji: string; urgency: string; urgencyLabel: string; urgColor: string
   title: string; loc: string; dist: string; budget: string; budgetNum: number; desc: string
   time: string; photos: number; bids: number
   tags: {label:string,color:string,text:string}[]
   timing: string; submitted: boolean; submitPrice: number
+  media: JobMedia[]
 }
 
 function getCatEmoji(cat:string){const m:Record<string,string>={plumbing:'🔧',electrical:'⚡',painting:'🎨',carpentry:'🪚',roofing:'🏠',tiling:'🚿',solar:'☀️',garden:'🌿',waterproofing:'💧',welding:'🔥',cleaning:'🧹',general:'🔩'};return m[cat]||'🔧'}
@@ -36,6 +42,10 @@ export default function Dashboard() {
   const [jobs, setJobs]           = useState<Job[]>([])
   const [isOnline, setIsOnline]   = useState(true)
   const [modalJob, setModalJob]   = useState<Job|null>(null)
+  const [modalMedia, setModalMedia] = useState<JobMedia[]>([])
+  const [mediaLoading, setMediaLoading] = useState(false)
+  const [lightboxUrl, setLightboxUrl] = useState<string|null>(null)
+  const [lightboxType, setLightboxType] = useState<'image'|'video'>('image')
   const [bidPrice, setBidPrice]   = useState('')
   const [bidEta, setBidEta]       = useState('30 mins')
   const [bidNote, setBidNote]     = useState('')
@@ -130,6 +140,7 @@ export default function Dashboard() {
           timing:       j.preferred_time||'Flexible',
           submitted:    false,
           submitPrice:  0,
+          media:        [], // loaded on modal open
         })))
       }
     }catch(e){console.log('Jobs error:',e)}
@@ -181,13 +192,39 @@ export default function Dashboard() {
     }catch(e){console.log('Earnings error:',e)}
   }
 
+  // ── Load job media when opening bid modal ────────────────────────
+  async function openModal(job:Job){
+    setModalJob(job)
+    setBidPrice('')
+    setBidNote('')
+    setBidEta('30 mins')
+    setModalMedia([])
+
+    // Fetch photos/videos for this job
+    if(job.photos > 0) {
+      setMediaLoading(true)
+      try{
+        const {data, error} = await supabase
+          .from('job_photos')
+          .select('storage_url, file_type, sort_order')
+          .eq('job_id', job.id)
+          .order('sort_order', {ascending:true})
+        if(!error && data && data.length > 0){
+          setModalMedia(data.map((m:any)=>({
+            url:  m.storage_url,
+            type: (m.file_type||'image') as 'image'|'video',
+          })))
+        }
+      }catch(e){ console.log('Media load error:',e) }
+      setMediaLoading(false)
+    }
+  }
+
   function toast(title:string,sub:string,alert:boolean){
     const id=Date.now()
     setToasts(t=>[...t,{id,title,sub,alert}])
     setTimeout(()=>setToasts(t=>t.filter(x=>x.id!==id)),4500)
   }
-
-  function openModal(job:Job){ setModalJob(job); setBidPrice(''); setBidNote(''); setBidEta('30 mins') }
 
   async function acceptCounter(bid:Bid){
     const amount=bid.counterAmount!
@@ -262,6 +299,7 @@ export default function Dashboard() {
     setJobs(j=>j.map(x=>x.id===modalJob.id?{...x,submitted:true,submitPrice:price}:x))
     toast('Bid submitted!',`R${price} on ${modalJob.title}`,false)
     setModalJob(null)
+    setModalMedia([])
     loadMyBids()
   }
 
@@ -310,7 +348,7 @@ export default function Dashboard() {
     urgBar:(color:string)=>({width:4,height:52,borderRadius:2,background:color,flexShrink:0}),
     bidNowBtn:(sub:boolean)=>({fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase' as const,background:sub?'rgba(61,170,106,.2)':'#C4593A',color:sub?'rgba(61,170,106,.9)':'#fff',border:'none',padding:'8px 18px',borderRadius:6,cursor:sub?'default':'pointer',transition:'all .15s'}),
     overlay:{position:'fixed' as const,inset:0,background:'rgba(0,0,0,.75)',zIndex:100,display:'flex',alignItems:'center',justifyContent:'center',padding:20},
-    modal:{background:'#222220',borderRadius:16,border:'1px solid rgba(255,255,255,.1)',width:'100%',maxWidth:540,maxHeight:'90vh',overflowY:'auto' as const},
+    modal:{background:'#222220',borderRadius:16,border:'1px solid rgba(255,255,255,.1)',width:'100%',maxWidth:560,maxHeight:'92vh',overflowY:'auto' as const},
     mHeader:{padding:'22px 26px 18px',borderBottom:'1px solid rgba(255,255,255,.06)',display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:16},
     mBody:{padding:'22px 26px'},
     mFooter:{padding:'14px 26px 22px',display:'flex',gap:10},
@@ -345,10 +383,13 @@ export default function Dashboard() {
         @keyframes toastIn{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:translateX(0)}}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
         @keyframes spin{to{transform:rotate(360deg)}}
+        @keyframes fadeIn{from{opacity:0}to{opacity:1}}
         .bid-in{animation:bidIn .4s ease both}
         .toast-in{animation:toastIn .3s ease both}
         .online-dot{animation:pulse 1.8s infinite}
         .spin{display:inline-block;width:20px;height:20px;border:2px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
+        .media-thumb{cursor:pointer;transition:transform .15s,opacity .15s}
+        .media-thumb:hover{transform:scale(1.04);opacity:.9}
         @media(max-width:900px){.sidenav{display:none!important}.stat-strip{grid-template-columns:1fr 1fr!important}}
       `}</style>
 
@@ -366,7 +407,6 @@ export default function Dashboard() {
           <div style={S.snProfile}>
             <div style={{position:'relative',flexShrink:0}}>
               <div style={S.snAvatar}>{displayInitials}</div>
-              {/* Verified dot on avatar */}
               {isVerified&&(
                 <div style={{position:'absolute',bottom:-2,right:-2,width:14,height:14,borderRadius:'50%',background:'#3DAA6A',border:'2px solid #111110',display:'flex',alignItems:'center',justifyContent:'center'}}>
                   <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
@@ -377,10 +417,7 @@ export default function Dashboard() {
               <div style={S.snName}>{displayName}</div>
               <div style={S.snTrade}>{displayTrade}</div>
               <div style={S.snRating}>{displayRating} · {displayJobs} jobs</div>
-              {/* Compact verification badge in sidebar */}
-              <div style={{marginTop:5}}>
-                <VerificationBadge variant="compact" />
-              </div>
+              <div style={{marginTop:5}}><VerificationBadge variant="compact" /></div>
             </div>
           </div>
           <div style={{flex:1,padding:'10px 0'}}>
@@ -561,30 +598,10 @@ export default function Dashboard() {
                         </div>
                       </div>
                     )}
-
-                    {iSentCounter&&(
-                      <div style={{background:'rgba(196,89,58,.06)',border:'1px solid rgba(196,89,58,.15)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(245,240,232,.6)',lineHeight:1.5}}>
-                        ⏳ Counter of <strong style={{color:'#F5F0E8'}}>R{b.counterAmount}</strong> sent. Waiting for homeowner to respond...
-                      </div>
-                    )}
-
-                    {isAccepted&&(
-                      <div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(61,170,106,.9)',lineHeight:1.5}}>
-                        ✓ Bid accepted! Homeowner is confirming payment. Complete the job and you&apos;ll get paid.
-                      </div>
-                    )}
-
-                    {isDeclined&&(
-                      <div style={{background:'rgba(226,75,74,.06)',border:'1px solid rgba(226,75,74,.15)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(226,75,74,.7)',lineHeight:1.5}}>
-                        ✗ Not accepted this time. Keep bidding on new jobs.
-                      </div>
-                    )}
-
-                    {isCompleted&&(
-                      <div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(61,170,106,.9)',lineHeight:1.5}}>
-                        ✓ Job completed · Payment released · R{b.price} earned
-                      </div>
-                    )}
+                    {iSentCounter&&(<div style={{background:'rgba(196,89,58,.06)',border:'1px solid rgba(196,89,58,.15)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(245,240,232,.6)',lineHeight:1.5}}>⏳ Counter of <strong style={{color:'#F5F0E8'}}>R{b.counterAmount}</strong> sent. Waiting for homeowner to respond...</div>)}
+                    {isAccepted&&(<div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(61,170,106,.9)',lineHeight:1.5}}>✓ Bid accepted! Homeowner is confirming payment. Complete the job and you&apos;ll get paid.</div>)}
+                    {isDeclined&&(<div style={{background:'rgba(226,75,74,.06)',border:'1px solid rgba(226,75,74,.15)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(226,75,74,.7)',lineHeight:1.5}}>✗ Not accepted this time. Keep bidding on new jobs.</div>)}
+                    {isCompleted&&(<div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(61,170,106,.9)',lineHeight:1.5}}>✓ Job completed · Payment released · R{b.price} earned</div>)}
                   </div>
                 )
               })}
@@ -609,9 +626,9 @@ export default function Dashboard() {
                   </div>
                   <div style={{...S.statStrip}} className="stat-strip">
                     {[
-                      {label:'Jobs done',     val:String(earnings.totalJobs),                                             color:'#52C47F'},
-                      {label:'Avg job value', val:earnings.avgJobValue>0?`R${earnings.avgJobValue.toLocaleString()}`:'—', color:'#E07A5F'},
-                      {label:'In escrow',     val:earnings.inEscrow>0?`R${earnings.inEscrow.toLocaleString()}`:'R0',      color:'#E8A020'},
+                      {label:'Jobs done',     val:String(earnings.totalJobs),color:'#52C47F'},
+                      {label:'Avg job value', val:earnings.avgJobValue>0?`R${earnings.avgJobValue.toLocaleString()}`:'—',color:'#E07A5F'},
+                      {label:'In escrow',     val:earnings.inEscrow>0?`R${earnings.inEscrow.toLocaleString()}`:'R0',color:'#E8A020'},
                       {label:'Rating',        val:profile?.tradesperson_profiles?.rating_avg>0?String(profile.tradesperson_profiles.rating_avg):'New',color:'#F5F0E8'},
                     ].map(s=>(
                       <div key={s.label} style={S.statCard}>
@@ -628,31 +645,17 @@ export default function Dashboard() {
           {/* PROFILE */}
           {view==='profile'&&(
             <div style={S.content}>
-
-              {/* ── Verification badge — full card, always first ── */}
               <VerificationBadge variant="full" />
-
-              {/* Profile details card */}
               <div style={{background:'#222220',borderRadius:12,border:'1px solid rgba(255,255,255,.06)',padding:28}}>
                 <div style={{display:'flex',alignItems:'center',gap:16,marginBottom:24,paddingBottom:20,borderBottom:'1px solid rgba(255,255,255,.06)'}}>
                   <div style={{position:'relative',flexShrink:0}}>
                     <div style={{width:64,height:64,borderRadius:'50%',background:'#9E3E24',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:"'Bebas Neue',sans-serif",fontSize:28,color:'#fff',border:'3px solid rgba(196,89,58,.3)'}}>{displayInitials}</div>
-                    {isVerified&&(
-                      <div style={{position:'absolute',bottom:0,right:0,width:20,height:20,borderRadius:'50%',background:'#3DAA6A',border:'3px solid #222220',display:'flex',alignItems:'center',justifyContent:'center'}}>
-                        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                      </div>
-                    )}
+                    {isVerified&&(<div style={{position:'absolute',bottom:0,right:0,width:20,height:20,borderRadius:'50%',background:'#3DAA6A',border:'3px solid #222220',display:'flex',alignItems:'center',justifyContent:'center'}}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>)}
                   </div>
                   <div>
                     <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
                       <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:28,letterSpacing:1,color:'#F5F0E8',lineHeight:1}}>{displayName.toUpperCase()}</div>
-                      {/* Inline verified chip next to name */}
-                      {isVerified&&(
-                        <span style={{display:'inline-flex',alignItems:'center',gap:4,background:'rgba(61,170,106,.12)',border:'1px solid rgba(61,170,106,.25)',borderRadius:4,padding:'3px 8px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:'#3DAA6A'}}>
-                          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                          Verified
-                        </span>
-                      )}
+                      {isVerified&&(<span style={{display:'inline-flex',alignItems:'center',gap:4,background:'rgba(61,170,106,.12)',border:'1px solid rgba(61,170,106,.25)',borderRadius:4,padding:'3px 8px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:'#3DAA6A'}}><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Verified</span>)}
                     </div>
                     <div style={{fontSize:13,color:'rgba(245,240,232,.5)',marginTop:4}}>{displayTrade} · {profile?.tradesperson_profiles?.years_experience||0} yrs experience</div>
                     <div style={{fontSize:13,color:'#E8A020',marginTop:3}}>{displayRating} · {displayJobs} completed jobs</div>
@@ -660,10 +663,10 @@ export default function Dashboard() {
                 </div>
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
                   {[
-                    {label:'Email',         val:profile?.email||'—'},
-                    {label:'Phone',         val:profile?.phone||'—'},
-                    {label:'Service areas', val:profile?.tradesperson_profiles?.service_areas?.join(' · ')||profile?.area||'—'},
-                    {label:'Member since',  val:profile?.created_at?new Date(profile.created_at).toLocaleDateString('en-ZA',{month:'long',year:'numeric'}):'—'},
+                    {label:'Email',val:profile?.email||'—'},
+                    {label:'Phone',val:profile?.phone||'—'},
+                    {label:'Service areas',val:profile?.tradesperson_profiles?.service_areas?.join(' · ')||profile?.area||'—'},
+                    {label:'Member since',val:profile?.created_at?new Date(profile.created_at).toLocaleDateString('en-ZA',{month:'long',year:'numeric'}):'—'},
                   ].map(r=>(
                     <div key={r.label}>
                       <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.35)',marginBottom:5}}>{r.label}</div>
@@ -677,23 +680,79 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* BID MODAL */}
+      {/* ── BID MODAL ─────────────────────────────────────────────── */}
       {modalJob&&(
-        <div style={S.overlay} onClick={e=>{if(e.target===e.currentTarget)setModalJob(null)}}>
+        <div style={S.overlay} onClick={e=>{if(e.target===e.currentTarget){setModalJob(null);setModalMedia([])}}}>
           <div style={S.modal}>
+            {/* Header */}
             <div style={S.mHeader}>
               <div>
                 <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2.5,textTransform:'uppercase',color:'#E07A5F',marginBottom:6}}>{modalJob.emoji} {modalJob.cat} · {modalJob.loc}</div>
                 <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:28,letterSpacing:1,color:'#F5F0E8',lineHeight:1}}>{modalJob.title}</div>
                 <div style={{fontSize:13,color:'rgba(245,240,232,.5)',marginTop:4}}>{modalJob.time} · {modalJob.bids} bid{modalJob.bids!==1?'s':''}</div>
               </div>
-              <div onClick={()=>setModalJob(null)} style={{width:32,height:32,borderRadius:6,background:'rgba(255,255,255,.06)',border:'1px solid rgba(255,255,255,.08)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:16,color:'rgba(245,240,232,.5)',flexShrink:0}}>✕</div>
+              <div onClick={()=>{setModalJob(null);setModalMedia([])}} style={{width:32,height:32,borderRadius:6,background:'rgba(255,255,255,.06)',border:'1px solid rgba(255,255,255,.08)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:16,color:'rgba(245,240,232,.5)',flexShrink:0}}>✕</div>
             </div>
+
             <div style={S.mBody}>
+              {/* Job details */}
               {[['Budget',modalJob.budget],['Urgency',modalJob.urgencyLabel],['Location',modalJob.loc],['Timing',modalJob.timing]].map(([l,v])=>(
                 <div key={l} style={S.detailRow}><span style={S.drLabel}>{l}</span><span style={{color:'rgba(245,240,232,.8)',fontSize:13}}>{v}</span></div>
               ))}
               <div style={S.descBox}>{modalJob.desc}</div>
+
+              {/* ── MEDIA SECTION ─────────────────────────────────── */}
+              {modalJob.photos > 0 && (
+                <div style={{marginBottom:18}}>
+                  <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:10,display:'flex',alignItems:'center',gap:8}}>
+                    <span style={{width:14,height:2,background:'#C4593A',display:'inline-block'}}/>
+                    Job Photos &amp; Video
+                    <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,color:'rgba(245,240,232,.3)',fontWeight:400,textTransform:'none',letterSpacing:0}}>— review before bidding</span>
+                  </div>
+
+                  {mediaLoading ? (
+                    <div style={{display:'flex',alignItems:'center',gap:8,padding:'16px 0',color:'rgba(245,240,232,.4)',fontFamily:"'Barlow Condensed',sans-serif",fontSize:12}}>
+                      <div className="spin" style={{width:14,height:14}}/>Loading media...
+                    </div>
+                  ) : modalMedia.length === 0 ? (
+                    <div style={{fontSize:12,color:'rgba(245,240,232,.25)',padding:'8px 0',fontStyle:'italic'}}>
+                      Media unavailable
+                    </div>
+                  ) : (
+                    <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                      {modalMedia.map((m,i)=>(
+                        <div key={i} className="media-thumb"
+                          onClick={()=>{setLightboxUrl(m.url);setLightboxType(m.type)}}
+                          style={{width:86,height:86,borderRadius:8,overflow:'hidden',position:'relative',border:'2px solid rgba(255,255,255,.1)',background:'#111',flexShrink:0}}>
+                          {m.type==='video' ? (
+                            <>
+                              <video src={m.url} style={{width:'100%',height:'100%',objectFit:'cover'}} muted playsInline/>
+                              <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,.4)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                                <div style={{width:26,height:26,borderRadius:'50%',background:'rgba(255,255,255,.9)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                                  <span style={{fontSize:10,marginLeft:2}}>▶</span>
+                                </div>
+                              </div>
+                              <div style={{position:'absolute',bottom:3,left:3,background:'rgba(0,0,0,.7)',borderRadius:3,padding:'1px 5px',fontSize:8,color:'rgba(255,255,255,.8)',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700}}>VIDEO</div>
+                            </>
+                          ) : (
+                            /* eslint-disable-next-line @next/next/no-img-element */
+                            <img src={m.url} alt={`Job photo ${i+1}`} style={{width:'100%',height:'100%',objectFit:'cover'}}/>
+                          )}
+                          {/* Expand icon */}
+                          <div style={{position:'absolute',top:3,right:3,background:'rgba(0,0,0,.6)',borderRadius:3,padding:2,opacity:0.7}}>
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{fontSize:11,color:'rgba(245,240,232,.25)',marginTop:8,fontStyle:'italic'}}>
+                    Tap any photo to view full size
+                  </div>
+                </div>
+              )}
+
+              {/* Bid form */}
               {!modalJob.submitted?(
                 <>
                   <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',margin:'18px 0 10px',display:'flex',alignItems:'center',gap:8}}>
@@ -728,12 +787,37 @@ export default function Dashboard() {
                 </div>
               )}
             </div>
+
             {!modalJob.submitted&&(
               <div style={S.mFooter}>
-                <button style={S.btn('ghost')} onClick={()=>setModalJob(null)}>Cancel</button>
+                <button style={S.btn('ghost')} onClick={()=>{setModalJob(null);setModalMedia([])}}>Cancel</button>
                 <button style={S.btn('terra')} onClick={submitBid}>Submit Bid →</button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── LIGHTBOX — full size photo/video viewer ──────────────── */}
+      {lightboxUrl&&(
+        <div
+          onClick={()=>setLightboxUrl(null)}
+          style={{position:'fixed',inset:0,background:'rgba(0,0,0,.92)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',padding:20,animation:'fadeIn .2s ease'}}>
+          <div onClick={e=>e.stopPropagation()} style={{position:'relative',maxWidth:'90vw',maxHeight:'85vh'}}>
+            {lightboxType==='video' ? (
+              <video src={lightboxUrl} controls autoPlay
+                style={{maxWidth:'90vw',maxHeight:'85vh',borderRadius:10,boxShadow:'0 20px 60px rgba(0,0,0,.5)'}}/>
+            ) : (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={lightboxUrl} alt="Job photo" style={{maxWidth:'90vw',maxHeight:'85vh',borderRadius:10,objectFit:'contain',boxShadow:'0 20px 60px rgba(0,0,0,.5)'}}/>
+            )}
+            <button onClick={()=>setLightboxUrl(null)}
+              style={{position:'absolute',top:-14,right:-14,width:32,height:32,borderRadius:'50%',background:'rgba(255,255,255,.12)',border:'1px solid rgba(255,255,255,.2)',color:'#fff',fontSize:16,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700}}>
+              ✕
+            </button>
+          </div>
+          <div style={{position:'absolute',bottom:20,left:0,right:0,textAlign:'center',fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,color:'rgba(255,255,255,.3)',letterSpacing:1}}>
+            Click anywhere to close
           </div>
         </div>
       )}
