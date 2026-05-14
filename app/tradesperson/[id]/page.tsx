@@ -28,6 +28,8 @@ type Profile = {
   rating_count: number
   jobs_completed: number
   bio: string
+  id_verified: boolean
+  verification_status: string
 }
 
 function getCatEmoji(cat:string){
@@ -65,7 +67,9 @@ export default function TradespersonProfile({ params }: { params: { id: string }
             rating_avg,
             rating_count,
             jobs_completed,
-            bio
+            bio,
+            id_verified,
+            verification_status
           )
         `)
         .eq('id', params.id)
@@ -76,20 +80,22 @@ export default function TradespersonProfile({ params }: { params: { id: string }
 
       const tp = (data as any).tradesperson_profiles
       setProfile({
-        id:               data.id,
-        full_name:        data.full_name||'Tradesperson',
-        area:             data.area||'Johannesburg',
-        city:             data.city||'Johannesburg',
-        email:            data.email||'',
-        phone:            data.phone||'',
-        created_at:       data.created_at,
-        trade_category:   tp?.trade_category||'general',
-        service_areas:    tp?.service_areas||[],
-        years_experience: tp?.years_experience||0,
-        rating_avg:       tp?.rating_avg||0,
-        rating_count:     tp?.rating_count||0,
-        jobs_completed:   tp?.jobs_completed||0,
-        bio:              tp?.bio||'',
+        id:                  data.id,
+        full_name:           data.full_name||'Tradesperson',
+        area:                data.area||'Johannesburg',
+        city:                data.city||'Johannesburg',
+        email:               data.email||'',
+        phone:               data.phone||'',
+        created_at:          data.created_at,
+        trade_category:      tp?.trade_category||'general',
+        service_areas:       tp?.service_areas||[],
+        years_experience:    tp?.years_experience||0,
+        rating_avg:          tp?.rating_avg||0,
+        rating_count:        tp?.rating_count||0,
+        jobs_completed:      tp?.jobs_completed||0,
+        bio:                 tp?.bio||'',
+        id_verified:         tp?.id_verified||false,
+        verification_status: tp?.verification_status||'unsubmitted',
       })
     }catch(e){ setNotFound(true) }
     setLoading(false)
@@ -140,10 +146,12 @@ export default function TradespersonProfile({ params }: { params: { id: string }
     .hero{background:var(--charcoal);padding:48px 40px;position:relative;overflow:hidden}
     .hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 60% 80% at 100% 0%,rgba(196,89,58,.12) 0%,transparent 60%);pointer-events:none}
     .hero-inner{max-width:1000px;margin:0 auto;display:flex;align-items:flex-start;gap:28px;position:relative;z-index:1}
-    .avatar{width:100px;height:100px;border-radius:50%;background:var(--terra-d);display:flex;align-items:center;justify-content:center;font-family:var(--fd);font-size:40px;color:#fff;border:3px solid rgba(196,89,58,.3);flex-shrink:0}
+    .avatar{width:100px;height:100px;border-radius:50%;background:var(--terra-d);display:flex;align-items:center;justify-content:center;font-family:var(--fd);font-size:40px;color:#fff;border:3px solid rgba(196,89,58,.3);flex-shrink:0;position:relative}
+    .avatar-verified{position:absolute;bottom:2px;right:2px;width:24px;height:24px;border-radius:50%;background:var(--green);border:3px solid var(--charcoal);display:flex;align-items:center;justify-content:center}
     .hero-info{flex:1}
     .trade-badge{display:inline-flex;align-items:center;gap:6px;font-family:var(--fc);font-size:10px;font-weight:600;letter-spacing:2.5px;text-transform:uppercase;color:var(--terra-l);margin-bottom:8px}
-    .hero-name{font-family:var(--fd);font-size:clamp(36px,5vw,60px);letter-spacing:1.5px;color:var(--cream);line-height:.92;margin-bottom:8px}
+    .hero-name{font-family:var(--fd);font-size:clamp(36px,5vw,60px);letter-spacing:1.5px;color:var(--cream);line-height:.92;margin-bottom:8px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+    .verified-name-chip{display:inline-flex;align-items:center;gap:5px;background:rgba(61,170,106,.15);border:1px solid rgba(61,170,106,.3);border-radius:4px;padding:4px 10px;font-family:var(--fc);font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#3DAA6A;vertical-align:middle}
     .hero-meta{font-size:14px;color:rgba(245,240,232,.5);margin-bottom:16px}
     .hero-stats{display:flex;gap:24px;flex-wrap:wrap}
     .hs{text-align:center}
@@ -178,27 +186,34 @@ export default function TradespersonProfile({ params }: { params: { id: string }
     .big-rating{font-family:var(--fd);font-size:72px;color:var(--charcoal);line-height:1;text-align:center}
     .big-stars{color:var(--amber);font-size:20px;text-align:center;margin:4px 0}
     .big-count{font-family:var(--fc);font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--charcoal-l);text-align:center;margin-bottom:20px}
-    .contact-btn{width:100%;padding:14px;border:none;border-radius:8px;font-family:var(--fc);font-size:14px;font-weight:700;letter-spacing:2px;text-transform:uppercase;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:10px}
-    .cb-primary{background:var(--terra);color:#fff}
-    .cb-primary:hover{background:var(--terra-l)}
-    .cb-ghost{background:transparent;border:1.5px solid var(--cream-dd);color:var(--charcoal-l)}
-    .cb-ghost:hover{border-color:var(--charcoal-l);color:var(--charcoal)}
-    .verified-badge{display:flex;align-items:center;gap:8px;background:rgba(61,170,106,.08);border:1px solid rgba(61,170,106,.2);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--charcoal-l);line-height:1.5;margin-bottom:14px}
+    .v-badge{display:flex;align-items:center;gap:8px;border-radius:8px;padding:10px 14px;font-size:13px;line-height:1.5;margin-bottom:10px}
+    .v-badge.green{background:rgba(61,170,106,.08);border:1px solid rgba(61,170,106,.2);color:var(--charcoal-l)}
+    .v-badge.amber{background:rgba(232,160,32,.06);border:1px solid rgba(232,160,32,.15);color:#b87a00}
+    .v-badge.grey{background:rgba(0,0,0,.04);border:1px solid var(--cream-d);color:var(--charcoal-l)}
     .loading-wrap{display:flex;align-items:center;justify-content:center;min-height:60vh;color:var(--charcoal-l);font-family:var(--fc);font-size:13px;letter-spacing:1px;gap:12px;flex-direction:column}
     .spin{display:inline-block;width:24px;height:24px;border:2px solid var(--cream-d);border-top-color:var(--terra);border-radius:50%;animation:spin .6s linear infinite}
     @keyframes spin{to{transform:rotate(360deg)}}
     @media(max-width:900px){.content{grid-template-columns:1fr}.hero{padding:32px 20px}.nav{padding:0 20px}.content{padding:24px 20px}}
   `
 
+  const navBar = (
+    <nav className="nav">
+      <div className="nav-logo" onClick={()=>router.back()}>
+        <div className="nav-hex">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+          </svg>
+        </div>
+        LUNGISA
+      </div>
+      <button className="back-btn" onClick={()=>router.back()}>← Back</button>
+    </nav>
+  )
+
   if(loading) return (
     <>
       <style>{css}</style>
-      <nav className="nav">
-        <div className="nav-logo" onClick={()=>router.back()}>
-          <div className="nav-hex"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></div>
-          LUNGISA
-        </div>
-      </nav>
+      {navBar}
       <div className="loading-wrap"><div className="spin"/><span>Loading profile...</span></div>
     </>
   )
@@ -206,29 +221,24 @@ export default function TradespersonProfile({ params }: { params: { id: string }
   if(notFound||!profile) return (
     <>
       <style>{css}</style>
-      <nav className="nav">
-        <div className="nav-logo" onClick={()=>router.back()}>
-          <div className="nav-hex"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></div>
-          LUNGISA
-        </div>
-      </nav>
+      {navBar}
       <div className="loading-wrap">
         <div style={{fontSize:48,marginBottom:16}}>🔍</div>
         <div style={{fontFamily:'var(--fd)',fontSize:32,color:'var(--charcoal)',marginBottom:8}}>Profile not found</div>
-        <button onClick={()=>router.back()} style={{fontFamily:'var(--fc)',fontSize:13,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',background:'var(--terra)',color:'#fff',border:'none',padding:'12px 24px',borderRadius:6,cursor:'pointer',marginTop:16}}>← Go back</button>
+        <p style={{fontSize:14,color:'var(--charcoal-l)',marginBottom:20,textAlign:'center',lineHeight:1.6}}>This tradesperson profile doesn&apos;t exist or has been removed.</p>
+        <button onClick={()=>router.back()} style={{fontFamily:'var(--fc)',fontSize:13,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',background:'var(--terra)',color:'#fff',border:'none',padding:'12px 24px',borderRadius:6,cursor:'pointer'}}>← Go back</button>
       </div>
     </>
   )
 
-  const tradeEmoji = getCatEmoji(profile.trade_category)
-  const tradeName = profile.trade_category.charAt(0).toUpperCase()+profile.trade_category.slice(1)
-  const initials = getInitials(profile.full_name)
-  const memberSince = new Date(profile.created_at).toLocaleDateString('en-ZA',{month:'long',year:'numeric'})
+  const tradeEmoji   = getCatEmoji(profile.trade_category)
+  const tradeName    = profile.trade_category.charAt(0).toUpperCase()+profile.trade_category.slice(1)
+  const initials     = getInitials(profile.full_name)
+  const memberSince  = new Date(profile.created_at).toLocaleDateString('en-ZA',{month:'long',year:'numeric'})
   const ratingDisplay = profile.rating_avg>0 ? profile.rating_avg.toFixed(1) : '—'
-  const starsFull = Math.floor(profile.rating_avg)
+  const starsFull    = Math.floor(profile.rating_avg)
   const starsDisplay = profile.rating_avg>0 ? '★'.repeat(starsFull)+'☆'.repeat(5-starsFull) : '☆☆☆☆☆'
 
-  // Calculate rating distribution (mock based on avg)
   const ratingDist = profile.rating_count>0 ? [
     {stars:5, count: Math.round(profile.rating_count*0.6)},
     {stars:4, count: Math.round(profile.rating_count*0.25)},
@@ -241,27 +251,41 @@ export default function TradespersonProfile({ params }: { params: { id: string }
     <>
       <style>{css}</style>
 
-      {/* NAV */}
-      <nav className="nav">
-        <div className="nav-logo" onClick={()=>router.back()}>
-          <div className="nav-hex"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></div>
-          LUNGISA
-        </div>
-        <button className="back-btn" onClick={()=>router.back()}>← Back</button>
-      </nav>
+      {navBar}
 
       {/* HERO */}
       <div className="hero">
         <div className="hero-inner">
-          <div className="avatar">{initials}</div>
+          {/* Avatar with verified dot */}
+          <div className="avatar">
+            {initials}
+            {profile.id_verified&&(
+              <div className="avatar-verified">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              </div>
+            )}
+          </div>
+
           <div className="hero-info">
             <div className="trade-badge">
               <span>{tradeEmoji}</span>
               <span>{tradeName}</span>
               {profile.years_experience>0&&<span>· {profile.years_experience} yrs experience</span>}
             </div>
-            <h1 className="hero-name">{profile.full_name.toUpperCase()}</h1>
+
+            {/* Name + verified chip inline */}
+            <h1 className="hero-name">
+              {profile.full_name.toUpperCase()}
+              {profile.id_verified&&(
+                <span className="verified-name-chip">
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  Verified
+                </span>
+              )}
+            </h1>
+
             <p className="hero-meta">📍 {profile.service_areas.join(', ')||profile.area} · Member since {memberSince}</p>
+
             <div className="hero-stats">
               <div className="hs">
                 <div className="hs-num amber">{ratingDisplay}</div>
@@ -290,10 +314,9 @@ export default function TradespersonProfile({ params }: { params: { id: string }
 
       {/* CONTENT */}
       <div className="content">
-        {/* LEFT — main info */}
-        <div>
 
-          {/* About */}
+        {/* LEFT */}
+        <div>
           {profile.bio&&(
             <div className="card">
               <div className="card-title">About</div>
@@ -301,13 +324,12 @@ export default function TradespersonProfile({ params }: { params: { id: string }
             </div>
           )}
 
-          {/* Details */}
           <div className="card">
             <div className="card-title">Profile Details</div>
             {[
-              {label:'Trade',     val:`${tradeEmoji} ${tradeName}`},
-              {label:'Experience',val:`${profile.years_experience} year${profile.years_experience!==1?'s':''}`},
-              {label:'Member since', val:memberSince},
+              {label:'Trade',          val:`${tradeEmoji} ${tradeName}`},
+              {label:'Experience',     val:`${profile.years_experience} year${profile.years_experience!==1?'s':''}`},
+              {label:'Member since',   val:memberSince},
               {label:'Jobs completed', val:String(profile.jobs_completed)},
             ].map(r=>(
               <div key={r.label} className="info-row">
@@ -325,15 +347,15 @@ export default function TradespersonProfile({ params }: { params: { id: string }
             </div>
           </div>
 
-          {/* Reviews */}
           <div className="card">
             <div className="card-title">
               Reviews
-              {profile.rating_count>0&&<span style={{fontFamily:'var(--fc)',fontSize:12,fontWeight:600,color:'var(--charcoal-l)',marginLeft:'auto'}}>
-                {profile.rating_count} review{profile.rating_count!==1?'s':''}
-              </span>}
+              {profile.rating_count>0&&(
+                <span style={{fontFamily:'var(--fc)',fontSize:12,fontWeight:600,color:'var(--charcoal-l)',marginLeft:'auto'}}>
+                  {profile.rating_count} review{profile.rating_count!==1?'s':''}
+                </span>
+              )}
             </div>
-
             {reviews.length===0?(
               <div className="empty-reviews">
                 <div style={{fontSize:32,marginBottom:12}}>⭐</div>
@@ -354,7 +376,7 @@ export default function TradespersonProfile({ params }: { params: { id: string }
           </div>
         </div>
 
-        {/* RIGHT — sidebar */}
+        {/* RIGHT SIDEBAR */}
         <div>
           {/* Rating summary */}
           <div className="card">
@@ -362,7 +384,6 @@ export default function TradespersonProfile({ params }: { params: { id: string }
             <div className="big-rating">{ratingDisplay}</div>
             <div className="big-stars">{starsDisplay}</div>
             <div className="big-count">{profile.rating_count} review{profile.rating_count!==1?'s':''}</div>
-
             {ratingDist.length>0&&ratingDist.map(r=>(
               <div key={r.stars} className="rating-bar">
                 <div className="rb-label">{r.stars}</div>
@@ -372,25 +393,42 @@ export default function TradespersonProfile({ params }: { params: { id: string }
                 <div className="rb-count">{r.count}</div>
               </div>
             ))}
-
             {profile.rating_count===0&&(
               <div style={{textAlign:'center',fontSize:13,color:'var(--charcoal-l)',padding:'10px 0'}}>No ratings yet</div>
             )}
           </div>
 
-          {/* Verified */}
+          {/* Verification — real status from DB */}
           <div className="card">
             <div className="card-title">Verification</div>
-            <div className="verified-badge">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3DAA6A" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+
+            {/* Email — always verified (they passed OTP) */}
+            <div className="v-badge green">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3DAA6A" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
               <span>Email verified</span>
             </div>
-            <div className="verified-badge">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3DAA6A" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-              <span>Phone verified</span>
-            </div>
-            <div className="verified-badge">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3DAA6A" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+
+            {/* ID verification — dynamic */}
+            {profile.id_verified ? (
+              <div className="v-badge green">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3DAA6A" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Identity verified ✓</span>
+              </div>
+            ) : profile.verification_status==='pending' ? (
+              <div className="v-badge amber">
+                <span>⏳</span>
+                <span>ID verification in progress</span>
+              </div>
+            ) : (
+              <div className="v-badge grey">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--sand)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                <span>ID not yet verified</span>
+              </div>
+            )}
+
+            {/* Founding member */}
+            <div className="v-badge green">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3DAA6A" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
               <span>Lungisa founding member</span>
             </div>
           </div>
@@ -399,10 +437,10 @@ export default function TradespersonProfile({ params }: { params: { id: string }
           <div className="card">
             <div className="card-title">Stats</div>
             {[
-              {label:'Response rate',    val:'—'},
-              {label:'Avg response time',val:'—'},
-              {label:'Jobs completed',   val:String(profile.jobs_completed)},
-              {label:'Member since',     val:memberSince},
+              {label:'Response rate',     val:'—'},
+              {label:'Avg response time', val:'—'},
+              {label:'Jobs completed',    val:String(profile.jobs_completed)},
+              {label:'Member since',      val:memberSince},
             ].map(s=>(
               <div key={s.label} className="info-row">
                 <span className="info-label">{s.label}</span>
@@ -411,7 +449,7 @@ export default function TradespersonProfile({ params }: { params: { id: string }
             ))}
           </div>
 
-          {/* Safety note */}
+          {/* Escrow note */}
           <div style={{background:'rgba(196,89,58,.05)',border:'1px solid rgba(196,89,58,.1)',borderRadius:8,padding:'14px 16px',fontSize:12,color:'var(--charcoal-l)',lineHeight:1.6}}>
             🔒 All payments on Lungisa are held in escrow and only released when you confirm the job is complete. Never pay outside the platform.
           </div>

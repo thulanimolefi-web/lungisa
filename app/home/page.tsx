@@ -9,6 +9,7 @@ type Tab = 'active' | 'history' | 'profile'
 
 type BidData = {
   id: string
+  tradespersonId: string
   name: string
   init: string
   bg: string
@@ -113,7 +114,7 @@ export default function HomeDashboard() {
         .select(`
           *,
           bids(
-            id, amount, counter_amount, counter_by, eta_label, note, status, created_at,
+            id, amount, counter_amount, counter_by, eta_label, note, status, created_at, tradesperson_id,
             profiles!tradesperson_id(
               full_name, avatar_url,
               tradesperson_profiles(trade_category, years_experience, rating_avg, jobs_completed)
@@ -137,8 +138,9 @@ export default function HomeDashboard() {
           status:   j.status,
           posted:   getTimeAgo(j.created_at),
           bids:     (j.bids||[]).map((b:any,bi:number)=>({
-            id:            b.id,
-            name:          b.profiles?.full_name||'Tradesperson',
+            id:              b.id,
+            tradespersonId:  b.tradesperson_id,
+            name:            b.profiles?.full_name||'Tradesperson',
             init:          (b.profiles?.full_name||'T').split(' ').map((n:string)=>n[0]).join('').substring(0,2).toUpperCase(),
             bg:            AVATAR_COLORS[(ji+bi)%AVATAR_COLORS.length],
             trade:         `${(b.profiles?.tradesperson_profiles?.trade_category||'tradesperson').charAt(0).toUpperCase()+(b.profiles?.tradesperson_profiles?.trade_category||'tradesperson').slice(1)} · ${b.profiles?.tradesperson_profiles?.years_experience||0} yrs`,
@@ -587,9 +589,9 @@ export default function HomeDashboard() {
                                   return (
                                     <div key={bid.id} className={`bid-card ${isAccepted?'accepted':''}`}>
                                       <div className="bc-top">
-                                        <div className="bc-ava" style={{background:bid.bg,cursor:'pointer'}} onClick={()=>router.push(`/tradesperson/${bid.id}`)}>{bid.init}</div>
+                                        <div className="bc-ava" style={{background:bid.bg,cursor:'pointer'}} onClick={()=>router.push(`/tradesperson/${bid.tradespersonId}`)}>{bid.init}</div>
                                         <div style={{flex:1}}>
-                                          <div className="bc-name" style={{cursor:'pointer',textDecoration:'underline',textDecorationColor:'var(--cream-dd)'}} onClick={()=>router.push(`/tradesperson/${bid.id}`)}>{bid.name}</div>
+                                          <div className="bc-name" style={{cursor:'pointer',textDecoration:'underline',textDecorationColor:'var(--cream-dd)'}} onClick={()=>router.push(`/tradesperson/${bid.tradespersonId}`)}>{bid.name}</div>
                                           <div className="bc-trade">{bid.trade}</div>
                                           <div className="bc-stars">★★★★★ <span style={{color:'var(--charcoal-l)',fontSize:11}}>{bid.ratingNum} · {bid.jobs} jobs</span></div>
                                         </div>
