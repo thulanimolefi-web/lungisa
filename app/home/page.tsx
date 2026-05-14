@@ -4,8 +4,9 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../lib/supabase'
 import NotificationBell from '../components/NotificationBell'
+import Messaging from '../components/Messaging'
 
-type Tab = 'active' | 'history' | 'profile'
+type Tab = 'active' | 'history' | 'messages' | 'profile'
 
 type BidData = {
   id: string
@@ -466,6 +467,7 @@ export default function HomeDashboard() {
             <div className="sn-sec">My Jobs</div>
             {[
               {id:'active', icon:'🏠', label:'Active Jobs', badge:activeJobs.filter(j=>j.bids.length>0).length},
+              {id:'messages',icon:'💬',label:'Messages',    badge:0},
               {id:'history',icon:'📋',label:'Job History',  badge:historyJobs.length},
               {id:'profile',icon:'👤',label:'My Profile'},
             ].map(item=>(
@@ -488,7 +490,7 @@ export default function HomeDashboard() {
         {/* MAIN */}
         <div className="main">
           <div className="topbar">
-            <span className="page-title">{tab==='active'?'ACTIVE JOBS':tab==='history'?'JOB HISTORY':'MY PROFILE'}</span>
+            <span className="page-title">{tab==='active'?'ACTIVE JOBS':tab==='history'?'JOB HISTORY':tab==='messages'?'MESSAGES':'MY PROFILE'}</span>
             <div className="topbar-right">
               <button className="post-btn" onClick={()=>router.push('/post')}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -751,6 +753,13 @@ export default function HomeDashboard() {
                   </div>
                 ))}
               </>
+            )}
+
+            {/* MESSAGES */}
+            {tab==='messages'&&(
+              <div style={{height:'calc(100vh - 120px)',minHeight:500}}>
+                <Messaging theme="light" />
+              </div>
             )}
 
             {/* PROFILE */}

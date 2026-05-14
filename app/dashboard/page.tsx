@@ -4,8 +4,9 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import NotificationBell from '../components/NotificationBell'
 import VerificationBadge from '../components/VerificationBadge'
+import Messaging from '../components/Messaging'
 
-type View = 'feed' | 'bids' | 'earnings' | 'profile'
+type View = 'feed' | 'bids' | 'earnings' | 'messages' | 'profile'
 type Bid = {
   id: string
   job: string
@@ -365,10 +366,11 @@ export default function Dashboard() {
     btn:(variant:'terra'|'ghost')=>({padding:'12px 22px',borderRadius:8,fontFamily:"'Barlow Condensed',sans-serif",fontSize:13,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase' as const,cursor:'pointer',border:'none',background:variant==='terra'?'#C4593A':'rgba(255,255,255,.06)',color:variant==='ghost'?'rgba(245,240,232,.6)':'#fff',flex:variant!=='ghost'?1:undefined,display:'flex',alignItems:'center',justifyContent:'center' as const,gap:8,transition:'all .15s'}),
   }
 
-  const viewTitles:Record<View,string>={feed:'JOB FEED',bids:'MY BIDS',earnings:'EARNINGS',profile:'MY PROFILE'}
+  const viewTitles:Record<View,string>={feed:'JOB FEED',bids:'MY BIDS',earnings:'EARNINGS',messages:'MESSAGES',profile:'MY PROFILE'}
   const navItems=[
     {view:'feed'     as View,icon:'🏠',label:'Job Feed',  badge:jobs.filter(j=>!j.submitted).length},
     {view:'bids'     as View,icon:'💸',label:'My Bids',   badge:countersPending.length>0?countersPending.length:myBids.length},
+    {view:'messages' as View,icon:'💬',label:'Messages',  badge:0},
     {view:'earnings' as View,icon:'📈',label:'Earnings'},
     {view:'profile'  as View,icon:'👤',label:'My Profile'},
   ]
@@ -639,6 +641,13 @@ export default function Dashboard() {
                   </div>
                 </>
               )}
+            </div>
+          )}
+
+          {/* MESSAGES */}
+          {view==='messages'&&(
+            <div style={{padding:'24px 28px',height:'calc(100vh - 58px)',boxSizing:'border-box'}}>
+              <Messaging theme="dark" />
             </div>
           )}
 
