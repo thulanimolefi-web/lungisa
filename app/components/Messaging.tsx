@@ -506,9 +506,9 @@ export default function Messaging({ theme, openJobId, openUserId, onClose }: Pro
                   </div>
                 </div>
                 <div style={{
-                  fontSize: 11, color: txt3, fontFamily: "'Barlow Condensed', sans-serif",
+                  fontSize: 9, color: txt3, fontFamily: "'Barlow Condensed', sans-serif",
                   fontWeight: 600, letterSpacing: 0.5, marginBottom: 3,
-                  textTransform: 'uppercase', fontSize: 9,
+                  textTransform: 'uppercase',
                 }}>
                   {thread.jobTitle.substring(0, 28)}{thread.jobTitle.length > 28 ? '…' : ''}
                 </div>
