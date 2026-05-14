@@ -22,6 +22,16 @@ const AREAS = ['Soweto','Sandton','Roodepoort','Midrand','Randburg','Fourways','
 const TIMES = ['Any time','Morning (7am–12pm)','Afternoon (12pm–5pm)','Evening (5pm–8pm)']
 const AVATAR_COLORS = ['#8B3A2A','#5A3A2A','#2A4A3A','#3A4A6A','#6A3A5A','#4A5A2A']
 
+const MAX_IMAGES = 3
+const MAX_VIDEOS = 1
+
+type MediaFile = {
+  url:       string
+  type:      'image' | 'video'
+  name:      string
+  size:      number
+}
+
 type RealBid = {
   id: string
   name: string
@@ -37,25 +47,34 @@ type RealBid = {
 
 export default function PostJob() {
   const router = useRouter()
-  const [step, setStep]           = useState<Step>(0)
-  const [cat, setCat]             = useState('Plumbing')
-  const [catEmoji, setCatEmoji]   = useState('🔧')
-  const [title, setTitle]         = useState('')
-  const [desc, setDesc]           = useState('')
-  const [area, setArea]           = useState('')
-  const [urgency, setUrgency]     = useState('Today — emergency')
-  const [date, setDate]           = useState('')
-  const [time, setTime]           = useState('')
-  const [budget, setBudget]       = useState(750)
-  const [budgetOpen, setBudgetOpen] = useState(false)
-  const [photos, setPhotos]       = useState<string[]>([])
-  const [uploadingPhoto, setUploadingPhoto] = useState(false)
-  const [titleErr, setTitleErr]   = useState('')
-  const [descErr, setDescErr]     = useState('')
-  const [areaErr, setAreaErr]     = useState('')
+  const [step, setStep]               = useState<Step>(0)
+  const [cat, setCat]                 = useState('Plumbing')
+  const [catEmoji, setCatEmoji]       = useState('🔧')
+  const [title, setTitle]             = useState('')
+  const [desc, setDesc]               = useState('')
+  const [area, setArea]               = useState('')
+  const [urgency, setUrgency]         = useState('Today — emergency')
+  const [date, setDate]               = useState('')
+  const [time, setTime]               = useState('')
+  const [budget, setBudget]           = useState(750)
+  const [budgetOpen, setBudgetOpen]   = useState(false)
+
+  // ── Media state — track files with type ──────────────────────────
+  const [mediaFiles, setMediaFiles]   = useState<MediaFile[]>([])
+  const [uploading, setUploading]     = useState(false)
+  const [uploadErr, setUploadErr]     = useState('')
+  const imageInputRef                 = useRef<HTMLInputElement>(null)
+  const videoInputRef                 = useRef<HTMLInputElement>(null)
+
+  const images = mediaFiles.filter(m => m.type === 'image')
+  const videos = mediaFiles.filter(m => m.type === 'video')
+
+  const [titleErr, setTitleErr]       = useState('')
+  const [descErr, setDescErr]         = useState('')
+  const [areaErr, setAreaErr]         = useState('')
   const [postedJobId, setPostedJobId] = useState<string|null>(null)
-  const [liveBids, setLiveBids]   = useState<RealBid[]>([])
-  const [bidCount, setBidCount]   = useState(0)
+  const [liveBids, setLiveBids]       = useState<RealBid[]>([])
+  const [bidCount, setBidCount]       = useState(0)
   const [selectedBid, setSelectedBid] = useState<RealBid|null>(null)
   const [counterAmt, setCounterAmt]   = useState('')
   const [counterResp, setCounterResp] = useState('')
@@ -64,12 +83,11 @@ export default function PostJob() {
   const [paid, setPaid]               = useState(false)
   const [toasts, setToasts]           = useState<{id:number,title:string,sub:string}[]>([])
   const [waitingMsg, setWaitingMsg]   = useState('Notifying tradespeople in your area...')
-  const pollRef = useRef<NodeJS.Timeout|null>(null)
+  const pollRef                       = useRef<NodeJS.Timeout|null>(null)
 
   // Poll for real bids after job is posted
   useEffect(()=>{
     if(!postedJobId) return
-
     const waitMessages = [
       'Notifying tradespeople in your area...',
       'Tradespeople are reviewing your job...',
@@ -82,23 +100,18 @@ export default function PostJob() {
       setWaitingMsg(waitMessages[msgIdx])
     }, 4000)
 
-    // Subscribe to real-time bids
     const channel = supabase
       .channel(`bids-${postedJobId}`)
       .on('postgres_changes',{
-        event: 'INSERT',
-        schema: 'public',
-        table: 'bids',
+        event: 'INSERT', schema: 'public', table: 'bids',
         filter: `job_id=eq.${postedJobId}`,
       }, async (payload)=>{
         const bid = payload.new as any
-        // Fetch tradesperson details
         const { data: profile } = await supabase
           .from('profiles')
           .select('full_name, tradesperson_profiles(trade_category, years_experience, rating_avg, jobs_completed)')
           .eq('id', bid.tradesperson_id)
           .single()
-
         const name = profile?.full_name || 'Tradesperson'
         const tp   = (profile as any)?.tradesperson_profiles
         const newBid: RealBid = {
@@ -122,7 +135,6 @@ export default function PostJob() {
       })
       .subscribe()
 
-    // Also poll every 30s as fallback
     pollRef.current = setInterval(async()=>{
       const { data } = await supabase
         .from('bids')
@@ -161,37 +173,87 @@ export default function PostJob() {
     setTimeout(()=>setToasts(t=>t.filter(x=>x.id!==id)),4500)
   }
 
-  async function uploadPhotos(e: React.ChangeEvent<HTMLInputElement>) {
+  // ── Upload images (max 3) ────────────────────────────────────────
+  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files||[])
-    if(files.length===0) return
-    setUploadingPhoto(true)
-    try {
-      const urls: string[] = []
-      for(const file of files) {
-        const ext = file.name.split('.').pop()
-        const isVideo = file.type.startsWith('video/')
-        const folder = isVideo ? 'videos' : 'images'
-        const fileName = `${folder}/${Date.now()}-${Math.random().toString(36).substring(2)}.${ext}`
+    if(!files.length) return
+    setUploadErr('')
+
+    const remaining = MAX_IMAGES - images.length
+    if(remaining <= 0) { setUploadErr('Maximum 3 photos already attached'); return }
+
+    const toUpload = files.slice(0, remaining)
+    if(files.length > remaining) {
+      setUploadErr(`Only ${remaining} more photo${remaining>1?'s':''} allowed — uploading first ${remaining}`)
+    }
+
+    setUploading(true)
+    const uploaded: MediaFile[] = []
+
+    for(const file of toUpload) {
+      if(!file.type.startsWith('image/')) { setUploadErr('Please select image files only'); continue }
+      if(file.size > 10 * 1024 * 1024) { setUploadErr(`${file.name} is too large — max 10MB`); continue }
+
+      try {
+        const ext      = file.name.split('.').pop()
+        const path     = `job-media/${Date.now()}-${Math.random().toString(36).substring(2)}.${ext}`
         const { data, error } = await supabase.storage
           .from('job-photos')
-          .upload(fileName, file, { cacheControl:'3600', upsert:false })
-        if(!error && data) {
-          const { data: urlData } = supabase.storage
-            .from('job-photos')
-            .getPublicUrl(data.path)
-          urls.push(urlData.publicUrl)
-        }
+          .upload(path, file, { cacheControl:'3600', upsert:false, contentType: file.type })
+
+        if(error) { setUploadErr('Upload failed: '+error.message); continue }
+        const { data: urlData } = supabase.storage.from('job-photos').getPublicUrl(data.path)
+        uploaded.push({ url: urlData.publicUrl, type: 'image', name: file.name, size: file.size })
+      } catch(err) {
+        setUploadErr('Upload error — please try again')
       }
-      setPhotos(p=>[...p, ...urls])
-      const imgCount = urls.filter(u=>!u.includes('/videos/')).length
-      const vidCount = urls.filter(u=>u.includes('/videos/')).length
-      const msg = [imgCount>0?`${imgCount} photo${imgCount>1?'s':''}`:null, vidCount>0?`${vidCount} video${vidCount>1?'s':''}`:null].filter(Boolean).join(' + ')
-      toast('Media uploaded!', `${msg} attached to your job`)
-    } catch(e) {
-      console.log('Upload error:', e)
-      toast('Upload failed','Please try again')
     }
-    setUploadingPhoto(false)
+
+    if(uploaded.length > 0) {
+      setMediaFiles(prev => [...prev, ...uploaded])
+      toast(`${uploaded.length} photo${uploaded.length>1?'s':''} added ✓`, 'Tradespeople will see your photos when bidding')
+    }
+    setUploading(false)
+    // Reset input so same file can be re-selected if needed
+    if(imageInputRef.current) imageInputRef.current.value = ''
+  }
+
+  // ── Upload video (max 1) ─────────────────────────────────────────
+  async function handleVideoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if(!file) return
+    setUploadErr('')
+
+    if(videos.length >= MAX_VIDEOS) { setUploadErr('Maximum 1 video already attached'); return }
+    if(!file.type.startsWith('video/')) { setUploadErr('Please select a video file'); return }
+    if(file.size > 50 * 1024 * 1024) { setUploadErr('Video must be under 50MB'); return }
+
+    setUploading(true)
+    try {
+      const ext  = file.name.split('.').pop()
+      const path = `job-media/videos/${Date.now()}-${Math.random().toString(36).substring(2)}.${ext}`
+      const { data, error } = await supabase.storage
+        .from('job-photos')
+        .upload(path, file, { cacheControl:'3600', upsert:false, contentType: file.type })
+
+      if(error) { setUploadErr('Video upload failed: '+error.message); setUploading(false); return }
+      const { data: urlData } = supabase.storage.from('job-photos').getPublicUrl(data.path)
+      setMediaFiles(prev => [...prev, { url: urlData.publicUrl, type: 'video', name: file.name, size: file.size }])
+      toast('Video added ✓', 'Tradespeople can review your video before bidding')
+    } catch(err) {
+      setUploadErr('Video upload error — please try again')
+    }
+    setUploading(false)
+    if(videoInputRef.current) videoInputRef.current.value = ''
+  }
+
+  function removeMedia(idx: number) {
+    setMediaFiles(prev => prev.filter((_,i) => i !== idx))
+  }
+
+  function formatSize(bytes: number) {
+    if(bytes < 1024*1024) return `${(bytes/1024).toFixed(0)}KB`
+    return `${(bytes/1024/1024).toFixed(1)}MB`
   }
 
   function goStep(n:Step) { setStep(n); window.scrollTo({top:0,behavior:'smooth'}) }
@@ -213,12 +275,8 @@ export default function PostJob() {
     toast('Job posted!','Your job is live. Tradespeople are being notified.')
     try {
       const { data:{ session } } = await supabase.auth.getSession()
-      if(!session?.user) {
-        console.log('No session — redirecting to auth')
-        window.location.href = '/auth'
-        return
-      }
-      console.log('Posting job as:', session.user.id, session.user.email)
+      if(!session?.user) { window.location.href = '/auth'; return }
+
       const { data, error } = await supabase.from('jobs').insert({
         homeowner_id:   session.user.id,
         title,
@@ -231,31 +289,27 @@ export default function PostJob() {
         preferred_date: date||null,
         preferred_time: time||null,
         status:         'open',
-        expires_at:     new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        expires_at:     new Date(Date.now() + 30*24*60*60*1000).toISOString(),
       }).select('id').single()
 
-      if(error) {
-        console.error('Job insert error:', error)
-        toast('Error posting job', error.message)
-        return
-      }
+      if(error) { toast('Error posting job', error.message); return }
 
       if(data) {
-        console.log('Job posted successfully:', data.id)
         setPostedJobId(data.id)
-        if(photos.length > 0) {
-          const { error: photoError } = await supabase.from('job_photos').insert(
-            photos.map((url, i) => ({
+        // Save all media to job_photos table
+        if(mediaFiles.length > 0) {
+          await supabase.from('job_photos').insert(
+            mediaFiles.map((m, i) => ({
               job_id:      data.id,
-              storage_url: url,
+              storage_url: m.url,
+              file_type:   m.type,
               sort_order:  i,
             }))
           )
-          if(photoError) console.error('Photo save error:', photoError)
         }
       }
     } catch(e) {
-      console.error('Job post exception:', e)
+      console.error('Job post error:', e)
     }
   }
 
@@ -265,12 +319,9 @@ export default function PostJob() {
     setTimeout(()=>{
       const offered = parseInt(counterAmt)
       if(offered >= selectedBid.price * 0.82) {
-        setCounterResp('accepted')
-        setFinalPrice(offered)
+        setCounterResp('accepted'); setFinalPrice(offered)
         toast('Counter accepted!',`${selectedBid.name.split(' ')[0]} accepted R${offered}`)
-      } else {
-        setCounterResp('declined')
-      }
+      } else { setCounterResp('declined') }
     },1800)
   }
 
@@ -281,7 +332,7 @@ export default function PostJob() {
 
   function resetAndPostAnother() {
     setStep(0); setLiveBids([]); setBidCount(0); setTitle(''); setDesc('')
-    setArea(''); setPhotos([]); setAccepted(false); setPaid(false)
+    setArea(''); setMediaFiles([]); setAccepted(false); setPaid(false)
     setSelectedBid(null); setPostedJobId(null); setCounterResp(''); setFinalPrice(0)
   }
 
@@ -337,10 +388,16 @@ export default function PostJob() {
         @keyframes toastIn{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:translateX(0)}}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
         @keyframes spin{to{transform:rotate(360deg)}}
+        @keyframes thumbIn{from{opacity:0;transform:scale(.8)}to{opacity:1;transform:scale(1)}}
         .bid-card-anim{animation:bidSlide .4s ease both}
         .toast-anim{animation:toastIn .3s ease both}
+        .thumb-anim{animation:thumbIn .25s ease both}
         .pulse{animation:pulse 1.8s infinite}
         .spin{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
+        .upload-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:2px dashed rgba(255,255,255,.12);border-radius:10px;padding:18px 12px;cursor:pointer;transition:all .2s;background:transparent;position:relative}
+        .upload-btn:hover{border-color:rgba(196,89,58,.5);background:rgba(196,89,58,.04)}
+        .upload-btn.disabled{opacity:.4;cursor:not-allowed;pointer-events:none}
+        .upload-btn input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
         @media(max-width:900px){.page-grid{grid-template-columns:1fr!important}.sidebar-col{display:none}}
       `}</style>
 
@@ -452,94 +509,195 @@ export default function PostJob() {
               </div>
             )}
 
-            {/* STEP 3: BUDGET */}
+            {/* STEP 3: BUDGET & MEDIA */}
             {step===3&&(
               <div style={S.card}>
                 <div style={S.cardEyebrow}><span style={{width:14,height:2,background:'var(--terra)',display:'inline-block'}}/>Step 4 of 5</div>
                 <div style={S.cardTitle}>BUDGET &<br/>PHOTOS</div>
-                <p style={S.cardSub}>Set a rough budget to attract relevant bids.</p>
+                <p style={S.cardSub}>Set a rough budget. Add photos or a short video — jobs with media get 3× more bids.</p>
+
+                {/* Budget slider */}
                 <div style={S.budgetDisplay}>{budgetOpen?'Open':`R ${budget.toLocaleString()}`}</div>
                 <div style={{textAlign:'center',fontSize:12,color:'rgba(245,240,232,.4)',marginBottom:14}}>Drag to set your maximum budget</div>
-                <input type="range" min={200} max={10000} step={50} value={budget} onChange={e=>{setBudget(parseInt(e.target.value));setBudgetOpen(false)}}
+                <input type="range" min={200} max={10000} step={50} value={budget}
+                  onChange={e=>{setBudget(parseInt(e.target.value));setBudgetOpen(false)}}
                   style={{width:'100%',accentColor:'var(--terra)',marginBottom:8}}/>
                 <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'rgba(245,240,232,.3)',marginBottom:8}}>
                   <span>R200</span><span>R10,000+</span>
                 </div>
-                <button onClick={()=>setBudgetOpen(true)} style={{background:'none',border:'none',cursor:'pointer',fontFamily:'var(--fc)',fontSize:11,fontWeight:600,letterSpacing:1,textTransform:'uppercase',color:'rgba(245,240,232,.4)',textDecoration:'underline',display:'block',margin:'0 auto 20px'}}>
+                <button onClick={()=>setBudgetOpen(true)}
+                  style={{background:'none',border:'none',cursor:'pointer',fontFamily:'var(--fc)',fontSize:11,fontWeight:600,letterSpacing:1,textTransform:'uppercase',color:'rgba(245,240,232,.4)',textDecoration:'underline',display:'block',margin:'0 auto 24px'}}>
                   Skip — show me all bids
                 </button>
-                {/* Photo/Video upload area */}
-                <div style={{marginBottom:8}}>
-                  <div style={{border:`2px dashed ${photos.length>0?'rgba(61,170,106,.4)':'rgba(255,255,255,.1)'}`,borderRadius:10,padding:photos.length>0?16:24,textAlign:'center',position:'relative',transition:'all .2s',background:photos.length>0?'rgba(61,170,106,.04)':'transparent'}}>
-                    <input type="file" accept="image/*,video/*" multiple capture="environment" onChange={uploadPhotos}
-                      style={{position:'absolute',inset:0,opacity:0,cursor:'pointer',width:'100%',height:'100%',zIndex:2}}/>
-                    {uploadingPhoto?(
-                      <div style={{fontSize:13,color:'rgba(245,240,232,.5)',display:'flex',alignItems:'center',justifyContent:'center',gap:8,padding:'8px 0'}}>
-                        <div className="spin"/>Uploading...
-                      </div>
-                    ):photos.length===0?(
-                      <>
-                        <div style={{fontSize:28,marginBottom:8}}>📸</div>
-                        <div style={{fontSize:13,color:'rgba(245,240,232,.7)',fontWeight:600,marginBottom:4}}>Tap to add photos or video</div>
-                        <div style={{fontSize:11,color:'rgba(245,240,232,.3)'}}>Jobs with media get 3× more bids · Images and videos supported</div>
-                        <div style={{display:'flex',justifyContent:'center',gap:12,marginTop:12}}>
-                          <span style={{fontFamily:'var(--fc)',fontSize:9,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(245,240,232,.3)',border:'1px solid rgba(255,255,255,.08)',padding:'4px 8px',borderRadius:3}}>📷 Photo</span>
-                          <span style={{fontFamily:'var(--fc)',fontSize:9,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(245,240,232,.3)',border:'1px solid rgba(255,255,255,.08)',padding:'4px 8px',borderRadius:3}}>🎥 Video</span>
-                          <span style={{fontFamily:'var(--fc)',fontSize:9,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(245,240,232,.3)',border:'1px solid rgba(255,255,255,.08)',padding:'4px 8px',borderRadius:3}}>📱 Camera</span>
-                        </div>
-                      </>
-                    ):(
-                      <div style={{fontSize:12,color:'rgba(61,170,106,.8)',fontFamily:'var(--fc)',fontWeight:600,letterSpacing:1,textTransform:'uppercase',marginBottom:10,display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
-                        <span>✓</span> {photos.length} file{photos.length>1?'s':''} attached · Tap to add more
-                      </div>
-                    )}
 
-                    {photos.length>0&&(
-                      <div style={{display:'flex',gap:8,justifyContent:'center',flexWrap:'wrap',marginTop:4}}>
-                        {photos.map((url,i)=>{
-                          const isVideo = url.includes('/videos/')
-                          return (
-                            <div key={i} style={{width:80,height:80,borderRadius:10,overflow:'hidden',position:'relative',flexShrink:0,border:'2px solid rgba(61,170,106,.3)',boxShadow:'0 2px 8px rgba(0,0,0,.3)',background:'#1A1A16'}}>
-                              {isVideo?(
-                                <video src={url} style={{width:'100%',height:'100%',objectFit:'cover'}} muted playsInline/>
-                              ):(
-                                /* eslint-disable-next-line @next/next/no-img-element */
-                                <img src={url} alt={`Photo ${i+1}`} style={{width:'100%',height:'100%',objectFit:'cover'}}/>
-                              )}
-                              {isVideo&&(
-                                <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,.3)'}}>
-                                  <span style={{fontSize:20}}>▶️</span>
-                                </div>
-                              )}
-                              <button
-                                onClick={e=>{e.stopPropagation();setPhotos(p=>p.filter((_,j)=>j!==i))}}
-                                style={{position:'absolute',top:3,right:3,background:'rgba(0,0,0,.75)',border:'none',borderRadius:'50%',width:20,height:20,cursor:'pointer',color:'#fff',fontSize:11,display:'flex',alignItems:'center',justifyContent:'center',zIndex:3,lineHeight:1}}>
-                                ✕
-                              </button>
-                              <div style={{position:'absolute',bottom:3,left:3,background:'rgba(0,0,0,.6)',borderRadius:3,padding:'1px 5px',fontSize:9,color:'rgba(255,255,255,.8)',fontFamily:'var(--fc)',fontWeight:600}}>
-                                {isVideo?'🎥':'📷'}
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
+                {/* ── MEDIA UPLOAD SECTION ───────────────────────── */}
+                <div style={{marginBottom:20}}>
+                  <label style={S.label}>Photos & Video</label>
+
+                  {/* Upload buttons row */}
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:14}}>
+
+                    {/* Photo upload button */}
+                    <div>
+                      <label
+                        className={`upload-btn ${images.length>=MAX_IMAGES?'disabled':''}`}
+                        style={{opacity: images.length>=MAX_IMAGES ? .4 : 1}}>
+                        <input
+                          ref={imageInputRef}
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp,image/heic"
+                          multiple
+                          disabled={images.length>=MAX_IMAGES||uploading}
+                          onChange={handleImageUpload}
+                        />
+                        {uploading ? (
+                          <div className="spin"/>
+                        ) : (
+                          <>
+                            <span style={{fontSize:28}}>📷</span>
+                            <span style={{fontFamily:'var(--fc)',fontSize:12,fontWeight:700,color:'rgba(245,240,232,.7)'}}>
+                              Add Photos
+                            </span>
+                            <span style={{fontFamily:'var(--fc)',fontSize:10,color:images.length>=MAX_IMAGES?'#3DAA6A':'rgba(245,240,232,.35)',fontWeight:600,letterSpacing:.5}}>
+                              {images.length}/{MAX_IMAGES} used
+                            </span>
+                            <span style={{fontSize:10,color:'rgba(245,240,232,.25)'}}>JPG, PNG · max 10MB each</span>
+                          </>
+                        )}
+                      </label>
+                      {images.length>=MAX_IMAGES&&(
+                        <div style={{fontFamily:'var(--fc)',fontSize:10,fontWeight:600,letterSpacing:.5,color:'#3DAA6A',textAlign:'center',marginTop:4}}>✓ Max photos reached</div>
+                      )}
+                    </div>
+
+                    {/* Video upload button */}
+                    <div>
+                      <label
+                        className={`upload-btn ${videos.length>=MAX_VIDEOS?'disabled':''}`}
+                        style={{opacity: videos.length>=MAX_VIDEOS ? .4 : 1}}>
+                        <input
+                          ref={videoInputRef}
+                          type="file"
+                          accept="video/mp4,video/quicktime,video/webm"
+                          disabled={videos.length>=MAX_VIDEOS||uploading}
+                          onChange={handleVideoUpload}
+                        />
+                        {uploading ? (
+                          <div className="spin"/>
+                        ) : (
+                          <>
+                            <span style={{fontSize:28}}>🎥</span>
+                            <span style={{fontFamily:'var(--fc)',fontSize:12,fontWeight:700,color:'rgba(245,240,232,.7)'}}>
+                              Add Video
+                            </span>
+                            <span style={{fontFamily:'var(--fc)',fontSize:10,color:videos.length>=MAX_VIDEOS?'#3DAA6A':'rgba(245,240,232,.35)',fontWeight:600,letterSpacing:.5}}>
+                              {videos.length}/{MAX_VIDEOS} used
+                            </span>
+                            <span style={{fontSize:10,color:'rgba(245,240,232,.25)'}}>MP4, MOV · max 50MB</span>
+                          </>
+                        )}
+                      </label>
+                      {videos.length>=MAX_VIDEOS&&(
+                        <div style={{fontFamily:'var(--fc)',fontSize:10,fontWeight:600,letterSpacing:.5,color:'#3DAA6A',textAlign:'center',marginTop:4}}>✓ Video attached</div>
+                      )}
+                    </div>
                   </div>
 
-                  {photos.length>0&&(
-                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:8,padding:'8px 12px',background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:6}}>
-                      <div style={{fontSize:12,color:'rgba(61,170,106,.9)',fontFamily:'var(--fc)',fontWeight:600,letterSpacing:.5,display:'flex',alignItems:'center',gap:6}}>
-                        <span>✓</span>
-                        {photos.filter(u=>!u.includes('/videos/')).length>0&&`${photos.filter(u=>!u.includes('/videos/')).length} photo${photos.filter(u=>!u.includes('/videos/')).length>1?'s':''}`}
-                        {photos.filter(u=>u.includes('/videos/')).length>0&&` ${photos.filter(u=>u.includes('/videos/')).length} video${photos.filter(u=>u.includes('/videos/')).length>1?'s':''}`}
-                        {' '}ready
+                  {/* Error message */}
+                  {uploadErr&&(
+                    <div style={{background:'rgba(226,75,74,.08)',border:'1px solid rgba(226,75,74,.2)',borderRadius:6,padding:'8px 12px',fontSize:12,color:'#f08080',marginBottom:10,fontFamily:'var(--fc)'}}>
+                      ⚠ {uploadErr}
+                    </div>
+                  )}
+
+                  {/* Uploading indicator */}
+                  {uploading&&(
+                    <div style={{display:'flex',alignItems:'center',gap:8,fontSize:13,color:'rgba(245,240,232,.5)',marginBottom:10,fontFamily:'var(--fc)',fontWeight:600,letterSpacing:.5}}>
+                      <div className="spin"/>Uploading to Lungisa...
+                    </div>
+                  )}
+
+                  {/* Media preview grid */}
+                  {mediaFiles.length > 0 && (
+                    <>
+                      {/* Summary bar */}
+                      <div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'10px 14px',marginBottom:12,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                        <div style={{display:'flex',alignItems:'center',gap:6,fontFamily:'var(--fc)',fontSize:12,fontWeight:700,color:'rgba(61,170,106,.9)',letterSpacing:.5}}>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                          {images.length > 0 && `${images.length} photo${images.length>1?'s':''}`}
+                          {images.length > 0 && videos.length > 0 && ' · '}
+                          {videos.length > 0 && `${videos.length} video`}
+                          {' '}uploaded &amp; ready
+                        </div>
+                        <button onClick={()=>setMediaFiles([])}
+                          style={{background:'none',border:'none',cursor:'pointer',fontSize:11,color:'rgba(245,240,232,.3)',fontFamily:'var(--fc)',fontWeight:600,letterSpacing:1,textTransform:'uppercase'}}>
+                          Clear all
+                        </button>
                       </div>
-                      <button onClick={()=>setPhotos([])} style={{background:'none',border:'none',cursor:'pointer',fontSize:11,color:'rgba(245,240,232,.3)',fontFamily:'var(--fc)',fontWeight:600,letterSpacing:1,textTransform:'uppercase'}}>
-                        Clear all
-                      </button>
+
+                      {/* Thumbnail grid */}
+                      <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
+                        {mediaFiles.map((m, i)=>(
+                          <div key={i} className="thumb-anim"
+                            style={{width:90,height:90,borderRadius:10,overflow:'hidden',position:'relative',flexShrink:0,border:'2px solid rgba(61,170,106,.35)',background:'#111',boxShadow:'0 3px 12px rgba(0,0,0,.4)'}}>
+
+                            {m.type === 'video' ? (
+                              <>
+                                <video src={m.url} style={{width:'100%',height:'100%',objectFit:'cover'}} muted playsInline/>
+                                {/* Video overlay */}
+                                <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,.35)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                                  <div style={{width:28,height:28,borderRadius:'50%',background:'rgba(255,255,255,.9)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                                    <span style={{fontSize:11,marginLeft:2}}>▶</span>
+                                  </div>
+                                </div>
+                              </>
+                            ) : (
+                              /* eslint-disable-next-line @next/next/no-img-element */
+                              <img src={m.url} alt={`Photo ${i+1}`} style={{width:'100%',height:'100%',objectFit:'cover'}}/>
+                            )}
+
+                            {/* Remove button */}
+                            <button onClick={()=>removeMedia(i)}
+                              style={{position:'absolute',top:4,right:4,background:'rgba(0,0,0,.8)',border:'none',borderRadius:'50%',width:22,height:22,cursor:'pointer',color:'#fff',fontSize:12,display:'flex',alignItems:'center',justifyContent:'center',zIndex:3,lineHeight:1,fontWeight:700}}>
+                              ✕
+                            </button>
+
+                            {/* Type badge */}
+                            <div style={{position:'absolute',bottom:4,left:4,background:'rgba(0,0,0,.7)',borderRadius:3,padding:'2px 5px',fontSize:9,color:'rgba(255,255,255,.9)',fontFamily:'var(--fc)',fontWeight:700,letterSpacing:.5}}>
+                              {m.type==='video'?'🎥 VIDEO':'📷'}
+                            </div>
+
+                            {/* Size badge */}
+                            <div style={{position:'absolute',bottom:4,right:4,background:'rgba(0,0,0,.7)',borderRadius:3,padding:'2px 5px',fontSize:8,color:'rgba(255,255,255,.6)',fontFamily:'var(--fc)',fontWeight:600}}>
+                              {formatSize(m.size)}
+                            </div>
+                          </div>
+                        ))}
+
+                        {/* Add more photos slot (if under limit) */}
+                        {images.length < MAX_IMAGES && (
+                          <label style={{width:90,height:90,borderRadius:10,border:'2px dashed rgba(255,255,255,.1)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',cursor:'pointer',transition:'all .2s',position:'relative',flexShrink:0}}
+                            onMouseEnter={e=>(e.currentTarget.style.borderColor='rgba(196,89,58,.4)')}
+                            onMouseLeave={e=>(e.currentTarget.style.borderColor='rgba(255,255,255,.1)')}>
+                            <input type="file" accept="image/jpeg,image/png,image/webp,image/heic" multiple
+                              style={{position:'absolute',inset:0,opacity:0,cursor:'pointer',width:'100%',height:'100%'}}
+                              onChange={handleImageUpload}/>
+                            <span style={{fontSize:22,marginBottom:3}}>+</span>
+                            <span style={{fontFamily:'var(--fc)',fontSize:9,fontWeight:600,color:'rgba(245,240,232,.3)',letterSpacing:.5}}>ADD PHOTO</span>
+                          </label>
+                        )}
+                      </div>
+                    </>
+                  )}
+
+                  {/* Empty state hint */}
+                  {mediaFiles.length === 0 && !uploading && (
+                    <div style={{textAlign:'center',padding:'10px 0 4px',fontSize:12,color:'rgba(245,240,232,.25)',fontStyle:'italic'}}>
+                      No media attached yet · Jobs with photos get 3× more bids
                     </div>
                   )}
                 </div>
+
                 <div style={S.btnRow}>
                   <button style={S.btn('ghost')} onClick={()=>goStep(2)}>← Back</button>
                   <button style={S.btn('primary')} onClick={()=>goStep(4)}>Review Job →</button>
@@ -563,19 +721,34 @@ export default function PostJob() {
                   <div><div style={{fontFamily:'var(--fc)',fontSize:10,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.35)',marginBottom:5}}>Location</div><div style={{fontSize:14,color:'var(--cream)'}}>{area||'—'}, JHB</div></div>
                   <div><div style={{fontFamily:'var(--fc)',fontSize:10,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.35)',marginBottom:5}}>Budget</div><div style={{fontFamily:'var(--fd)',fontSize:22,color:'var(--terra-l)'}}>{budgetOpen?'Open':`R ${budget.toLocaleString()}`}</div></div>
                 </div>
-                {photos.length>0&&(
-                  <div style={{marginBottom:16}}>
-                    <div style={{fontFamily:'var(--fc)',fontSize:10,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.35)',marginBottom:8}}>Photos ({photos.length})</div>
+
+                {/* Media preview on review */}
+                {mediaFiles.length>0&&(
+                  <div style={{marginBottom:20}}>
+                    <div style={{fontFamily:'var(--fc)',fontSize:10,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.35)',marginBottom:10}}>
+                      Attached media ({mediaFiles.length})
+                    </div>
                     <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-                      {photos.map((url,i)=>(
-                        <div key={i} style={{width:60,height:60,borderRadius:8,overflow:'hidden',border:'1px solid rgba(61,170,106,.3)'}}>
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={url} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}}/>
+                      {mediaFiles.map((m,i)=>(
+                        <div key={i} style={{width:64,height:64,borderRadius:8,overflow:'hidden',border:'2px solid rgba(61,170,106,.3)',position:'relative',background:'#111'}}>
+                          {m.type==='video'?(
+                            <>
+                              <video src={m.url} style={{width:'100%',height:'100%',objectFit:'cover'}} muted/>
+                              <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,.4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14}}>▶</div>
+                            </>
+                          ):(
+                            /* eslint-disable-next-line @next/next/no-img-element */
+                            <img src={m.url} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}}/>
+                          )}
                         </div>
                       ))}
                     </div>
+                    <div style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:600,color:'rgba(61,170,106,.8)',marginTop:8,letterSpacing:.5}}>
+                      ✓ {images.length>0&&`${images.length} photo${images.length>1?'s':''}`}{images.length>0&&videos.length>0&&' · '}{videos.length>0&&`${videos.length} video`} will be visible to tradespeople when bidding
+                    </div>
                   </div>
                 )}
+
                 <div style={{background:'rgba(196,89,58,.08)',border:'1px solid rgba(196,89,58,.2)',borderRadius:8,padding:'12px 16px',fontSize:13,color:'rgba(245,240,232,.65)',marginBottom:20,lineHeight:1.55}}>
                   <strong style={{color:'var(--terra-l)'}}>FREE TO POST.</strong> Lungisa charges R0 to homeowners. Tradespeople pay a small commission only when a job is completed.
                 </div>
@@ -596,6 +769,11 @@ export default function PostJob() {
                     </div>
                     <div style={{fontFamily:'var(--fd)',fontSize:24,letterSpacing:1,color:'var(--cream)'}}>{title||'Home repair job'}</div>
                     <div style={{fontSize:13,color:'rgba(245,240,232,.45)',marginTop:2}}>{area}, JHB · {cat} · {urgency}</div>
+                    {mediaFiles.length>0&&(
+                      <div style={{fontSize:12,color:'rgba(61,170,106,.7)',marginTop:4,fontFamily:'var(--fc)',fontWeight:600}}>
+                        📎 {images.length>0&&`${images.length} photo${images.length>1?'s':''}`}{images.length>0&&videos.length>0&&' · '}{videos.length>0&&`${videos.length} video`} attached
+                      </div>
+                    )}
                   </div>
                   <div style={{textAlign:'right'}}>
                     <div style={{fontFamily:'var(--fd)',fontSize:52,color:'var(--terra-l)',lineHeight:1}}>{bidCount}</div>
@@ -606,12 +784,9 @@ export default function PostJob() {
                 {bidCount===0&&(
                   <div style={{textAlign:'center',padding:'40px 20px',color:'rgba(245,240,232,.4)',fontFamily:'var(--fc)',fontSize:13,letterSpacing:1}}>
                     <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,marginBottom:12}}>
-                      <div className="spin"/>
-                      <span>{waitingMsg}</span>
+                      <div className="spin"/><span>{waitingMsg}</span>
                     </div>
-                    <div style={{fontSize:11,color:'rgba(245,240,232,.25)',marginTop:8}}>
-                      You&apos;ll get an email and see bids appear here in real time
-                    </div>
+                    <div style={{fontSize:11,color:'rgba(245,240,232,.25)',marginTop:8}}>You&apos;ll get an email and see bids appear here in real time</div>
                     <div style={{marginTop:20}}>
                       <button style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',background:'none',border:'1px solid rgba(255,255,255,.1)',borderRadius:5,padding:'8px 16px',color:'rgba(245,240,232,.4)',cursor:'pointer'}}
                         onClick={()=>router.push('/home')}>
@@ -702,12 +877,8 @@ export default function PostJob() {
                     <div style={{fontFamily:'var(--fd)',fontSize:44,letterSpacing:2,color:'var(--cream)',marginBottom:8}}>JOB IS<br/>LIVE.</div>
                     <p style={{fontSize:14,color:'rgba(245,240,232,.5)',marginBottom:28}}>{selectedBid.name.split(' ')[0]} is on the way. You&apos;ll get a notification when the job is confirmed.</p>
                     <div style={{display:'flex',gap:12,justifyContent:'center',flexWrap:'wrap'}}>
-                      <button style={{...S.btn('primary'),flex:'none'}} onClick={()=>router.push('/home')}>
-                        Go to my dashboard →
-                      </button>
-                      <button style={{...S.btn('ghost'),flex:'none'}} onClick={resetAndPostAnother}>
-                        Post another job
-                      </button>
+                      <button style={{...S.btn('primary'),flex:'none'}} onClick={()=>router.push('/home')}>Go to my dashboard →</button>
+                      <button style={{...S.btn('ghost'),flex:'none'}} onClick={resetAndPostAnother}>Post another job</button>
                     </div>
                   </div>
                 )}
@@ -720,10 +891,10 @@ export default function PostJob() {
             <div style={S.sidebar}>
               <div style={S.sbEyebrow}>Job preview</div>
               <div style={S.sbTitle}>{title?title.substring(0,22).toUpperCase():'YOUR JOB'}</div>
-              {[['Category',`${catEmoji} ${cat}`],['Title',title||'Not yet filled'],['Location',area?`${area}, JHB`:'Not yet filled'],['Urgency',urgency],['Budget',budgetOpen?'Open':`R ${budget.toLocaleString()}`]].map(([l,v])=>(
+              {[['Category',`${catEmoji} ${cat}`],['Title',title||'Not yet filled'],['Location',area?`${area}, JHB`:'Not yet filled'],['Urgency',urgency],['Budget',budgetOpen?'Open':`R ${budget.toLocaleString()}`],['Media',mediaFiles.length>0?`${mediaFiles.length} file${mediaFiles.length>1?'s':''} attached`:'None yet']].map(([l,v])=>(
                 <div key={l} style={S.jpRow}>
                   <span style={S.jpLabel}>{l}</span>
-                  <span style={{...S.jpVal,color:v==='Not yet filled'?'rgba(245,240,232,.2)':'rgba(245,240,232,.75)',fontStyle:v==='Not yet filled'?'italic':'normal'}}>{v}</span>
+                  <span style={{...S.jpVal,color:v==='Not yet filled'||v==='None yet'?'rgba(245,240,232,.2)':'rgba(245,240,232,.75)',fontStyle:v==='Not yet filled'||v==='None yet'?'italic':'normal'}}>{v}</span>
                 </div>
               ))}
             </div>
