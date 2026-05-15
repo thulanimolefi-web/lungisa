@@ -72,6 +72,16 @@ export default function HomeDashboard() {
   const [reviewJob, setReviewJob]   = useState<string|null>(null)
   const [rating, setRating]         = useState(5)
   const [reviewText, setReviewText] = useState('')
+  // Completion submissions from tradesperson
+  const [completions, setCompletions] = useState<Record<string,{
+    id: string
+    report: string
+    completedAt: string
+    photos: string[]
+  }>>({})
+  const [disputeJob, setDisputeJob]   = useState<string|null>(null)
+  const [disputeReason, setDisputeReason] = useState('')
+  const [submittingDispute, setSubmittingDispute] = useState(false)
   const [toasts, setToasts]         = useState<{id:number,msg:string,color:string}[]>([])
   const [profile, setProfile]       = useState<any>(null)
   const [loading, setLoading]       = useState(true)
@@ -80,6 +90,7 @@ export default function HomeDashboard() {
     loadProfile()
     loadRealJobs()
     loadHistoryJobs()
+    loadCompletions()
 
     const channel = supabase
       .channel('home-bids')
@@ -89,6 +100,11 @@ export default function HomeDashboard() {
       })
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'bids'},()=>{
         loadRealJobs()
+      })
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'job_completions'},()=>{
+        loadCompletions()
+        loadRealJobs()
+        toast('Job marked complete!','Review the work and confirm or raise a dispute','#3DAA6A')
       })
       .subscribe()
 
@@ -125,7 +141,7 @@ export default function HomeDashboard() {
           )
         `)
         .eq('homeowner_id', session.user.id)
-        .in('status',['open','bidding','accepted','in_progress'])
+        .in('status',['open','bidding','accepted','in_progress','completion_submitted'])
         .order('created_at',{ascending:false})
 
       if(!error && data) {
@@ -193,6 +209,87 @@ export default function HomeDashboard() {
         })))
       }
     } catch(e){ console.log('History error:',e) }
+  }
+
+  async function loadCompletions() {
+    try {
+      const { data:{ session } } = await supabase.auth.getSession()
+      if(!session?.user) return
+      // Load completions for all jobs owned by this homeowner
+      const { data, error } = await supabase
+        .from('job_completions')
+        .select(`
+          id, job_id, completed_at, report, created_at,
+          job_completion_photos(storage_url, sort_order)
+        `)
+        .order('created_at', { ascending: false })
+      if(!error && data) {
+        const map: Record<string, any> = {}
+        for(const c of data) {
+          map[c.job_id] = {
+            id:          c.id,
+            report:      c.report,
+            completedAt: c.completed_at,
+            photos:      (c.job_completion_photos||[])
+              .sort((a:any,b:any) => a.sort_order - b.sort_order)
+              .map((p:any) => p.storage_url),
+          }
+        }
+        setCompletions(map)
+      }
+    } catch(e){ console.log('Completions load error:', e) }
+  }
+
+  async function confirmJobComplete(jobId:string, bidId:string, amount:number) {
+    try {
+      const { data:{ session } } = await supabase.auth.getSession()
+      await supabase.from('jobs').update({ status:'completed' }).eq('id', jobId)
+      await supabase.from('bids').update({ status:'completed' }).eq('id', bidId)
+      // Write payment record
+      const acceptedBid = jobs.find(j=>j.id===jobId)?.bids.find(b=>b.id===bidId)
+      fetch('/api/send-email',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          type:'payment_confirmed', jobId, amount,
+          homeownerId: session?.user?.id,
+          tradespersonId: acceptedBid?.tradespersonId||bidId,
+        })
+      }).catch(e=>console.log('Email error:',e))
+      setPaidJobs(p=>({...p,[jobId]:true}))
+      toast('Payment released! 🎉','The tradesperson has been paid','#3DAA6A')
+      setReviewJob(jobId)
+      loadRealJobs()
+      loadHistoryJobs()
+    } catch(e){ console.log('Confirm complete error:', e) }
+  }
+
+  async function raiseDispute(jobId:string) {
+    if(!disputeReason.trim()) return
+    setSubmittingDispute(true)
+    try {
+      const { data:{ session } } = await supabase.auth.getSession()
+      await supabase.from('job_disputes').insert({
+        job_id:    jobId,
+        raised_by: session?.user?.id,
+        reason:    disputeReason,
+        status:    'open',
+      })
+      await supabase.from('jobs').update({ status:'disputed' }).eq('id', jobId)
+      // Notify admin
+      fetch('/api/send-email',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          type:'dispute_raised', jobId,
+          reason: disputeReason,
+          homeownerId: session?.user?.id,
+        })
+      }).catch(e=>console.log('Email error:',e))
+      toast('Dispute raised','Our team will review and contact both parties within 24 hours','#E8A020')
+      setDisputeJob(null)
+      setDisputeReason('')
+      loadRealJobs()
+    } catch(e){ console.log('Dispute error:', e) }
+    setSubmittingDispute(false)
   }
 
   function toast(msg:string,sub:string,color:string){
@@ -789,15 +886,80 @@ export default function HomeDashboard() {
                                         )
                                       })()}
 
-                                      {/* PAID → confirm complete */}
-                                      {isAccepted&&isPaid&&(
-                                        <div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'14px 16px',fontSize:13,color:'#1a6e35',lineHeight:1.5}}>
-                                          ✓ Payment held in escrow. <strong>{bid.name.split(' ')[0]}</strong> is on the way.
-                                          <div style={{marginTop:10}}>
-                                            <button className="btn btn-green" onClick={()=>setReviewJob(selectedJob.id)}>Confirm job complete & release payment</button>
+                                      {/* PAID → awaiting completion or completion submitted */}
+                                      {isAccepted&&isPaid&&(()=>{
+                                        const completion = completions[selectedJob.id]
+                                        const agreedAmount = bid.finalAmount || bid.counterAmount || bid.price
+
+                                        if(!completion) return (
+                                          // Waiting for tradesperson to mark complete
+                                          <div style={{background:'rgba(61,170,106,.06)',border:'1px solid rgba(61,170,106,.15)',borderRadius:8,padding:'14px 16px',fontSize:13,color:'#1a6e35',lineHeight:1.5}}>
+                                            <div style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'var(--green)',marginBottom:8}}>
+                                              ✓ Payment in escrow — job in progress
+                                            </div>
+                                            <p style={{fontSize:13,color:'var(--charcoal-l)',lineHeight:1.6,margin:0}}>
+                                              <strong>{bid.name.split(' ')[0]}</strong> will mark the job complete with photos and a report when done. You&apos;ll be notified to confirm.
+                                            </p>
                                           </div>
-                                        </div>
-                                      )}
+                                        )
+
+                                        // Tradesperson submitted completion — homeowner must confirm or dispute
+                                        return (
+                                          <div style={{background:'rgba(61,170,106,.06)',border:'2px solid rgba(61,170,106,.3)',borderRadius:10,padding:'16px 18px'}}>
+                                            <div style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',color:'var(--green)',marginBottom:12,display:'flex',alignItems:'center',gap:6}}>
+                                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                              {bid.name.split(' ')[0]} marked this job complete
+                                            </div>
+
+                                            {/* Completion details */}
+                                            <div style={{background:'var(--white)',borderRadius:8,padding:'12px 14px',marginBottom:12,border:'1px solid var(--cream-d)'}}>
+                                              <div style={{fontFamily:'var(--fc)',fontSize:10,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'var(--charcoal-l)',marginBottom:4}}>Date completed</div>
+                                              <div style={{fontSize:13,color:'var(--charcoal)',marginBottom:10}}>
+                                                {new Date(completion.completedAt).toLocaleDateString('en-ZA',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}
+                                              </div>
+                                              <div style={{fontFamily:'var(--fc)',fontSize:10,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'var(--charcoal-l)',marginBottom:4}}>What was done</div>
+                                              <div style={{fontSize:13,color:'var(--charcoal)',lineHeight:1.6}}>{completion.report}</div>
+                                            </div>
+
+                                            {/* Completion photos */}
+                                            {completion.photos.length > 0 && (
+                                              <div style={{marginBottom:14}}>
+                                                <div style={{fontFamily:'var(--fc)',fontSize:10,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'var(--charcoal-l)',marginBottom:8}}>
+                                                  Photos of completed work ({completion.photos.length})
+                                                </div>
+                                                <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                                                  {completion.photos.map((url,i)=>(
+                                                    <a key={i} href={url} target="_blank" rel="noreferrer"
+                                                      style={{width:72,height:72,borderRadius:8,overflow:'hidden',display:'block',border:'2px solid rgba(61,170,106,.3)',flexShrink:0}}>
+                                                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                      <img src={url} alt={`Completion photo ${i+1}`} style={{width:'100%',height:'100%',objectFit:'cover'}}/>
+                                                    </a>
+                                                  ))}
+                                                </div>
+                                              </div>
+                                            )}
+
+                                            {/* Agreed amount reminder */}
+                                            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 0',borderTop:'1px solid var(--cream-d)',borderBottom:'1px solid var(--cream-d)',marginBottom:14}}>
+                                              <span style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:600,letterSpacing:1,textTransform:'uppercase',color:'var(--charcoal-l)'}}>Amount to release</span>
+                                              <span style={{fontFamily:'var(--fd)',fontSize:24,color:'var(--terra)'}}>R{agreedAmount.toLocaleString()}</span>
+                                            </div>
+
+                                            {/* Confirm or dispute */}
+                                            <div style={{display:'grid',gridTemplateColumns:'1fr auto',gap:8}}>
+                                              <button className="btn btn-green" style={{justifyContent:'center'}}
+                                                onClick={()=>confirmJobComplete(selectedJob.id, bid.id, agreedAmount)}>
+                                                ✓ Confirm job done & release payment
+                                              </button>
+                                              <button className="btn btn-ghost"
+                                                style={{color:'#E24B4A',borderColor:'rgba(226,75,74,.3)',fontSize:11,padding:'10px 14px',whiteSpace:'nowrap'}}
+                                                onClick={()=>setDisputeJob(selectedJob.id)}>
+                                                ✗ Raise dispute
+                                              </button>
+                                            </div>
+                                          </div>
+                                        )
+                                      })()}
                                     </div>
                                   )
                                 })}
@@ -892,12 +1054,15 @@ export default function HomeDashboard() {
         </div>
       </div>
 
-      {/* REVIEW MODAL */}
+      {/* REVIEW MODAL — shown after homeowner confirms job complete */}
       {reviewJob&&(
         <div className="modal-overlay" onClick={e=>{if(e.target===e.currentTarget)setReviewJob(null)}}>
           <div className="modal">
-            <div className="modal-title">LEAVE A REVIEW</div>
-            <p className="modal-sub">How did the job go? Your rating helps other homeowners and rewards great tradespeople.</p>
+            <div style={{textAlign:'center',marginBottom:16}}>
+              <div style={{width:56,height:56,borderRadius:'50%',background:'rgba(61,170,106,.12)',border:'2px solid rgba(61,170,106,.3)',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 12px',fontSize:24}}>✓</div>
+              <div className="modal-title">PAYMENT RELEASED!</div>
+            </div>
+            <p className="modal-sub">The tradesperson has been paid. Leave a review to help other homeowners and reward great work.</p>
             <div style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'var(--charcoal-l)',marginBottom:10}}>Your rating</div>
             <div className="stars-row">
               {[1,2,3,4,5].map(n=>(
@@ -908,7 +1073,50 @@ export default function HomeDashboard() {
             <textarea className="review-ta" placeholder="E.g. Arrived on time, fixed the pipe quickly, very professional..." value={reviewText} onChange={e=>setReviewText(e.target.value)}/>
             <div style={{display:'flex',gap:10}}>
               <button className="btn btn-terra" style={{flex:1,justifyContent:'center'}} onClick={submitReview}>Submit review</button>
-              <button className="btn btn-ghost" onClick={()=>setReviewJob(null)}>Skip</button>
+              <button className="btn btn-ghost" onClick={()=>setReviewJob(null)}>Skip for now</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DISPUTE MODAL — raised when homeowner says job not done */}
+      {disputeJob&&(
+        <div className="modal-overlay" onClick={e=>{if(e.target===e.currentTarget){setDisputeJob(null);setDisputeReason('')}}}>
+          <div className="modal">
+            <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
+              <div style={{width:44,height:44,borderRadius:'50%',background:'rgba(226,75,74,.1)',border:'1px solid rgba(226,75,74,.2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>⚠</div>
+              <div>
+                <div className="modal-title" style={{fontSize:26,marginBottom:2}}>RAISE A DISPUTE</div>
+                <div style={{fontSize:13,color:'var(--charcoal-l)'}}>Tell us what wasn&apos;t done or wasn&apos;t done correctly.</div>
+              </div>
+            </div>
+
+            <div style={{background:'rgba(232,160,32,.06)',border:'1px solid rgba(232,160,32,.15)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'var(--charcoal-l)',lineHeight:1.6,marginBottom:16}}>
+              📋 <strong>What happens next:</strong> The Lungisa team will review your dispute within 24 hours. Payment remains in escrow until the dispute is resolved. Both you and the tradesperson will be contacted.
+            </div>
+
+            <div style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'var(--charcoal-l)',marginBottom:8}}>
+              What was the issue? *
+            </div>
+            <textarea
+              className="review-ta"
+              style={{height:100,marginBottom:4}}
+              placeholder="E.g. The pipe was patched but is still leaking. The tiles were not properly sealed. The work was left incomplete..."
+              value={disputeReason}
+              onChange={e=>setDisputeReason(e.target.value)}
+            />
+            <div style={{fontSize:11,color:'var(--charcoal-l)',marginBottom:16}}>Be specific — this helps us resolve the dispute faster.</div>
+
+            <div style={{display:'flex',gap:10}}>
+              <button
+                className="btn"
+                style={{flex:1,justifyContent:'center',background:submittingDispute?'rgba(226,75,74,.4)':'#E24B4A',color:'#fff',border:'none',cursor:submittingDispute?'not-allowed':'pointer'}}
+                onClick={()=>raiseDispute(disputeJob!)}
+                disabled={submittingDispute||!disputeReason.trim()}
+              >
+                {submittingDispute?'Submitting...':'Submit dispute'}
+              </button>
+              <button className="btn btn-ghost" onClick={()=>{setDisputeJob(null);setDisputeReason('')}}>Cancel</button>
             </div>
           </div>
         </div>

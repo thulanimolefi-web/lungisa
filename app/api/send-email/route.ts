@@ -401,6 +401,85 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true })
     }
 
+    // ─── 6. JOB COMPLETION SUBMITTED — notify homeowner ────────────
+    if(type === 'job_completion_submitted') {
+      const { jobId, jobTitle, homeownerId, tradespersonId, report, completedAt } = body
+
+      const { data: homeowner } = await supabase.from('profiles').select('full_name, email').eq('id', homeownerId).single()
+      const { data: trade }     = await supabase.from('profiles').select('full_name').eq('id', tradespersonId).single()
+
+      if(!homeowner?.email) return NextResponse.json({ error: 'No homeowner email' })
+
+      const homeName  = homeowner.full_name?.split(' ')[0] || 'there'
+      const tradeName = trade?.full_name || 'Your tradesperson'
+      const dateStr   = new Date(completedAt).toLocaleDateString('en-ZA', { weekday:'long', day:'numeric', month:'long', year:'numeric' })
+
+      await notify(homeownerId,
+        `${tradeName.split(' ')[0]} marked "${jobTitle}" complete`,
+        'Review the work report and confirm to release payment.',
+        'job_completion_submitted', '/home', { jobId }
+      )
+
+      await sendEmail(homeowner.email,
+        `${tradeName.split(' ')[0]} has completed the job — ${jobTitle}`,
+        `
+          <h2 style="color:#2C2C28;font-size:22px;margin:0 0 8px">Job completed! ✓</h2>
+          <p style="color:#5A5952;font-size:15px;line-height:1.6;margin:0 0 20px">
+            <strong>${tradeName}</strong> has marked <strong>${jobTitle}</strong> as complete and submitted a report.
+          </p>
+          <div style="background:#fff;border-radius:8px;padding:18px 20px;border-left:4px solid #3DAA6A;margin-bottom:20px">
+            <div style="font-size:12px;color:#5A5952;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Date completed</div>
+            <div style="font-size:15px;color:#2C2C28;font-weight:600;margin-bottom:14px">${dateStr}</div>
+            <div style="font-size:12px;color:#5A5952;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">What was done</div>
+            <div style="font-size:14px;color:#2C2C28;line-height:1.6">${report}</div>
+          </div>
+          <div style="background:rgba(232,160,32,.06);border:1px solid rgba(232,160,32,.15);border-radius:8px;padding:14px 16px;margin-bottom:20px;font-size:13px;color:#5A5952;line-height:1.6">
+            💡 Review the photos and report in your dashboard. If you&apos;re happy with the work, confirm to release payment. If there&apos;s an issue, you can raise a dispute.
+          </div>
+          <a href="https://lungiza.co.za/home" style="display:block;background:#3DAA6A;color:#fff;text-align:center;padding:14px;border-radius:6px;text-decoration:none;font-size:15px;font-weight:600;margin-bottom:10px">
+            Review &amp; confirm →
+          </a>
+        `
+      )
+      return NextResponse.json({ success: true })
+    }
+
+    // ─── 7. DISPUTE RAISED — notify admin ───────────────────────────
+    if(type === 'dispute_raised') {
+      const { jobId, reason, homeownerId } = body
+
+      const { data: job }       = await supabase.from('jobs').select('title').eq('id', jobId).single()
+      const { data: homeowner } = await supabase.from('profiles').select('full_name, email').eq('id', homeownerId).single()
+
+      await notify(homeownerId,
+        'Dispute submitted',
+        'The Lungisa team will review your dispute within 24 hours.',
+        'dispute_raised', '/home', { jobId }
+      )
+
+      await sendEmail('stockstvm@gmail.com',
+        `⚠ Dispute raised — ${job?.title || 'Job'}`,
+        `
+          <h2 style="color:#2C2C28">Dispute raised by homeowner</h2>
+          <table style="width:100%;border-collapse:collapse;margin:16px 0">
+            <tr><td style="padding:8px 0;border-bottom:1px solid #eee;color:#666;font-size:13px;width:120px">Job</td><td style="padding:8px 0;border-bottom:1px solid #eee;font-size:13px;color:#222;font-weight:600">${job?.title}</td></tr>
+            <tr><td style="padding:8px 0;border-bottom:1px solid #eee;color:#666;font-size:13px">Homeowner</td><td style="padding:8px 0;border-bottom:1px solid #eee;font-size:13px;color:#222">${homeowner?.full_name} (${homeowner?.email})</td></tr>
+            <tr><td style="padding:8px 0;color:#666;font-size:13px">Job ID</td><td style="padding:8px 0;font-size:12px;color:#555;font-family:monospace">${jobId}</td></tr>
+          </table>
+          <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:14px 16px;margin-bottom:16px">
+            <div style="font-size:12px;font-weight:600;color:#856404;margin-bottom:6px">Reason for dispute:</div>
+            <div style="font-size:14px;color:#2C2C28;line-height:1.6">${reason}</div>
+          </div>
+          <div style="font-size:13px;color:#5A5952;line-height:1.6">
+            Payment remains in escrow. Review the job completion photos in Supabase and contact both parties to resolve.
+            <br/><br/>
+            <strong>To resolve:</strong> UPDATE public.jobs SET status='completed' WHERE id='${jobId}'; (approve) or SET status='disputed_resolved' (reject completion).
+          </div>
+        `
+      )
+      return NextResponse.json({ success: true })
+    }
+
     return NextResponse.json({ error: 'Unknown email type' }, { status: 400 })
 
   } catch(error) {

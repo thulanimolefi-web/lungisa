@@ -58,6 +58,15 @@ export default function Dashboard() {
   const [loading, setLoading]     = useState(true)
   const [earnings, setEarnings]   = useState({thisWeek:0,totalJobs:0,avgJobValue:0,inEscrow:0})
   const [counterInputs, setCounterInputs] = useState<Record<string,string>>({})
+  // Job completion flow
+  const [completionJobId, setCompletionJobId] = useState<string|null>(null)
+  const [completionBidId, setCompletionBidId] = useState<string|null>(null)
+  const [completionReport, setCompletionReport] = useState('')
+  const [completionDate, setCompletionDate] = useState(new Date().toISOString().split('T')[0])
+  const [completionPhotos, setCompletionPhotos] = useState<{url:string,name:string}[]>([])
+  const [uploadingCompletion, setUploadingCompletion] = useState(false)
+  const [submittingCompletion, setSubmittingCompletion] = useState(false)
+  const [submittedCompletions, setSubmittedCompletions] = useState<Set<string>>(new Set())
 
   const ETAS = ['30 mins','1 hour','2 hours','Half day','Tomorrow']
 
@@ -281,6 +290,101 @@ export default function Dashboard() {
       toast(`Counter sent! (Round ${newRound}/3)`,`R${amount} sent to homeowner`,false)
       loadMyBids()
     }catch(e){ console.log('Counter back error:',e) }
+  }
+
+  async function uploadCompletionPhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if(!file || completionPhotos.length >= 5) return
+    if(file.size > 10*1024*1024) { toast('File too large','Max 10MB per photo',false); return }
+    setUploadingCompletion(true)
+    try {
+      const ext  = file.name.split('.').pop()
+      const path = `job-completions/${Date.now()}-${Math.random().toString(36).substring(2)}.${ext}`
+      const { data, error } = await supabase.storage
+        .from('job-photos')
+        .upload(path, file, { cacheControl:'3600', upsert:false, contentType: file.type })
+      if(!error && data) {
+        const { data: urlData } = supabase.storage.from('job-photos').getPublicUrl(data.path)
+        setCompletionPhotos(prev => [...prev, { url: urlData.publicUrl, name: file.name }])
+      } else {
+        toast('Upload failed', error?.message||'Try again', false)
+      }
+    } catch(e) { console.log('Completion photo upload error:', e) }
+    setUploadingCompletion(false)
+    if(e.target) e.target.value = ''
+  }
+
+  async function submitCompletion() {
+    if(!completionReport.trim()) { toast('Please add a report','Describe what was repaired',false); return }
+    if(!completionJobId || !completionBidId) return
+    setSubmittingCompletion(true)
+    try {
+      const { data:{ session } } = await supabase.auth.getSession()
+      if(!session?.user) return
+
+      // 1. Insert completion record
+      const { data: completion, error } = await supabase
+        .from('job_completions')
+        .insert({
+          job_id:          completionJobId,
+          tradesperson_id: session.user.id,
+          completed_at:    completionDate,
+          report:          completionReport,
+        })
+        .select('id')
+        .single()
+
+      if(error) { toast('Failed to submit','Please try again',false); setSubmittingCompletion(false); return }
+
+      // 2. Insert completion photos
+      if(completionPhotos.length > 0 && completion) {
+        await supabase.from('job_completion_photos').insert(
+          completionPhotos.map((p, i) => ({
+            completion_id: completion.id,
+            storage_url:   p.url,
+            sort_order:    i,
+          }))
+        )
+      }
+
+      // 3. Update job status to completion_submitted
+      await supabase.from('jobs').update({ status:'completion_submitted' }).eq('id', completionJobId)
+
+      // 4. Notify homeowner
+      const { data: jobData } = await supabase
+        .from('jobs')
+        .select('homeowner_id, title')
+        .eq('id', completionJobId)
+        .single()
+
+      if(jobData) {
+        fetch('/api/send-email', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({
+            type:          'job_completion_submitted',
+            jobId:         completionJobId,
+            jobTitle:      jobData.title,
+            homeownerId:   jobData.homeowner_id,
+            tradespersonId: session.user.id,
+            report:        completionReport,
+            completedAt:   completionDate,
+          })
+        }).catch(e => console.log('Email error:',e))
+      }
+
+      // 5. Mark locally as submitted
+      setSubmittedCompletions(prev => new Set([...prev, completionJobId!]))
+      toast('Job marked complete! ✓','Homeowner has been notified to confirm and release payment',false)
+
+      // Reset
+      setCompletionJobId(null)
+      setCompletionBidId(null)
+      setCompletionReport('')
+      setCompletionDate(new Date().toISOString().split('T')[0])
+      setCompletionPhotos([])
+      loadMyBids()
+    } catch(e) { console.log('Submit completion error:', e) }
+    setSubmittingCompletion(false)
   }
 
   async function submitBid(){
@@ -661,7 +765,27 @@ export default function Dashboard() {
                         )}
                       </div>
                     )}
-                    {isAccepted&&(<div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(61,170,106,.9)',lineHeight:1.5}}>✓ Bid accepted! Homeowner is confirming payment. Complete the job and you&apos;ll get paid.</div>)}
+                    {isAccepted&&(
+                      submittedCompletions.has(b.jobId) || b.status==='completion_submitted' ? (
+                        <div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(61,170,106,.9)',lineHeight:1.5}}>
+                          ✓ Completion submitted — waiting for homeowner to confirm and release payment.
+                        </div>
+                      ) : (
+                        <div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.25)',borderRadius:8,padding:'14px 16px'}}>
+                          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'#3DAA6A',marginBottom:8}}>
+                            ✓ Bid accepted — payment in escrow
+                          </div>
+                          <p style={{fontSize:13,color:'rgba(245,240,232,.6)',lineHeight:1.6,marginBottom:12}}>
+                            Complete the job, then mark it done with photos and a short report. The homeowner will confirm and release your payment.
+                          </p>
+                          <button
+                            onClick={()=>{setCompletionJobId(b.jobId);setCompletionBidId(b.id)}}
+                            style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:13,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:'#3DAA6A',color:'#fff',border:'none',padding:'11px 20px',borderRadius:6,cursor:'pointer',width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+                            📋 Mark job as complete
+                          </button>
+                        </div>
+                      )
+                    )}
                     {isDeclined&&(<div style={{background:'rgba(226,75,74,.06)',border:'1px solid rgba(226,75,74,.15)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(226,75,74,.7)',lineHeight:1.5}}>✗ Not accepted this time. Keep bidding on new jobs.</div>)}
                     {isCompleted&&(<div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(61,170,106,.9)',lineHeight:1.5}}>✓ Job completed · Payment released · R{b.price} earned</div>)}
                   </div>
@@ -887,6 +1011,115 @@ export default function Dashboard() {
           </div>
           <div style={{position:'absolute',bottom:20,left:0,right:0,textAlign:'center',fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,color:'rgba(255,255,255,.3)',letterSpacing:1}}>
             Click anywhere to close
+          </div>
+        </div>
+      )}
+
+      {/* ── JOB COMPLETION MODAL ──────────────────────────────────── */}
+      {completionJobId&&(
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.8)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}
+          onClick={e=>{if(e.target===e.currentTarget){setCompletionJobId(null);setCompletionPhotos([])}}}>
+          <div style={{background:'#222220',borderRadius:16,border:'1px solid rgba(255,255,255,.1)',width:'100%',maxWidth:520,maxHeight:'90vh',overflowY:'auto'}}>
+            {/* Header */}
+            <div style={{padding:'22px 26px 18px',borderBottom:'1px solid rgba(255,255,255,.06)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <div>
+                <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'#3DAA6A',marginBottom:4}}>
+                  ✓ Mark job complete
+                </div>
+                <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:24,letterSpacing:1,color:'#F5F0E8',lineHeight:1}}>
+                  Submit completion report
+                </div>
+              </div>
+              <div onClick={()=>{setCompletionJobId(null);setCompletionPhotos([])}}
+                style={{width:32,height:32,borderRadius:6,background:'rgba(255,255,255,.06)',border:'1px solid rgba(255,255,255,.08)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:16,color:'rgba(245,240,232,.5)'}}>✕</div>
+            </div>
+
+            <div style={{padding:'22px 26px'}}>
+              {/* Info note */}
+              <div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(61,170,106,.85)',lineHeight:1.6,marginBottom:20}}>
+                🔒 Once the homeowner confirms your report, payment will be released from escrow to you.
+              </div>
+
+              {/* Date completed */}
+              <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:8}}>
+                Date completed *
+              </div>
+              <input
+                type="date"
+                value={completionDate}
+                onChange={e=>setCompletionDate(e.target.value)}
+                max={new Date().toISOString().split('T')[0]}
+                style={{width:'100%',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'11px 14px',fontFamily:"'Barlow',sans-serif",fontSize:14,color:'#F5F0E8',outline:'none',marginBottom:16,colorScheme:'dark'}}
+              />
+
+              {/* Report */}
+              <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:8}}>
+                What was repaired / done * <span style={{fontWeight:400,fontSize:9,textTransform:'none',letterSpacing:0,color:'rgba(245,240,232,.25)'}}>be specific</span>
+              </div>
+              <textarea
+                value={completionReport}
+                onChange={e=>setCompletionReport(e.target.value)}
+                placeholder="E.g. Replaced the burst 22mm copper pipe under the kitchen sink. Fitted new isolation valve. Tested for leaks — all clear. Cleared work area."
+                maxLength={500}
+                style={{width:'100%',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'12px 14px',fontFamily:"'Barlow',sans-serif",fontSize:14,color:'#F5F0E8',outline:'none',resize:'none',height:110,lineHeight:1.6,marginBottom:4}}
+              />
+              <div style={{fontSize:10,color:'rgba(245,240,232,.25)',textAlign:'right',marginBottom:16}}>{500-completionReport.length} chars left</div>
+
+              {/* Photo upload */}
+              <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:8}}>
+                Photos of completed work <span style={{fontWeight:400,fontSize:9,textTransform:'none',letterSpacing:0,color:'rgba(245,240,232,.25)'}}>up to 5 · strongly recommended</span>
+              </div>
+
+              {/* Photo grid */}
+              <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:12}}>
+                {completionPhotos.map((p,i)=>(
+                  <div key={i} style={{width:80,height:80,borderRadius:8,overflow:'hidden',position:'relative',border:'2px solid rgba(61,170,106,.3)',flexShrink:0,background:'#111'}}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={p.url} alt={`Completion ${i+1}`} style={{width:'100%',height:'100%',objectFit:'cover'}}/>
+                    <button
+                      onClick={()=>setCompletionPhotos(prev=>prev.filter((_,j)=>j!==i))}
+                      style={{position:'absolute',top:3,right:3,background:'rgba(0,0,0,.8)',border:'none',borderRadius:'50%',width:20,height:20,cursor:'pointer',color:'#fff',fontSize:11,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700}}>
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                {completionPhotos.length < 5 && (
+                  <label style={{width:80,height:80,borderRadius:8,border:'2px dashed rgba(255,255,255,.15)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',cursor:'pointer',position:'relative',flexShrink:0,transition:'border-color .2s'}}
+                    onMouseEnter={e=>(e.currentTarget.style.borderColor='rgba(61,170,106,.4)')}
+                    onMouseLeave={e=>(e.currentTarget.style.borderColor='rgba(255,255,255,.15)')}>
+                    <input type="file" accept="image/jpeg,image/png,image/webp"
+                      onChange={uploadCompletionPhoto}
+                      style={{position:'absolute',inset:0,opacity:0,cursor:'pointer',width:'100%',height:'100%'}}/>
+                    {uploadingCompletion?(
+                      <div style={{width:16,height:16,border:'2px solid rgba(255,255,255,.2)',borderTopColor:'#fff',borderRadius:'50%',animation:'spin .6s linear infinite'}}/>
+                    ):(
+                      <>
+                        <span style={{fontSize:20,marginBottom:2}}>📷</span>
+                        <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:8,fontWeight:600,color:'rgba(245,240,232,.3)',letterSpacing:.5}}>ADD</span>
+                      </>
+                    )}
+                  </label>
+                )}
+              </div>
+
+              {completionPhotos.length === 0 && (
+                <div style={{fontSize:11,color:'rgba(245,240,232,.25)',fontStyle:'italic',marginBottom:12}}>
+                  Photos help the homeowner verify the work was done. Jobs with photos are confirmed faster.
+                </div>
+              )}
+
+              {/* Submit */}
+              <button
+                onClick={submitCompletion}
+                disabled={submittingCompletion||!completionReport.trim()}
+                style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:14,fontWeight:700,letterSpacing:2,textTransform:'uppercase',background:submittingCompletion||!completionReport.trim()?'rgba(61,170,106,.3)':'#3DAA6A',color:'#fff',border:'none',padding:'14px',borderRadius:8,cursor:submittingCompletion||!completionReport.trim()?'not-allowed':'pointer',width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:8,transition:'background .15s'}}>
+                {submittingCompletion?(
+                  <><div style={{width:14,height:14,border:'2px solid rgba(255,255,255,.3)',borderTopColor:'#fff',borderRadius:'50%',animation:'spin .6s linear infinite'}}/>Submitting...</>
+                ):(
+                  '✓ Submit completion report →'
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
