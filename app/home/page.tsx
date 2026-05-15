@@ -24,6 +24,7 @@ type BidData = {
   counterAmount: number|null
   counterBy: string|null
   counterRound: number
+  finalAmount: number|null
 }
 
 type JobData = {
@@ -116,7 +117,7 @@ export default function HomeDashboard() {
         .select(`
           *,
           bids(
-            id, amount, counter_amount, counter_by, counter_round, eta_label, note, status, created_at, tradesperson_id,
+            id, amount, counter_amount, counter_by, counter_round, final_amount, eta_label, note, status, created_at, tradesperson_id,
             profiles!tradesperson_id(
               full_name, avatar_url,
               tradesperson_profiles(trade_category, years_experience, rating_avg, jobs_completed)
@@ -155,6 +156,7 @@ export default function HomeDashboard() {
             counterAmount: b.counter_amount||null,
             counterBy:     b.counter_by||null,
             counterRound:  b.counter_round||0,
+            finalAmount:   b.final_amount||null,
           }))
         }))
         setJobs(mapped)
@@ -256,19 +258,21 @@ export default function HomeDashboard() {
 
   async function acceptBid(jobId:string, bidId:string, bidName:string){
     try {
-      await supabase.from('bids').update({ status:'accepted' }).eq('id', bidId)
+      const bid = jobs.find(j=>j.id===jobId)?.bids.find(b=>b.id===bidId)
+      // final_amount = counterAmount if a counter exists, else original price
+      const agreedAmount = bid?.counterAmount || bid?.price || 0
+      await supabase.from('bids').update({ status:'accepted', final_amount: agreedAmount }).eq('id', bidId)
       await supabase.from('bids').update({ status:'declined' }).eq('job_id', jobId).neq('id', bidId)
       await supabase.from('jobs').update({ status:'accepted' }).eq('id', jobId)
       const { data:{ session } } = await supabase.auth.getSession()
-      const bid = jobs.find(j=>j.id===jobId)?.bids.find(b=>b.id===bidId)
       fetch('/api/send-email',{
         method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({
           type:'bid_accepted', bidId,
-          amount: bid?.price||0,
+          amount: agreedAmount,
           jobTitle: jobs.find(j=>j.id===jobId)?.title||'Job',
           jobId,
-          tradespersonId: bidId,
+          tradespersonId: bid?.tradespersonId||bidId,
         })
       }).catch(e=>console.log('Email error:',e))
       toast('Bid accepted!',`${bidName.split(' ')[0]} is confirmed · Pay to lock in`,'#3DAA6A')
@@ -754,22 +758,36 @@ export default function HomeDashboard() {
                                       )}
 
                                       {/* ACCEPTED → pay */}
-                                      {isAccepted&&!isPaid&&(
-                                        <>
-                                          <div style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'var(--green)',marginBottom:10}}>✓ Bid accepted — pay to confirm</div>
-                                          <div className="escrow-note">🔒 Your payment is held in escrow. <strong>{bid.name.split(' ')[0]}</strong> only gets paid once you confirm the job is done.</div>
-                                          <div className="pay-grid">
-                                            <div className="pay-btn" onClick={()=>releasePayment(selectedJob.id,bid.price)}>
-                                              <div className="pay-lbl">Pay by card</div>
-                                              <div className="pay-sub">Visa · Mastercard</div>
+                                      {isAccepted&&!isPaid&&(()=>{
+                                        // Use final_amount if set (counter was accepted),
+                                        // else counterAmount if trade countered and homeowner accepted,
+                                        // else original price
+                                        const agreedAmount = bid.finalAmount || bid.counterAmount || bid.price
+                                        return (
+                                          <>
+                                            <div style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'var(--green)',marginBottom:6}}>✓ Bid accepted — pay to confirm</div>
+                                            {/* Show agreed amount clearly */}
+                                            <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:10}}>
+                                              <div style={{fontFamily:'var(--fd)',fontSize:32,color:'var(--terra)'}}>R{agreedAmount.toLocaleString()}</div>
+                                              {agreedAmount !== bid.price && (
+                                                <div style={{fontSize:12,color:'var(--charcoal-l)',textDecoration:'line-through'}}>R{bid.price}</div>
+                                              )}
+                                              <div style={{fontSize:12,color:'var(--charcoal-l)'}}>agreed amount</div>
                                             </div>
-                                            <div className="pay-btn" onClick={()=>releasePayment(selectedJob.id,bid.price)}>
-                                              <div className="pay-lbl">Pay by EFT</div>
-                                              <div className="pay-sub">Instant via Ozow</div>
+                                            <div className="escrow-note">🔒 Your payment is held in escrow. <strong>{bid.name.split(' ')[0]}</strong> only gets paid once you confirm the job is done.</div>
+                                            <div className="pay-grid">
+                                              <div className="pay-btn" onClick={()=>releasePayment(selectedJob.id, agreedAmount)}>
+                                                <div className="pay-lbl">Pay by card</div>
+                                                <div className="pay-sub">Visa · Mastercard</div>
+                                              </div>
+                                              <div className="pay-btn" onClick={()=>releasePayment(selectedJob.id, agreedAmount)}>
+                                                <div className="pay-lbl">Pay by EFT</div>
+                                                <div className="pay-sub">Instant via Ozow</div>
+                                              </div>
                                             </div>
-                                          </div>
-                                        </>
-                                      )}
+                                          </>
+                                        )
+                                      })()}
 
                                       {/* PAID → confirm complete */}
                                       {isAccepted&&isPaid&&(
