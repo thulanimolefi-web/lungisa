@@ -76,8 +76,6 @@ export default function PostJob() {
   const [liveBids, setLiveBids]       = useState<RealBid[]>([])
   const [bidCount, setBidCount]       = useState(0)
   const [selectedBid, setSelectedBid] = useState<RealBid|null>(null)
-  const [counterAmt, setCounterAmt]   = useState('')
-  const [counterResp, setCounterResp] = useState('')
   const [finalPrice, setFinalPrice]   = useState(0)
   const [accepted, setAccepted]       = useState(false)
   const [paid, setPaid]               = useState(false)
@@ -313,17 +311,6 @@ export default function PostJob() {
     }
   }
 
-  function sendCounter() {
-    if(!selectedBid||!counterAmt) return
-    setCounterResp('sending')
-    setTimeout(()=>{
-      const offered = parseInt(counterAmt)
-      if(offered >= selectedBid.price * 0.82) {
-        setCounterResp('accepted'); setFinalPrice(offered)
-        toast('Counter accepted!',`${selectedBid.name.split(' ')[0]} accepted R${offered}`)
-      } else { setCounterResp('declined') }
-    },1800)
-  }
 
   function acceptBid(bid:RealBid, price:number) {
     setSelectedBid(bid); setFinalPrice(price); setAccepted(true)
@@ -333,7 +320,7 @@ export default function PostJob() {
   function resetAndPostAnother() {
     setStep(0); setLiveBids([]); setBidCount(0); setTitle(''); setDesc('')
     setArea(''); setMediaFiles([]); setAccepted(false); setPaid(false)
-    setSelectedBid(null); setPostedJobId(null); setCounterResp(''); setFinalPrice(0)
+    setSelectedBid(null); setPostedJobId(null); setFinalPrice(0)
   }
 
   const S = {
@@ -813,32 +800,29 @@ export default function PostJob() {
                 ))}
 
                 {selectedBid&&!accepted&&(
-                  <div style={{background:'rgba(255,255,255,.03)',borderRadius:10,border:'1px solid rgba(255,255,255,.08)',padding:'16px 20px',marginTop:16}}>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
-                      <div style={{fontFamily:'var(--fc)',fontSize:13,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:'var(--cream)'}}>Counter-offer</div>
-                      <div style={{fontSize:13,color:'rgba(245,240,232,.5)'}}>Negotiating with <strong style={{color:'var(--cream)'}}>{selectedBid.name.split(' ')[0]}</strong></div>
+                  <div style={{background:'rgba(255,255,255,.03)',borderRadius:10,border:'1px solid rgba(255,255,255,.08)',padding:'18px 20px',marginTop:16}}>
+                    <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:14}}>
+                      <div style={S.bidAvatar(selectedBid.bg)}>{selectedBid.init}</div>
+                      <div style={{flex:1}}>
+                        <div style={{fontFamily:'var(--fc)',fontSize:15,fontWeight:700,color:'var(--cream)'}}>{selectedBid.name}</div>
+                        <div style={{fontSize:12,color:'rgba(245,240,232,.45)',marginTop:2}}>{selectedBid.trade}</div>
+                      </div>
+                      <div style={{textAlign:'right'}}>
+                        <div style={S.bidPrice}>R{selectedBid.price}</div>
+                        <div style={{fontSize:11,color:'rgba(245,240,232,.4)',marginTop:2}}>ETA: {selectedBid.eta}</div>
+                      </div>
                     </div>
-                    <div style={{display:'flex',gap:10,alignItems:'center',marginBottom:10}}>
-                      <div style={{fontFamily:'var(--fd)',fontSize:24,color:'rgba(245,240,232,.4)',background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',borderRadius:'8px 0 0 8px',padding:'10px 14px'}}>R</div>
-                      <input type="number" placeholder={String(Math.round(selectedBid.price*0.9))} value={counterAmt} onChange={e=>setCounterAmt(e.target.value)}
-                        style={{flex:1,background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',borderRadius:'0 8px 8px 0',padding:'10px 14px',fontFamily:'var(--fd)',fontSize:24,color:'var(--cream)',outline:'none'}}/>
+                    <div style={{background:'rgba(196,89,58,.08)',border:'1px solid rgba(196,89,58,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(245,240,232,.7)',lineHeight:1.6,marginBottom:14}}>
+                      💡 Your job is live and bids are coming in. To negotiate, counter-offer, or accept a bid — go to your <strong style={{color:'#E07A5F'}}>Homeowner Dashboard</strong> where the full negotiation flow lives.
                     </div>
                     <div style={{display:'flex',gap:10}}>
-                      <button onClick={sendCounter} style={{...S.btn('primary'),flex:'none',padding:'11px 20px',fontSize:13}}>Send Counter-offer</button>
-                      <button onClick={()=>acceptBid(selectedBid,selectedBid.price)} style={{...S.btn('ghost'),fontSize:13,padding:'11px 18px'}}>Accept as-is</button>
+                      <button onClick={()=>router.push('/home')} style={{...S.btn('primary')}}>
+                        Go to my dashboard →
+                      </button>
+                      <button onClick={()=>acceptBid(selectedBid,selectedBid.price)} style={{...S.btn('ghost'),fontSize:13,padding:'11px 18px'}}>
+                        Accept R{selectedBid.price} now
+                      </button>
                     </div>
-                    {counterResp==='sending'&&<div style={{fontSize:13,color:'rgba(245,240,232,.5)',marginTop:10}}>Sending offer...</div>}
-                    {counterResp==='accepted'&&(
-                      <div style={{background:'rgba(61,170,106,.1)',border:'1px solid rgba(61,170,106,.25)',borderRadius:8,padding:'12px 14px',marginTop:10,fontSize:13,color:'rgba(61,170,106,.9)'}}>
-                        ✓ <strong>{selectedBid.name.split(' ')[0]} accepted R{counterAmt}.</strong> Ready to confirm and pay.
-                        <div style={{marginTop:10}}><button onClick={()=>acceptBid(selectedBid,parseInt(counterAmt))} style={{...S.btn('primary'),flex:'none',width:'auto',padding:'10px 20px',fontSize:13}}>Confirm & Pay →</button></div>
-                      </div>
-                    )}
-                    {counterResp==='declined'&&(
-                      <div style={{background:'rgba(196,89,58,.08)',border:'1px solid rgba(196,89,58,.2)',borderRadius:8,padding:'12px 14px',marginTop:10,fontSize:13,color:'rgba(196,89,58,.9)'}}>
-                        ✗ {selectedBid.name.split(' ')[0]} declined. Try a higher amount.
-                      </div>
-                    )}
                   </div>
                 )}
 
