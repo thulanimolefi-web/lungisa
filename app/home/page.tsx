@@ -141,10 +141,17 @@ export default function HomeDashboard() {
           )
         `)
         .eq('homeowner_id', session.user.id)
-        .in('status',['open','bidding','accepted','in_progress','completion_submitted'])
+        .in('status',['open','bidding','accepted','in_progress','completion_submitted','disputed'])
         .order('created_at',{ascending:false})
 
-      if(!error && data) {
+      if(error) {
+        // Log but don't wipe existing jobs — keep showing last good state
+        console.error('loadRealJobs error:', error.message, error.code)
+        setLoading(false)
+        return
+      }
+
+      if(data) {
         const mapped: JobData[] = data.map((j:any,ji:number)=>({
           id:       j.id,
           title:    j.title,
@@ -181,7 +188,7 @@ export default function HomeDashboard() {
           return mapped.find(j => j.id === prev.id) || mapped[0] || null
         })
       }
-    } catch(e){ console.log('Load jobs error:',e) }
+    } catch(e){ console.error('Load jobs exception:',e) }
     setLoading(false)
   }
 
