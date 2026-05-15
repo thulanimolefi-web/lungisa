@@ -16,6 +16,7 @@ type Bid = {
   time: string
   counterAmount: number|null
   counterBy: string|null
+  counterRound: number
   jobId: string
 }
 // ── Added media to Job type ──────────────────────────────────────
@@ -167,6 +168,7 @@ export default function Dashboard() {
           time:          getTimeAgo(b.created_at),
           counterAmount: b.counter_amount||null,
           counterBy:     b.counter_by||null,
+          counterRound:  b.counter_round||0,
           jobId:         b.jobs?.id||b.job_id,
         })))
       }
@@ -250,11 +252,17 @@ export default function Dashboard() {
     const raw=counterInputs[bid.id]
     const amount=parseInt(raw||'0')
     if(!amount||amount<1) return
+    if(bid.counterRound >= 3){
+      toast('Max rounds reached','You must accept or decline — no more counters allowed',false)
+      return
+    }
     try{
+      const newRound = bid.counterRound + 1
       await supabase.from('bids').update({
         counter_amount:  amount,
         counter_by:      'tradesperson',
-        counter_message: `Tradesperson counter-offered R${amount}`,
+        counter_message: `Tradesperson counter-offered R${amount} (round ${newRound})`,
+        counter_round:   newRound,
         status:          'countered',
       }).eq('id',bid.id)
       const {data:{session}}=await supabase.auth.getSession()
@@ -270,7 +278,7 @@ export default function Dashboard() {
         })
       }).catch(e=>console.log('Email error:',e))
       setCounterInputs(c=>({...c,[bid.id]:''}))
-      toast('Counter sent!',`R${amount} sent to homeowner`,false)
+      toast(`Counter sent! (Round ${newRound}/3)`,`R${amount} sent to homeowner`,false)
       loadMyBids()
     }catch(e){ console.log('Counter back error:',e) }
   }
@@ -289,15 +297,13 @@ export default function Dashboard() {
           note:            bidNote||null,
           status:          'pending',
         })
-        if(error) {
-          if(error.code === '23505') {
-            // Unique constraint — already bid on this job
-            toast('Already bid on this job', 'You can manage your existing bid in My Bids', false)
-            setJobs(j => j.map(x => x.id === modalJob.id ? { ...x, submitted: true } : x))
-            setModalJob(null)
-            setModalMedia([])
+        if(error){
+          if(error.code==='23505'){
+            toast('Already bid on this job','Manage your existing bid in My Bids',false)
+            setJobs(j=>j.map(x=>x.id===modalJob.id?{...x,submitted:true}:x))
+            setModalJob(null); setModalMedia([])
           } else {
-            toast('Error submitting bid', error.message, false)
+            toast('Error submitting bid',error.message,false)
           }
           return
         }
@@ -579,7 +585,20 @@ export default function Dashboard() {
 
                     {homeownerCountered&&(
                       <div style={{background:'rgba(232,160,32,.06)',border:'1px solid rgba(232,160,32,.2)',borderRadius:8,padding:'14px 16px'}}>
-                        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'#E8A020',marginBottom:6}}>Homeowner counter-offered</div>
+                        {/* Round indicator */}
+                        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+                          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'#E8A020'}}>
+                            Homeowner counter-offered
+                          </div>
+                          <div style={{display:'flex',gap:4,alignItems:'center'}}>
+                            {[1,2,3].map(n=>(
+                              <div key={n} style={{width:18,height:5,borderRadius:3,background:n<=b.counterRound?'#E8A020':'rgba(232,160,32,.2)'}}/>
+                            ))}
+                            <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:700,color:'rgba(232,160,32,.6)',letterSpacing:1,marginLeft:3}}>
+                              ROUND {b.counterRound}/3
+                            </span>
+                          </div>
+                        </div>
                         <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:12}}>
                           <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:32,color:'#F5F0E8'}}>R{b.counterAmount}</div>
                           <div style={{fontSize:12,color:'rgba(245,240,232,.4)'}}>vs your bid of R{b.price}</div>
@@ -594,24 +613,54 @@ export default function Dashboard() {
                             ✗ Decline
                           </button>
                         </div>
-                        <div style={{borderTop:'1px solid rgba(255,255,255,.06)',paddingTop:12}}>
-                          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(245,240,232,.35)',marginBottom:8}}>Or counter back:</div>
-                          <div style={{display:'flex',alignItems:'stretch'}}>
-                            <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:'rgba(245,240,232,.3)',background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',borderRadius:'6px 0 0 6px',padding:'10px 14px',flexShrink:0,borderRight:'none',display:'flex',alignItems:'center'}}>R</div>
-                            <input type="number"
-                              placeholder={b.counterAmount?String(Math.round((b.price+b.counterAmount)/2)):String(Math.round(b.price*0.95))}
-                              value={counterInputs[b.id]||''}
-                              onChange={e=>setCounterInputs(c=>({...c,[b.id]:e.target.value}))}
-                              style={{flex:1,background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',borderRadius:0,padding:'10px 12px',fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:'#F5F0E8',outline:'none',borderLeft:'none',borderRight:'none'}}/>
-                            <button onClick={()=>sendBackCounter(b)}
-                              style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:'#C4593A',color:'#fff',border:'none',padding:'10px 16px',borderRadius:'0 6px 6px 0',cursor:'pointer',flexShrink:0}}>
-                              Counter
-                            </button>
+                        {/* Counter back only if under 3 rounds */}
+                        {b.counterRound < 3 ? (
+                          <div style={{borderTop:'1px solid rgba(255,255,255,.06)',paddingTop:12}}>
+                            <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(245,240,232,.35)',marginBottom:8}}>
+                              Or counter back ({3-b.counterRound} round{3-b.counterRound!==1?'s':''} left):
+                            </div>
+                            <div style={{display:'flex',alignItems:'stretch'}}>
+                              <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:'rgba(245,240,232,.3)',background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',borderRadius:'6px 0 0 6px',padding:'10px 14px',flexShrink:0,borderRight:'none',display:'flex',alignItems:'center'}}>R</div>
+                              <input type="number"
+                                placeholder={b.counterAmount?String(Math.round((b.price+b.counterAmount)/2)):String(Math.round(b.price*0.95))}
+                                value={counterInputs[b.id]||''}
+                                onChange={e=>setCounterInputs(c=>({...c,[b.id]:e.target.value}))}
+                                style={{flex:1,background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',borderRadius:0,padding:'10px 12px',fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:'#F5F0E8',outline:'none',borderLeft:'none',borderRight:'none'}}/>
+                              <button onClick={()=>sendBackCounter(b)}
+                                style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:'#C4593A',color:'#fff',border:'none',padding:'10px 16px',borderRadius:'0 6px 6px 0',cursor:'pointer',flexShrink:0}}>
+                                Counter
+                              </button>
+                            </div>
                           </div>
-                        </div>
+                        ) : (
+                          <div style={{borderTop:'1px solid rgba(255,255,255,.06)',paddingTop:12,fontSize:12,color:'#f08080',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,letterSpacing:.5}}>
+                            ⚠ Maximum 3 rounds reached — you must accept or decline.
+                          </div>
+                        )}
                       </div>
                     )}
-                    {iSentCounter&&(<div style={{background:'rgba(196,89,58,.06)',border:'1px solid rgba(196,89,58,.15)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(245,240,232,.6)',lineHeight:1.5}}>⏳ Counter of <strong style={{color:'#F5F0E8'}}>R{b.counterAmount}</strong> sent. Waiting for homeowner to respond...</div>)}
+                    {iSentCounter&&(
+                      <div style={{background:'rgba(196,89,58,.06)',border:'1px solid rgba(196,89,58,.15)',borderRadius:8,padding:'12px 14px',lineHeight:1.5}}>
+                        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4}}>
+                          <div style={{fontSize:13,color:'rgba(245,240,232,.6)'}}>
+                            ⏳ Counter of <strong style={{color:'#F5F0E8'}}>R{b.counterAmount}</strong> sent. Waiting for homeowner...
+                          </div>
+                          <div style={{display:'flex',gap:3,alignItems:'center'}}>
+                            {[1,2,3].map(n=>(
+                              <div key={n} style={{width:14,height:4,borderRadius:2,background:n<=b.counterRound?'#C4593A':'rgba(196,89,58,.2)'}}/>
+                            ))}
+                            <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:700,color:'rgba(196,89,58,.6)',letterSpacing:1,marginLeft:3}}>
+                              {b.counterRound}/3
+                            </span>
+                          </div>
+                        </div>
+                        {b.counterRound===3&&(
+                          <div style={{fontSize:11,color:'rgba(245,240,232,.4)',marginTop:4}}>
+                            This is the final round — homeowner must accept or decline.
+                          </div>
+                        )}
+                      </div>
+                    )}
                     {isAccepted&&(<div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(61,170,106,.9)',lineHeight:1.5}}>✓ Bid accepted! Homeowner is confirming payment. Complete the job and you&apos;ll get paid.</div>)}
                     {isDeclined&&(<div style={{background:'rgba(226,75,74,.06)',border:'1px solid rgba(226,75,74,.15)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(226,75,74,.7)',lineHeight:1.5}}>✗ Not accepted this time. Keep bidding on new jobs.</div>)}
                     {isCompleted&&(<div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(61,170,106,.9)',lineHeight:1.5}}>✓ Job completed · Payment released · R{b.price} earned</div>)}
