@@ -289,7 +289,18 @@ export default function Dashboard() {
           note:            bidNote||null,
           status:          'pending',
         })
-        if(error){ toast('Error submitting bid',error.message,false); return }
+        if(error) {
+          if(error.code === '23505') {
+            // Unique constraint — already bid on this job
+            toast('Already bid on this job', 'You can manage your existing bid in My Bids', false)
+            setJobs(j => j.map(x => x.id === modalJob.id ? { ...x, submitted: true } : x))
+            setModalJob(null)
+            setModalMedia([])
+          } else {
+            toast('Error submitting bid', error.message, false)
+          }
+          return
+        }
         await supabase.from('jobs').update({ status:'bidding' }).eq('id',modalJob.id)
         fetch('/api/send-email',{
           method:'POST',headers:{'Content-Type':'application/json'},
