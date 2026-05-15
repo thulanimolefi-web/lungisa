@@ -373,7 +373,7 @@ export default function Dashboard() {
       }
 
       // 5. Mark locally as submitted
-      setSubmittedCompletions(prev => new Set([...prev, completionJobId!]))
+      setSubmittedCompletions(prev => new Set(Array.from(prev).concat(completionJobId!)))
       toast('Job marked complete! ✓','Homeowner has been notified to confirm and release payment',false)
 
       // Reset
