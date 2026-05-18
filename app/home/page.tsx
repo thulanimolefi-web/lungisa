@@ -290,20 +290,28 @@ export default function HomeDashboard() {
   async function confirmJobComplete(jobId:string, bidId:string, amount:number) {
     try {
       const { data:{ session } } = await supabase.auth.getSession()
+      const job = jobs.find(j=>j.id===jobId)
+      const acceptedBid = job?.bids.find(b=>b.id===bidId)
+
       await supabase.from('jobs').update({ status:'completed' }).eq('id', jobId)
       await supabase.from('bids').update({ status:'completed' }).eq('id', bidId)
-      // Write payment record
-      const acceptedBid = jobs.find(j=>j.id===jobId)?.bids.find(b=>b.id===bidId)
+
+      // Fire payout email to admin with banking details
       fetch('/api/send-email',{
-        method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({
-          type:'payment_confirmed', jobId, amount,
-          homeownerId: session?.user?.id,
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          type:           'payment_release_request',
+          jobId,
+          jobTitle:       job?.title||'Job',
+          amount,
+          homeownerId:    session?.user?.id,
           tradespersonId: acceptedBid?.tradespersonId||bidId,
+          tradespersonName: acceptedBid?.name||'Tradesperson',
         })
       }).catch(e=>console.log('Email error:',e))
+
       setPaidJobs(p=>({...p,[jobId]:true}))
-      toast('Payment released! 🎉','The tradesperson has been paid','#3DAA6A')
+      toast('Payment release requested! 🎉','Admin has been notified to process payment to the tradesperson','#3DAA6A')
       setReviewJob(jobId)
       loadRealJobs(true)
       loadHistoryJobs()

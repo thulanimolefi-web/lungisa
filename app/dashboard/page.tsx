@@ -67,6 +67,16 @@ export default function Dashboard() {
   const [uploadingCompletion, setUploadingCompletion] = useState(false)
   const [submittingCompletion, setSubmittingCompletion] = useState(false)
   const [submittedCompletions, setSubmittedCompletions] = useState<Set<string>>(new Set())
+  // Banking details
+  const [banking, setBanking] = useState<{
+    bank_name:string, account_holder:string,
+    account_number:string, account_type:string, branch_code:string
+  }|null>(null)
+  const [bankingForm, setBankingForm] = useState({
+    bank_name:'', account_holder:'', account_number:'', account_type:'current', branch_code:''
+  })
+  const [savingBanking, setSavingBanking] = useState(false)
+  const [bankingMsg, setBankingMsg] = useState('')
 
   const ETAS = ['30 mins','1 hour','2 hours','Half day','Tomorrow']
 
@@ -75,6 +85,7 @@ export default function Dashboard() {
     loadRealJobs()
     loadMyBids()
     loadEarnings()
+    loadBanking()
 
     const channel = supabase
       .channel('dashboard-jobs')
@@ -202,6 +213,57 @@ export default function Dashboard() {
         })
       }
     }catch(e){console.log('Earnings error:',e)}
+  }
+
+  async function loadBanking(){
+    try{
+      const {data:{session}}=await supabase.auth.getSession()
+      if(!session?.user) return
+      const {data}=await supabase
+        .from('banking_details')
+        .select('*')
+        .eq('tradesperson_id',session.user.id)
+        .single()
+      if(data){
+        setBanking(data)
+        setBankingForm({
+          bank_name:      data.bank_name,
+          account_holder: data.account_holder,
+          account_number: data.account_number,
+          account_type:   data.account_type,
+          branch_code:    data.branch_code,
+        })
+      }
+    }catch(e){ /* no banking details yet — fine */ }
+  }
+
+  async function saveBanking(){
+    const {bank_name,account_holder,account_number,account_type,branch_code} = bankingForm
+    if(!bank_name||!account_holder||!account_number||!branch_code){
+      setBankingMsg('Please fill in all required fields')
+      return
+    }
+    setSavingBanking(true)
+    setBankingMsg('')
+    try{
+      const {data:{session}}=await supabase.auth.getSession()
+      if(!session?.user) return
+      const payload = {
+        tradesperson_id: session.user.id,
+        bank_name, account_holder, account_number, account_type, branch_code,
+        updated_at: new Date().toISOString(),
+      }
+      const {error} = await supabase
+        .from('banking_details')
+        .upsert(payload, {onConflict:'tradesperson_id'})
+      if(error){ setBankingMsg('Failed to save: '+error.message) }
+      else {
+        setBanking(bankingForm as any)
+        setBankingMsg('✓ Banking details saved')
+        setTimeout(()=>setBankingMsg(''),3000)
+      }
+    }catch(e){ setBankingMsg('Something went wrong') }
+    setSavingBanking(false)
   }
 
   // ── Load job media when opening bid modal ────────────────────────
@@ -839,7 +901,9 @@ export default function Dashboard() {
           {view==='profile'&&(
             <div style={S.content}>
               <VerificationBadge variant="full" />
-              <div style={{background:'#222220',borderRadius:12,border:'1px solid rgba(255,255,255,.06)',padding:28}}>
+
+              {/* Profile card */}
+              <div style={{background:'#222220',borderRadius:12,border:'1px solid rgba(255,255,255,.06)',padding:28,marginBottom:16}}>
                 <div style={{display:'flex',alignItems:'center',gap:16,marginBottom:24,paddingBottom:20,borderBottom:'1px solid rgba(255,255,255,.06)'}}>
                   <div style={{position:'relative',flexShrink:0}}>
                     <div style={{width:64,height:64,borderRadius:'50%',background:'#9E3E24',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:"'Bebas Neue',sans-serif",fontSize:28,color:'#fff',border:'3px solid rgba(196,89,58,.3)'}}>{displayInitials}</div>
@@ -866,6 +930,138 @@ export default function Dashboard() {
                       <div style={{fontSize:13,color:'rgba(245,240,232,.75)'}}>{r.val}</div>
                     </div>
                   ))}
+                </div>
+              </div>
+
+              {/* Banking details card */}
+              <div style={{background:'#222220',borderRadius:12,border:`1px solid ${banking?'rgba(61,170,106,.25)':'rgba(255,255,255,.06)'}`,padding:28}}>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20,paddingBottom:16,borderBottom:'1px solid rgba(255,255,255,.06)'}}>
+                  <div>
+                    <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,letterSpacing:1,color:'#F5F0E8',marginBottom:4}}>
+                      Banking Details
+                    </div>
+                    <div style={{fontSize:12,color:'rgba(245,240,232,.4)',lineHeight:1.5}}>
+                      Required for payment release. Your details are encrypted and only used to process your earnings.
+                    </div>
+                  </div>
+                  {banking&&(
+                    <span style={{display:'inline-flex',alignItems:'center',gap:5,background:'rgba(61,170,106,.12)',border:'1px solid rgba(61,170,106,.25)',borderRadius:6,padding:'5px 10px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:'#3DAA6A',flexShrink:0}}>
+                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                      Saved
+                    </span>
+                  )}
+                </div>
+
+                {/* Warning if not saved */}
+                {!banking&&(
+                  <div style={{background:'rgba(232,160,32,.08)',border:'1px solid rgba(232,160,32,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'#E8A020',lineHeight:1.6,marginBottom:20,display:'flex',gap:10}}>
+                    <span style={{flexShrink:0}}>⚠</span>
+                    <span>You haven&apos;t added banking details yet. You must add them before you can receive payment for completed jobs.</span>
+                  </div>
+                )}
+
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
+                  {/* Bank name */}
+                  <div style={{gridColumn:'1/-1'}}>
+                    <label style={{display:'block',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>
+                      Bank name *
+                    </label>
+                    <select
+                      value={bankingForm.bank_name}
+                      onChange={e=>setBankingForm(f=>({...f,bank_name:e.target.value}))}
+                      style={{width:'100%',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'11px 14px',fontFamily:"'Barlow',sans-serif",fontSize:14,color:'#F5F0E8',outline:'none'}}>
+                      <option value="">Select your bank</option>
+                      {['Absa','African Bank','Capitec Bank','Discovery Bank','FNB','Investec','Nedbank','Old Mutual','Sasfin','Standard Bank','TymeBank','Ubank'].map(b=>(
+                        <option key={b} value={b}>{b}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Account holder */}
+                  <div style={{gridColumn:'1/-1'}}>
+                    <label style={{display:'block',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>
+                      Account holder name *
+                    </label>
+                    <input
+                      type="text"
+                      value={bankingForm.account_holder}
+                      onChange={e=>setBankingForm(f=>({...f,account_holder:e.target.value}))}
+                      placeholder="Full name as it appears on your bank account"
+                      style={{width:'100%',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'11px 14px',fontFamily:"'Barlow',sans-serif",fontSize:14,color:'#F5F0E8',outline:'none'}}
+                    />
+                  </div>
+
+                  {/* Account number */}
+                  <div>
+                    <label style={{display:'block',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>
+                      Account number *
+                    </label>
+                    <input
+                      type="text"
+                      value={bankingForm.account_number}
+                      onChange={e=>setBankingForm(f=>({...f,account_number:e.target.value.replace(/\D/g,'')}))}
+                      placeholder="e.g. 1234567890"
+                      maxLength={16}
+                      style={{width:'100%',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'11px 14px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:16,color:'#F5F0E8',outline:'none',letterSpacing:2}}
+                    />
+                  </div>
+
+                  {/* Account type */}
+                  <div>
+                    <label style={{display:'block',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>
+                      Account type *
+                    </label>
+                    <select
+                      value={bankingForm.account_type}
+                      onChange={e=>setBankingForm(f=>({...f,account_type:e.target.value}))}
+                      style={{width:'100%',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'11px 14px',fontFamily:"'Barlow',sans-serif",fontSize:14,color:'#F5F0E8',outline:'none'}}>
+                      <option value="current">Current account</option>
+                      <option value="savings">Savings account</option>
+                      <option value="transmission">Transmission account</option>
+                    </select>
+                  </div>
+
+                  {/* Branch code */}
+                  <div>
+                    <label style={{display:'block',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>
+                      Branch code *
+                    </label>
+                    <input
+                      type="text"
+                      value={bankingForm.branch_code}
+                      onChange={e=>setBankingForm(f=>({...f,branch_code:e.target.value.replace(/\D/g,'')}))}
+                      placeholder="e.g. 632005"
+                      maxLength={9}
+                      style={{width:'100%',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'11px 14px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:16,color:'#F5F0E8',outline:'none',letterSpacing:2}}
+                    />
+                  </div>
+
+                  {/* Universal branch code helper */}
+                  <div style={{gridColumn:'1/-1',fontSize:11,color:'rgba(245,240,232,.25)',lineHeight:1.6}}>
+                    💡 Universal branch codes: Absa 632005 · Capitec 470010 · FNB 250655 · Nedbank 198765 · Standard Bank 051001 · TymeBank 678910
+                  </div>
+                </div>
+
+                {/* Message */}
+                {bankingMsg&&(
+                  <div style={{marginTop:14,padding:'10px 14px',borderRadius:6,fontSize:13,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,
+                    background:bankingMsg.startsWith('✓')?'rgba(61,170,106,.1)':'rgba(226,75,74,.08)',
+                    border:bankingMsg.startsWith('✓')?'1px solid rgba(61,170,106,.2)':'1px solid rgba(226,75,74,.2)',
+                    color:bankingMsg.startsWith('✓')?'#3DAA6A':'#f08080',
+                  }}>
+                    {bankingMsg}
+                  </div>
+                )}
+
+                <button
+                  onClick={saveBanking}
+                  disabled={savingBanking}
+                  style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:13,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:savingBanking?'rgba(196,89,58,.4)':'#C4593A',color:'#fff',border:'none',padding:'13px',borderRadius:8,cursor:savingBanking?'not-allowed':'pointer',width:'100%',marginTop:16,display:'flex',alignItems:'center',justifyContent:'center',gap:8,transition:'background .15s'}}>
+                  {savingBanking?'Saving...':'Save banking details'}
+                </button>
+
+                <div style={{marginTop:12,fontSize:11,color:'rgba(245,240,232,.2)',textAlign:'center',lineHeight:1.6}}>
+                  🔒 Your banking details are encrypted and stored securely. They are only used to process your Lungisa earnings.
                 </div>
               </div>
             </div>
