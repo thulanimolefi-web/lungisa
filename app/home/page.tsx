@@ -237,25 +237,48 @@ export default function HomeDashboard() {
     try {
       const { data:{ session } } = await supabase.auth.getSession()
       if(!session?.user) return
-      const { data, error } = await supabase
+
+      // Step 1: fetch completed jobs
+      const { data: jobsData, error } = await supabase
         .from('jobs')
-        .select(`*, bids!inner(amount, profiles!tradesperson_id(full_name))`)
+        .select('id, title, category, area, updated_at')
         .eq('homeowner_id', session.user.id)
         .eq('status','completed')
         .order('updated_at',{ascending:false})
-      if(!error && data) {
-        setHistoryJobs(data.map((j:any)=>({
-          id:          j.id,
-          title:       j.title,
-          category:    j.category,
-          emoji:       getCatEmoji(j.category),
-          area:        j.area,
-          tradesperson:j.bids?.[0]?.profiles?.full_name||'Tradesperson',
-          price:       j.bids?.[0]?.amount||0,
-          rating:      5,
-          date:        new Date(j.updated_at).toLocaleDateString('en-ZA',{day:'numeric',month:'short',year:'numeric'}),
-        })))
-      }
+
+      if(error || !jobsData) return
+
+      // Step 2: fetch accepted/completed bids for those jobs
+      const jobIds = jobsData.map((j:any) => j.id)
+      const { data: bidsData } = await supabase
+        .from('bids')
+        .select('job_id, amount, final_amount, tradesperson_id, profiles!tradesperson_id(full_name)')
+        .in('job_id', jobIds)
+        .in('status', ['accepted','completed'])
+
+      // Step 3: fetch reviews left by this homeowner for those jobs
+      const { data: reviewsData } = await supabase
+        .from('reviews')
+        .select('job_id, rating')
+        .eq('reviewer_id', session.user.id)
+        .in('job_id', jobIds)
+
+      setHistoryJobs(jobsData.map((j:any) => {
+        const bid    = (bidsData||[]).find((b:any) => b.job_id === j.id)
+        const review = (reviewsData||[]).find((r:any) => r.job_id === j.id)
+        const agreed = bid?.final_amount || bid?.amount || 0
+        return {
+          id:           j.id,
+          title:        j.title,
+          category:     j.category,
+          emoji:        getCatEmoji(j.category),
+          area:         j.area,
+          tradesperson: (bid as any)?.profiles?.full_name || 'Tradesperson',
+          price:        agreed,
+          rating:       review?.rating || 0,
+          date:         new Date(j.updated_at).toLocaleDateString('en-ZA',{day:'numeric',month:'short',year:'numeric'}),
+        }
+      }))
     } catch(e){ console.log('History error:',e) }
   }
 
@@ -498,19 +521,69 @@ export default function HomeDashboard() {
       if(session?.user && reviewJob) {
         const job = jobs.find(j=>j.id===reviewJob)
         const acceptedBid = job?.bids.find(b=>b.status==='accepted'||b.status==='completed')
-        if(acceptedBid) {
-          await supabase.from('reviews').insert({
-            job_id:      reviewJob,
-            reviewer_id: session.user.id,
-            reviewee_id: acceptedBid.id,
-            rating,
-            comment:     reviewText||null,
-          })
+
+        // ── Bug fix: use tradespersonId (user ID) not acceptedBid.id (bid ID)
+        const tradespersonId = acceptedBid?.tradespersonId
+        if(!tradespersonId) {
+          console.error('No tradespersonId found — cannot submit review')
+          setReviewJob(null)
+          return
         }
+
+        // 1. Insert review
+        const { error: reviewErr } = await supabase.from('reviews').insert({
+          job_id:      reviewJob,
+          reviewer_id: session.user.id,
+          reviewee_id: tradespersonId,
+          rating,
+          comment:     reviewText||null,
+        })
+
+        if(reviewErr) {
+          console.error('Review error:', reviewErr)
+          toast('Could not save review','Please try again','#E24B4A')
+          setReviewJob(null)
+          return
+        }
+
+        // 2. Recalculate rating_avg and rating_count from all reviews for this tradesperson
+        const { data: allReviews } = await supabase
+          .from('reviews')
+          .select('rating')
+          .eq('reviewee_id', tradespersonId)
+
+        if(allReviews && allReviews.length > 0) {
+          const count   = allReviews.length
+          const avg     = allReviews.reduce((s:number,r:any)=>s+r.rating, 0) / count
+          const rounded = Math.round(avg * 10) / 10
+
+          await supabase
+            .from('tradesperson_profiles')
+            .update({ rating_avg: rounded, rating_count: count })
+            .eq('id', tradespersonId)
+        }
+
+        // 3. Increment jobs_completed
+        const { data: tpData } = await supabase
+          .from('tradesperson_profiles')
+          .select('jobs_completed')
+          .eq('id', tradespersonId)
+          .single()
+
+        if(tpData !== null) {
+          await supabase
+            .from('tradesperson_profiles')
+            .update({ jobs_completed: (tpData.jobs_completed||0) + 1 })
+            .eq('id', tradespersonId)
+        }
+
+        toast('Review submitted ⭐','Thank you — this helps other homeowners find great tradespeople','#C4593A')
       }
-    } catch(e){ console.log('Review error:', e) }
+    } catch(e){ console.error('Review error:',e) }
     setReviewJob(null)
-    toast('Review submitted!','Thank you for your feedback','#C4593A')
+    setRating(5)
+    setReviewText('')
+    loadHistoryJobs()
   }
 
   const activeJobs  = jobs.filter(j=>j.status!=='completed')
@@ -1128,7 +1201,21 @@ export default function HomeDashboard() {
                     <div className="hist-ico">{j.emoji}</div>
                     <div style={{flex:1}}>
                       <div className="hist-title">{j.title}</div>
-                      <div className="hist-meta">{j.area} · {j.tradesperson} · {'★'.repeat(j.rating)}</div>
+                      <div className="hist-meta">{j.area} · {j.tradesperson}</div>
+                      <div style={{marginTop:4}}>
+                        {j.rating > 0 ? (
+                          <span style={{color:'#E8A020',fontSize:14}}>
+                            {'★'.repeat(j.rating)}{'☆'.repeat(5-j.rating)}
+                            <span style={{fontSize:11,color:'var(--charcoal-l)',marginLeft:6}}>Your rating</span>
+                          </span>
+                        ) : (
+                          <span
+                            onClick={()=>{setReviewJob(j.id);setRating(5);setReviewText('')}}
+                            style={{fontSize:12,color:'var(--terra)',fontFamily:'var(--fc)',fontWeight:600,letterSpacing:.5,cursor:'pointer',textDecoration:'underline'}}>
+                            ⭐ Leave a review
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div>
                       <div className="hist-price">R{j.price.toLocaleString()}</div>
@@ -1179,22 +1266,59 @@ export default function HomeDashboard() {
       {reviewJob&&(
         <div className="modal-overlay" onClick={e=>{if(e.target===e.currentTarget)setReviewJob(null)}}>
           <div className="modal">
-            <div style={{textAlign:'center',marginBottom:16}}>
+            <div style={{textAlign:'center',marginBottom:20}}>
               <div style={{width:56,height:56,borderRadius:'50%',background:'rgba(61,170,106,.12)',border:'2px solid rgba(61,170,106,.3)',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 12px',fontSize:24}}>✓</div>
-              <div className="modal-title">PAYMENT RELEASED!</div>
+              <div className="modal-title">LEAVE A REVIEW</div>
+              <p className="modal-sub" style={{marginBottom:0}}>
+                Your review helps other homeowners and rewards great tradespeople.
+              </p>
             </div>
-            <p className="modal-sub">The tradesperson has been paid. Leave a review to help other homeowners and reward great work.</p>
-            <div style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'var(--charcoal-l)',marginBottom:10}}>Your rating</div>
-            <div className="stars-row">
+
+            {/* Star rating */}
+            <div style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'var(--charcoal-l)',marginBottom:10}}>
+              Your rating
+            </div>
+            <div className="stars-row" style={{justifyContent:'center',marginBottom:6}}>
               {[1,2,3,4,5].map(n=>(
-                <span key={n} className="star" onClick={()=>setRating(n)} style={{color:n<=rating?'#E8A020':'var(--cream-dd)'}}>★</span>
+                <span key={n} className="star"
+                  onClick={()=>setRating(n)}
+                  style={{color:n<=rating?'#E8A020':'var(--cream-dd)',fontSize:36,cursor:'pointer',transition:'transform .1s'}}
+                  onMouseEnter={e=>(e.currentTarget.style.transform='scale(1.2)')}
+                  onMouseLeave={e=>(e.currentTarget.style.transform='scale(1)')}>
+                  ★
+                </span>
               ))}
             </div>
-            <div style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'var(--charcoal-l)',marginBottom:8}}>Comments (optional)</div>
-            <textarea className="review-ta" placeholder="E.g. Arrived on time, fixed the pipe quickly, very professional..." value={reviewText} onChange={e=>setReviewText(e.target.value)}/>
+            {/* Rating label */}
+            <div style={{textAlign:'center',fontFamily:'var(--fc)',fontSize:13,fontWeight:700,letterSpacing:.5,marginBottom:20,
+              color:rating>=4?'#3DAA6A':rating===3?'#E8A020':'#E24B4A'}}>
+              {rating===5?'Excellent — highly recommend!'
+               :rating===4?'Good — would use again'
+               :rating===3?'Average — job got done'
+               :rating===2?'Below expectations'
+               :'Poor — would not recommend'}
+            </div>
+
+            {/* Comment */}
+            <div style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'var(--charcoal-l)',marginBottom:8}}>
+              Comments <span style={{fontWeight:400,fontSize:10,textTransform:'none',letterSpacing:0,color:'var(--sand)'}}>optional</span>
+            </div>
+            <textarea
+              className="review-ta"
+              placeholder="E.g. Arrived on time, fixed the pipe quickly, very professional and left the area clean..."
+              value={reviewText}
+              onChange={e=>setReviewText(e.target.value)}
+              maxLength={300}
+            />
+            <div style={{fontSize:11,color:'var(--sand)',textAlign:'right',marginBottom:16}}>{300-reviewText.length} chars left</div>
+
             <div style={{display:'flex',gap:10}}>
-              <button className="btn btn-terra" style={{flex:1,justifyContent:'center'}} onClick={submitReview}>Submit review</button>
-              <button className="btn btn-ghost" onClick={()=>setReviewJob(null)}>Skip for now</button>
+              <button className="btn btn-terra" style={{flex:1,justifyContent:'center'}} onClick={submitReview}>
+                ⭐ Submit review
+              </button>
+              <button className="btn btn-ghost" onClick={()=>setReviewJob(null)}>
+                Skip
+              </button>
             </div>
           </div>
         </div>
