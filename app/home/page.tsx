@@ -457,59 +457,65 @@ export default function HomeDashboard() {
   }
 
   async function releasePayment(jobId:string, amount:number){
-    const job = jobs.find(j=>j.id===jobId)
+    const job         = jobs.find(j=>j.id===jobId)
     const acceptedBid = job?.bids.find(b=>b.status==='accepted'||b.status==='completed')
 
-    // Check Yoco SDK is loaded
+    // Check SDK loaded
     if(typeof (window as any).YocoSDK === 'undefined') {
-      toast('Payment error','Payment system not loaded — please refresh and try again','#E24B4A')
+      toast('Payment error','Payment system not loaded — please refresh','#E24B4A')
       return
     }
 
-    const yoco = new (window as any).YocoSDK({
+    const sdk = new (window as any).YocoSDK({
       publicKey: process.env.NEXT_PUBLIC_YOCO_PUBLIC_KEY || 'pk_test_c70ac83fqWJLLjJdfd54',
     })
 
-    yoco.showPopup({
+    sdk.showPopup({
       amountInCents: Math.round(amount * 100),
       currency:      'ZAR',
       name:          'Lungisa',
-      description:   `${job?.title || 'Home repair job'} · ${acceptedBid?.name || ''}`,
+      description:   `${job?.title || 'Home repair'} · Escrow payment`,
       callback: async (result:any) => {
         if(result.error) {
-          toast('Payment failed', result.error.message || 'Please try again', '#E24B4A')
+          toast('Payment failed', result.error.message || 'Card declined — please try again', '#E24B4A')
           return
         }
 
-        // Payment token received — process on server
+        // Token received — now charge server-side via our API
         try {
           const { data:{ session } } = await supabase.auth.getSession()
 
-          // Update job and bid status
-          await supabase.from('jobs').update({ status:'in_progress' }).eq('id', jobId)
-          if(acceptedBid) {
-            await supabase.from('bids').update({ status:'accepted' }).eq('id', acceptedBid.id)
-          }
-
-          // Fire payment confirmed email
-          fetch('/api/send-email', {
-            method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({
-              type:           'payment_confirmed',
+          const chargeRes = await fetch('/api/charge', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({
+              token:          result.id,
+              amountInCents:  Math.round(amount * 100),
+              currency:       'ZAR',
               jobId,
-              amount,
+              jobTitle:       job?.title || 'Home repair',
               homeownerId:    session?.user?.id,
               tradespersonId: acceptedBid?.tradespersonId || '',
             })
-          }).catch(e => console.log('Email error:',e))
+          })
+
+          const chargeData = await chargeRes.json()
+
+          if(!chargeRes.ok || chargeData.error) {
+            toast('Payment failed', chargeData.error || 'Please try again', '#E24B4A')
+            return
+          }
+
+          // Payment successful — update DB
+          await supabase.from('jobs').update({ status:'in_progress' }).eq('id', jobId)
 
           setPaidJobs(p=>({...p,[jobId]:true}))
-          toast('Payment confirmed! 🎉','Funds held in escrow · Tradesperson notified','#3DAA6A')
+          toast('Payment confirmed! 🎉','R'+amount.toLocaleString()+' held in escrow · Tradesperson notified','#3DAA6A')
           loadRealJobs(true)
 
         } catch(e) {
-          console.error('Post-payment error:', e)
-          toast('Payment received','But there was an issue updating the job — contact support','#E8A020')
+          console.error('Charge error:', e)
+          toast('Payment error','Please contact support if your card was charged','#E24B4A')
         }
       }
     })
@@ -749,7 +755,8 @@ export default function HomeDashboard() {
     <>
       <Script
         src="https://js.yoco.com/sdk/v1/yoco-sdk-web.js"
-        strategy="beforeInteractive"
+        strategy="lazyOnload"
+        onLoad={() => console.log('Yoco SDK loaded')}
       />
       <style>{css}</style>
       <div className="shell">
