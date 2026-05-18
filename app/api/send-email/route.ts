@@ -180,9 +180,9 @@ export async function POST(req: NextRequest) {
             <div style="font-size:17px;font-weight:600;color:#2C2C28;margin-bottom:14px">${jobTitle}</div>
             <div>
               <div style="font-size:12px;color:#5A5952;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px">Your earnings</div>
-              <div style="font-size:28px;font-weight:700;color:#3DAA6A">R${Math.round(Number(amount) * 0.9).toLocaleString()}</div>
+              <div style="font-size:28px;font-weight:700;color:#3DAA6A">R${Math.round(Number(amount) * 0.95).toLocaleString()}</div>
             </div>
-            <div style="font-size:11px;color:#5A5952;margin-top:4px">After 10% Lungisa commission</div>
+            <div style="font-size:11px;color:#5A5952;margin-top:4px">After 5% Lungisa commission</div>
           </div>
           <div style="background:rgba(61,170,106,.08);border:1px solid rgba(61,170,106,.2);border-radius:8px;padding:14px 16px;margin-bottom:16px;font-size:13px;color:#2C2C28;line-height:1.6">
             🔒 Payment is held in escrow. Complete the job and the homeowner will release your payment.
@@ -288,7 +288,7 @@ export async function POST(req: NextRequest) {
       const { data: trade }     = await supabase.from('profiles').select('full_name, email').eq('id', tradespersonId).single()
 
       const jobTitle  = job?.title || 'Home repair job'
-      const netAmount = Math.round(Number(amount) * 0.9)
+      const netAmount = Math.round(Number(amount) * 0.95)
 
       if(homeownerId) {
         await notify(
@@ -342,7 +342,7 @@ export async function POST(req: NextRequest) {
             <div style="background:#fff;border-radius:8px;padding:18px 20px;border-left:4px solid #3DAA6A;margin-bottom:20px">
               <div style="font-size:12px;color:#5A5952;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px">Your earnings (on completion)</div>
               <div style="font-size:32px;font-weight:700;color:#3DAA6A">R${netAmount.toLocaleString()}</div>
-              <div style="font-size:11px;color:#5A5952;margin-top:4px">After 10% Lungisa commission</div>
+              <div style="font-size:11px;color:#5A5952;margin-top:4px">After 5% Lungisa commission</div>
             </div>
             <a href="https://lungiza.co.za/dashboard" style="display:block;background:#3DAA6A;color:#fff;text-align:center;padding:14px;border-radius:6px;text-decoration:none;font-size:15px;font-weight:600;">
               Go to my dashboard →
@@ -410,7 +410,7 @@ export async function POST(req: NextRequest) {
       const { data: bankDetails } = await supabase.from('banking_details').select('*').eq('tradesperson_id', tradespersonId).single()
       const { data: completion }  = await supabase.from('job_completions').select('completed_at, report').eq('job_id', jobId).single()
 
-      const netAmount    = Math.round(Number(amount) * 0.9)
+      const netAmount    = Math.round(Number(amount) * 0.95)
       const lungisaFee   = Number(amount) - netAmount
       const tradeName    = trade?.full_name || tradespersonName || 'Tradesperson'
       const homeName     = homeowner?.full_name || 'Homeowner'
@@ -463,7 +463,7 @@ export async function POST(req: NextRequest) {
                 <span style="font-size:13px;color:#2C2C28;font-weight:600">R${Number(amount).toLocaleString()}</span>
               </div>
               <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-                <span style="font-size:13px;color:#5A5952">Lungisa commission (10%)</span>
+                <span style="font-size:13px;color:#5A5952">Lungisa commission (5%)</span>
                 <span style="font-size:13px;color:#E24B4A">- R${lungisaFee.toLocaleString()}</span>
               </div>
               <div style="display:flex;justify-content:space-between;padding-top:8px;border-top:1px solid #EAE3D6">
@@ -536,7 +536,7 @@ export async function POST(req: NextRequest) {
             <table style="width:100%;border-collapse:collapse;margin:16px 0;border:2px solid #C4593A;border-radius:8px;overflow:hidden">
               <tr style="background:#C4593A"><td colspan="2" style="padding:10px 14px;font-weight:700;color:#fff;font-size:14px">💰 AMOUNTS</td></tr>
               <tr><td style="padding:10px 14px;color:#666;font-size:13px;width:160px;background:#f8f8f8">Total paid by homeowner</td><td style="padding:10px 14px;font-size:15px;color:#222;font-weight:700">R${Number(amount).toLocaleString()}</td></tr>
-              <tr><td style="padding:10px 14px;color:#666;font-size:13px;background:#f8f8f8">Lungisa commission (10%)</td><td style="padding:10px 14px;font-size:15px;color:#E24B4A;font-weight:700">R${lungisaFee.toLocaleString()}</td></tr>
+              <tr><td style="padding:10px 14px;color:#666;font-size:13px;background:#f8f8f8">Lungisa commission (5%)</td><td style="padding:10px 14px;font-size:15px;color:#E24B4A;font-weight:700">R${lungisaFee.toLocaleString()}</td></tr>
               <tr style="background:#fff"><td style="padding:12px 14px;color:#2C2C28;font-size:14px;font-weight:700">TRANSFER TO TRADESPERSON</td><td style="padding:12px 14px;font-size:22px;color:#3DAA6A;font-weight:700">R${netAmount.toLocaleString()}</td></tr>
             </table>
 

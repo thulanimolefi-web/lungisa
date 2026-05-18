@@ -737,7 +737,7 @@ export default function PostJob() {
                 )}
 
                 <div style={{background:'rgba(196,89,58,.08)',border:'1px solid rgba(196,89,58,.2)',borderRadius:8,padding:'12px 16px',fontSize:13,color:'rgba(245,240,232,.65)',marginBottom:20,lineHeight:1.55}}>
-                  <strong style={{color:'var(--terra-l)'}}>FREE TO POST.</strong> Lungisa charges R0 to homeowners. Tradespeople pay a small commission only when a job is completed.
+                  <strong style={{color:'var(--terra-l)'}}>FREE TO POST.</strong> Lungisa charges R0 to homeowners. Tradespeople pay a 5% commission only when a job is completed.
                 </div>
                 <div style={S.btnRow}>
                   <button style={S.btn('ghost')} onClick={()=>goStep(3)}>← Edit</button>

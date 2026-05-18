@@ -869,7 +869,7 @@ export default function HomeDashboard() {
                                               <div className="counter-row">
                                                 <div className="counter-r">R</div>
                                                 <input className="counter-in" type="number"
-                                                  placeholder={String(Math.round(bid.price*0.9))}
+                                                  placeholder={String(Math.round(bid.price*0.95))}
                                                   value={counterAmts[bid.id]||''}
                                                   onChange={e=>setCounterAmts(a=>({...a,[bid.id]:e.target.value}))}/>
                                               </div>

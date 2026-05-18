@@ -1160,10 +1160,10 @@ export default function Dashboard() {
                   <div style={S.earningsPreview}>
                     <div>
                       <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:600,color:'rgba(61,170,106,.7)'}}>You&apos;ll earn</div>
-                      <div style={{fontSize:10,color:'rgba(61,170,106,.5)',marginTop:1}}>after 10% Lungisa commission</div>
+                      <div style={{fontSize:10,color:'rgba(61,170,106,.5)',marginTop:1}}>after 5% Lungisa commission</div>
                     </div>
                     <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:24,color:'#52C47F',letterSpacing:.5}}>
-                      {bidPrice?`R ${Math.round(parseInt(bidPrice)*0.9).toLocaleString()}`:'—'}
+                      {bidPrice?`R ${Math.round(parseInt(bidPrice)*0.95).toLocaleString()}`:'—'}
                     </div>
                   </div>
                 </>
