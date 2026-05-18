@@ -133,18 +133,26 @@ export default function HomeDashboard() {
         .from('jobs')
         .select('*')
         .eq('homeowner_id', session.user.id)
-        .in('status',['open','bidding','accepted','in_progress','completion_submitted','disputed'])
+        .neq('status', 'completed')
         .order('created_at', {ascending: false})
 
       if(jobsErr) {
-        console.error('Jobs fetch error:', jobsErr.message)
+        console.error('[home] Jobs fetch error:', jobsErr.message, jobsErr.code)
         setLoading(false)
         return
       }
 
-      if(!jobsData || jobsData.length === 0) {
-        setJobs([])
-        setSelectedJob(null)
+      console.log('[home] Jobs returned:', jobsData?.length, jobsData?.map((j:any)=>({title:j.title,status:j.status})))
+
+      // Only update state if we got a real result
+      if(!jobsData) { setLoading(false); return }
+
+      // If genuinely empty and this is an initial (non-silent) load, clear state
+      if(jobsData.length === 0) {
+        if(!silent) {
+          setJobs([])
+          setSelectedJob(null)
+        }
         setLoading(false)
         return
       }
