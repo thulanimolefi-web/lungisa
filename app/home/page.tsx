@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import Script from 'next/script'
 import { supabase } from '../lib/supabase'
 import NotificationBell from '../components/NotificationBell'
 import Messaging from '../components/Messaging'
@@ -92,6 +91,20 @@ export default function HomeDashboard() {
     loadRealJobs()
     loadHistoryJobs()
     loadCompletions()
+
+    // Handle return from Yoco payment page
+    const params = new URLSearchParams(window.location.search)
+    if(params.get('payment') === 'success') {
+      const jobId = params.get('jobId')
+      toast('Payment confirmed! 🎉','Funds held in escrow · Tradesperson notified','#3DAA6A')
+      if(jobId) setPaidJobs(p=>({...p,[jobId]:true}))
+      // Clean URL
+      window.history.replaceState({}, '', '/home')
+      loadRealJobs(true)
+    } else if(params.get('payment') === 'cancelled') {
+      toast('Payment cancelled','No charge was made','#E8A020')
+      window.history.replaceState({}, '', '/home')
+    }
 
     const channel = supabase
       .channel('home-bids')
@@ -460,65 +473,46 @@ export default function HomeDashboard() {
     const job         = jobs.find(j=>j.id===jobId)
     const acceptedBid = job?.bids.find(b=>b.status==='accepted'||b.status==='completed')
 
-    // Check SDK loaded
-    if(typeof (window as any).YocoSDK === 'undefined') {
-      toast('Payment error','Payment system not loaded — please refresh','#E24B4A')
-      return
-    }
+    try {
+      const { data:{ session } } = await supabase.auth.getSession()
 
-    const sdk = new (window as any).YocoSDK({
-      publicKey: process.env.NEXT_PUBLIC_YOCO_PUBLIC_KEY || 'pk_test_c70ac83fqWJLLjJdfd54',
-    })
+      // Create a Yoco payment link server-side and redirect
+      const res = await fetch('/api/charge', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          amountInCents:  Math.round(amount * 100),
+          currency:       'ZAR',
+          jobId,
+          jobTitle:       job?.title || 'Home repair',
+          homeownerId:    session?.user?.id,
+          tradespersonId: acceptedBid?.tradespersonId || '',
+          successUrl:     `${window.location.origin}/home?payment=success&jobId=${jobId}`,
+          cancelUrl:      `${window.location.origin}/home?payment=cancelled`,
+        })
+      })
 
-    sdk.showPopup({
-      amountInCents: Math.round(amount * 100),
-      currency:      'ZAR',
-      name:          'Lungisa',
-      description:   `${job?.title || 'Home repair'} · Escrow payment`,
-      callback: async (result:any) => {
-        if(result.error) {
-          toast('Payment failed', result.error.message || 'Card declined — please try again', '#E24B4A')
-          return
-        }
+      const data = await res.json()
 
-        // Token received — now charge server-side via our API
-        try {
-          const { data:{ session } } = await supabase.auth.getSession()
-
-          const chargeRes = await fetch('/api/charge', {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({
-              token:          result.id,
-              amountInCents:  Math.round(amount * 100),
-              currency:       'ZAR',
-              jobId,
-              jobTitle:       job?.title || 'Home repair',
-              homeownerId:    session?.user?.id,
-              tradespersonId: acceptedBid?.tradespersonId || '',
-            })
-          })
-
-          const chargeData = await chargeRes.json()
-
-          if(!chargeRes.ok || chargeData.error) {
-            toast('Payment failed', chargeData.error || 'Please try again', '#E24B4A')
-            return
-          }
-
-          // Payment successful — update DB
-          await supabase.from('jobs').update({ status:'in_progress' }).eq('id', jobId)
-
-          setPaidJobs(p=>({...p,[jobId]:true}))
-          toast('Payment confirmed! 🎉','R'+amount.toLocaleString()+' held in escrow · Tradesperson notified','#3DAA6A')
-          loadRealJobs(true)
-
-        } catch(e) {
-          console.error('Charge error:', e)
-          toast('Payment error','Please contact support if your card was charged','#E24B4A')
-        }
+      if(!res.ok || data.error) {
+        toast('Payment error', data.error || 'Please try again', '#E24B4A')
+        return
       }
-    })
+
+      if(data.redirectUrl) {
+        // Redirect to Yoco hosted payment page
+        window.location.href = data.redirectUrl
+      } else if(data.success) {
+        // Direct charge succeeded
+        setPaidJobs(p=>({...p,[jobId]:true}))
+        toast('Payment confirmed! 🎉','Funds held in escrow · Tradesperson notified','#3DAA6A')
+        loadRealJobs(true)
+      }
+
+    } catch(e) {
+      console.error('Payment error:', e)
+      toast('Payment error','Please try again or contact support','#E24B4A')
+    }
   }
 
   async function submitReview(){
@@ -753,11 +747,6 @@ export default function HomeDashboard() {
 
   return (
     <>
-      <Script
-        src="https://js.yoco.com/sdk/v1/yoco-sdk-web.js"
-        strategy="lazyOnload"
-        onLoad={() => console.log('Yoco SDK loaded')}
-      />
       <style>{css}</style>
       <div className="shell">
         {/* SIDEBAR */}
