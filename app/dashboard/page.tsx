@@ -122,48 +122,66 @@ export default function Dashboard() {
       const {data:{session}}=await supabase.auth.getSession()
       if(!session?.user){ setLoading(false); return }
 
+      // Get tradesperson profile for category + area filtering
       const {data:tp}=await supabase
         .from('tradesperson_profiles')
         .select('trade_category, service_areas')
         .eq('id',session.user.id)
         .single()
 
+      // Query jobs table directly — only open/bidding, not owned by this user
       let query=supabase
-        .from('v_jobs_feed')
-        .select('*')
+        .from('jobs')
+        .select('id,title,category,area,urgency,budget_max,description,created_at,status,bid_count,homeowner_id,preferred_time')
+        .in('status',['open','bidding'])
+        .neq('homeowner_id', session.user.id)
         .order('created_at',{ascending:false})
 
+      // Filter by trade category
       if(tp?.trade_category){
-        query=query.in('category',[tp.trade_category].filter(Boolean).map((t:string)=>t.toLowerCase()))
+        query=query.eq('category', tp.trade_category.toLowerCase())
       }
-      if(tp?.service_areas&&tp.service_areas.length>0){
-        query=query.in('area',tp.service_areas.map((a:string)=>a.trim()))
+
+      // Filter by service areas
+      if(tp?.service_areas && tp.service_areas.length > 0){
+        query=query.in('area', tp.service_areas.map((a:string)=>a.trim()))
       }
 
       const {data,error}=await query
+
       if(!error&&data){
-        setJobs(data.map((j:any)=>({
-          id:           j.id,
-          cat:          j.category.charAt(0).toUpperCase()+j.category.slice(1),
-          emoji:        getCatEmoji(j.category),
-          urgency:      j.urgency,
-          urgencyLabel: getUrgencyLabel(j.urgency),
-          urgColor:     getUrgencyColor(j.urgency),
-          title:        j.title,
-          loc:          `${j.area}, JHB`,
-          dist:         'Nearby',
-          budget:       j.budget_max?`R${j.budget_max.toLocaleString()}`:'Open',
-          budgetNum:    j.budget_max||0,
-          desc:         j.description,
-          time:         `Posted ${getTimeAgo(j.created_at)}`,
-          photos:       j.photo_count||0,
-          bids:         j.bid_count||0,
-          tags:         getJobTags(j),
-          timing:       j.preferred_time||'Flexible',
-          submitted:    false,
-          submitPrice:  0,
-          media:        [], // loaded on modal open
-        })))
+        // Exclude jobs this tradesperson already bid on
+        const {data:myBidJobIds}=await supabase
+          .from('bids')
+          .select('job_id')
+          .eq('tradesperson_id', session.user.id)
+
+        const bidJobIds = new Set((myBidJobIds||[]).map((b:any)=>b.job_id))
+
+        setJobs(data
+          .filter((j:any)=>!bidJobIds.has(j.id))
+          .map((j:any)=>({
+            id:           j.id,
+            cat:          j.category.charAt(0).toUpperCase()+j.category.slice(1),
+            emoji:        getCatEmoji(j.category),
+            urgency:      j.urgency,
+            urgencyLabel: getUrgencyLabel(j.urgency),
+            urgColor:     getUrgencyColor(j.urgency),
+            title:        j.title,
+            loc:          `${j.area}, JHB`,
+            dist:         'Nearby',
+            budget:       j.budget_max?`R${j.budget_max.toLocaleString()}`:'Open',
+            budgetNum:    j.budget_max||0,
+            desc:         j.description,
+            time:         `Posted ${getTimeAgo(j.created_at)}`,
+            photos:       0,
+            bids:         j.bid_count||0,
+            tags:         getJobTags(j),
+            timing:       j.preferred_time||'Flexible',
+            submitted:    false,
+            submitPrice:  0,
+            media:        [],
+          })))
       }
     }catch(e){console.log('Jobs error:',e)}
     setLoading(false)

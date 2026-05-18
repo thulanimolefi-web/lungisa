@@ -127,10 +127,11 @@ export default function AuthPage() {
           phone: '+27'+phone.replace(/^0/,''), email, area: primaryArea, city: 'Johannesburg',
         })
         if(role==='tradesperson') {
+          const safeAreas = areas.length > 0 ? areas : [area||'Johannesburg']
           await supabase.from('tradesperson_profiles').upsert({
             id:               data.user.id,
             trade_category:   (trades[0]||trade).toLowerCase() as any,
-            service_areas:    areas,
+            service_areas:    safeAreas,
             years_experience: 0,
             verification_status: 'unsubmitted',
           })
