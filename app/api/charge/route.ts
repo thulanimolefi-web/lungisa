@@ -60,17 +60,19 @@ export async function POST(req: NextRequest) {
       .eq('id', jobId)
 
     // Record payment in payments table
-    const netAmount = Math.round(amountInCents * 0.95) // 5% commission
-    await supabase.from('payments').insert({
-      job_id:          jobId,
-      homeowner_id:    homeownerId,
-      tradesperson_id: tradespersonId,
-      amount:          amountInCents / 100,
-      net_amount:      netAmount / 100,
-      currency,
-      yoco_charge_id:  charge.id,
-      status:          'held',
-    }).catch(e => console.log('Payment record error:', e)) // non-fatal
+    const netAmount = Math.round(amountInCents * 0.95)
+    try {
+      await supabase.from('payments').insert({
+        job_id:          jobId,
+        homeowner_id:    homeownerId,
+        tradesperson_id: tradespersonId,
+        amount:          amountInCents / 100,
+        net_amount:      netAmount / 100,
+        currency,
+        yoco_charge_id:  charge.id,
+        status:          'held',
+      })
+    } catch(e) { console.log('Payment record error:', e) }
 
     // Send confirmation emails
     fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'https://lungiza.co.za'}/api/send-email`, {
