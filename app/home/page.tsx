@@ -95,15 +95,15 @@ export default function HomeDashboard() {
     const channel = supabase
       .channel('home-bids')
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'bids'},()=>{
-        loadRealJobs()
+        loadRealJobs(true)
         toast('New bid received!','A tradesperson just bid on your job 🎉','#E8A020')
       })
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'bids'},()=>{
-        loadRealJobs()
+        loadRealJobs(true)
       })
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'job_completions'},()=>{
         loadCompletions()
-        loadRealJobs()
+        loadRealJobs(true)
         toast('Job marked complete!','Review the work and confirm or raise a dispute','#3DAA6A')
       })
       .subscribe()
@@ -122,37 +122,63 @@ export default function HomeDashboard() {
     } catch(e){ console.log('Profile error:',e) }
   }
 
-  async function loadRealJobs() {
-    setLoading(true)
+  async function loadRealJobs(silent = false) {
+    if(!silent) setLoading(true)
     try {
       const { data:{ session } } = await supabase.auth.getSession()
       if(!session?.user) { setLoading(false); return }
 
-      const { data, error } = await supabase
+      // ── Step 1: fetch jobs owned by this homeowner ─────────────
+      const { data: jobsData, error: jobsErr } = await supabase
         .from('jobs')
-        .select(`
-          *,
-          bids(
-            id, amount, counter_amount, counter_by, counter_round, final_amount, eta_label, note, status, created_at, tradesperson_id,
-            profiles!tradesperson_id(
-              full_name, avatar_url,
-              tradesperson_profiles(trade_category, years_experience, rating_avg, jobs_completed)
-            )
-          )
-        `)
+        .select('*')
         .eq('homeowner_id', session.user.id)
         .in('status',['open','bidding','accepted','in_progress','completion_submitted','disputed'])
-        .order('created_at',{ascending:false})
+        .order('created_at', {ascending: false})
 
-      if(error) {
-        // Log but don't wipe existing jobs — keep showing last good state
-        console.error('loadRealJobs error:', error.message, error.code)
+      if(jobsErr) {
+        console.error('Jobs fetch error:', jobsErr.message)
         setLoading(false)
         return
       }
 
-      if(data) {
-        const mapped: JobData[] = data.map((j:any,ji:number)=>({
+      if(!jobsData || jobsData.length === 0) {
+        setJobs([])
+        setSelectedJob(null)
+        setLoading(false)
+        return
+      }
+
+      const jobIds = jobsData.map((j:any) => j.id)
+
+      // ── Step 2: fetch bids for those jobs ───────────────────────
+      const { data: bidsData } = await supabase
+        .from('bids')
+        .select('id, job_id, amount, counter_amount, counter_by, counter_round, final_amount, eta_label, note, status, created_at, tradesperson_id')
+        .in('job_id', jobIds)
+        .order('created_at', {ascending: true})
+
+      // ── Step 3: fetch tradesperson profiles for those bids ──────
+      const tpIds = Array.from(new Set((bidsData||[]).map((b:any) => b.tradesperson_id)))
+      let profileMap: Record<string, any> = {}
+
+      if(tpIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, full_name, tradesperson_profiles(trade_category, years_experience, rating_avg, jobs_completed)')
+          .in('id', tpIds)
+
+        if(profiles) {
+          for(const p of profiles) {
+            profileMap[p.id] = p
+          }
+        }
+      }
+
+      // ── Step 4: merge and map ───────────────────────────────────
+      const mapped: JobData[] = jobsData.map((j:any, ji:number) => {
+        const jobBids = (bidsData||[]).filter((b:any) => b.job_id === j.id)
+        return {
           id:       j.id,
           title:    j.title,
           category: j.category.charAt(0).toUpperCase()+j.category.slice(1),
@@ -163,32 +189,38 @@ export default function HomeDashboard() {
           budget:   j.budget_max||0,
           status:   j.status,
           posted:   getTimeAgo(j.created_at),
-          bids:     (j.bids||[]).map((b:any,bi:number)=>({
-            id:              b.id,
-            tradespersonId:  b.tradesperson_id,
-            name:            b.profiles?.full_name||'Tradesperson',
-            init:          (b.profiles?.full_name||'T').split(' ').map((n:string)=>n[0]).join('').substring(0,2).toUpperCase(),
-            bg:            AVATAR_COLORS[(ji+bi)%AVATAR_COLORS.length],
-            trade:         `${(b.profiles?.tradesperson_profiles?.trade_category||'tradesperson').charAt(0).toUpperCase()+(b.profiles?.tradesperson_profiles?.trade_category||'tradesperson').slice(1)} · ${b.profiles?.tradesperson_profiles?.years_experience||0} yrs`,
-            rating:        '★★★★★',
-            ratingNum:     String(b.profiles?.tradesperson_profiles?.rating_avg||'New'),
-            jobs:          b.profiles?.tradesperson_profiles?.jobs_completed||0,
-            price:         b.amount,
-            eta:           b.eta_label,
-            status:        b.status,
-            counterAmount: b.counter_amount||null,
-            counterBy:     b.counter_by||null,
-            counterRound:  b.counter_round||0,
-            finalAmount:   b.final_amount||null,
-          }))
-        }))
-        setJobs(mapped)
-        setSelectedJob(prev => {
-          if(!prev) return mapped.length > 0 ? mapped[0] : null
-          return mapped.find(j => j.id === prev.id) || mapped[0] || null
-        })
-      }
-    } catch(e){ console.error('Load jobs exception:',e) }
+          bids:     jobBids.map((b:any, bi:number) => {
+            const tp = profileMap[b.tradesperson_id]
+            const tpProfile = tp?.tradesperson_profiles
+            return {
+              id:              b.id,
+              tradespersonId:  b.tradesperson_id,
+              name:            tp?.full_name||'Tradesperson',
+              init:          (tp?.full_name||'T').split(' ').map((n:string)=>n[0]).join('').substring(0,2).toUpperCase(),
+              bg:            AVATAR_COLORS[(ji+bi)%AVATAR_COLORS.length],
+              trade:         `${(tpProfile?.trade_category||'tradesperson').charAt(0).toUpperCase()+(tpProfile?.trade_category||'tradesperson').slice(1)} · ${tpProfile?.years_experience||0} yrs`,
+              rating:        '★★★★★',
+              ratingNum:     String(tpProfile?.rating_avg||'New'),
+              jobs:          tpProfile?.jobs_completed||0,
+              price:         b.amount,
+              eta:           b.eta_label,
+              status:        b.status,
+              counterAmount: b.counter_amount||null,
+              counterBy:     b.counter_by||null,
+              counterRound:  b.counter_round||0,
+              finalAmount:   b.final_amount||null,
+            }
+          })
+        }
+      })
+
+      setJobs(mapped)
+      setSelectedJob(prev => {
+        if(!prev) return mapped.length > 0 ? mapped[0] : null
+        return mapped.find(j => j.id === prev.id) || mapped[0] || null
+      })
+
+    } catch(e){ console.error('Load jobs exception:', e) }
     setLoading(false)
   }
 
@@ -265,7 +297,7 @@ export default function HomeDashboard() {
       setPaidJobs(p=>({...p,[jobId]:true}))
       toast('Payment released! 🎉','The tradesperson has been paid','#3DAA6A')
       setReviewJob(jobId)
-      loadRealJobs()
+      loadRealJobs(true)
       loadHistoryJobs()
     } catch(e){ console.log('Confirm complete error:', e) }
   }
@@ -294,7 +326,7 @@ export default function HomeDashboard() {
       toast('Dispute raised','Our team will review and contact both parties within 24 hours','#E8A020')
       setDisputeJob(null)
       setDisputeReason('')
-      loadRealJobs()
+      loadRealJobs(true)
     } catch(e){ console.log('Dispute error:', e) }
     setSubmittingDispute(false)
   }
@@ -356,7 +388,7 @@ export default function HomeDashboard() {
       await supabase.from('bids').update({ status:'declined' }).eq('job_id', jobId).neq('id', bidId)
       await supabase.from('jobs').update({ status:'accepted' }).eq('id', jobId)
       toast('Counter accepted!','Now pay to confirm the job','#3DAA6A')
-      loadRealJobs()
+      loadRealJobs(true)
     } catch(e){ console.log('Accept counter error:', e) }
   }
 
@@ -380,7 +412,7 @@ export default function HomeDashboard() {
         })
       }).catch(e=>console.log('Email error:',e))
       toast('Bid accepted!',`${bidName.split(' ')[0]} is confirmed · Pay to lock in`,'#3DAA6A')
-      loadRealJobs()
+      loadRealJobs(true)
     } catch(e){ console.log('Accept bid error:', e) }
   }
 
@@ -414,7 +446,7 @@ export default function HomeDashboard() {
         toast('Payment confirmed!','Job locked in 🎉','#3DAA6A')
         setReviewJob(jobId)
         loadHistoryJobs()
-        loadRealJobs()
+        loadRealJobs(true)
       }
     })
   }
@@ -849,7 +881,7 @@ export default function HomeDashboard() {
                                                 <button className="btn btn-ghost" onClick={async()=>{
                                                   await supabase.from('bids').update({status:'declined'}).eq('id',bid.id)
                                                   toast('Bid declined','The tradesperson has been notified','#E24B4A')
-                                                  loadRealJobs()
+                                                  loadRealJobs(true)
                                                 }}>
                                                   ✗ Decline
                                                 </button>
