@@ -9,73 +9,76 @@ const supabase = createClient(
 export async function POST(req: NextRequest) {
   try {
     const {
-      token,
       amountInCents,
       currency = 'ZAR',
       jobId,
       jobTitle,
       homeownerId,
       tradespersonId,
+      successUrl,
+      cancelUrl,
     } = await req.json()
 
-    if(!token || !amountInCents || !jobId) {
+    if(!amountInCents || !jobId) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
     const secretKey = process.env.YOCO_SECRET_KEY
     if(!secretKey) {
-      return NextResponse.json({ error: 'Payment configuration error' }, { status: 500 })
+      return NextResponse.json({ error: 'Payment not configured — contact support' }, { status: 500 })
     }
 
-    // ── Charge the card via Yoco API ────────────────────────────────
-    const chargeRes = await fetch('https://online.yoco.com/v1/charges/', {
+    // ── Create Yoco hosted checkout (current API) ───────────────────
+    console.log('Creating Yoco checkout:', { amountInCents, currency, jobId })
+    console.log('Using secret key prefix:', secretKey.substring(0, 10) + '...')
+
+    const yocoRes = await fetch('https://payments.yoco.com/api/checkouts', {
       method:  'POST',
       headers: {
-        'X-Auth-Secret-Key': secretKey,
-        'Content-Type':      'application/json',
+        'Authorization':  `Bearer ${secretKey}`,
+        'Content-Type':   'application/json',
+        'Idempotency-Key': `lungisa-${jobId}-${Date.now()}`,
       },
       body: JSON.stringify({
-        token,
-        amountInCents,
+        amount:     amountInCents,
         currency,
+        successUrl: successUrl || 'https://www.lungiza.co.za/home?payment=success',
+        cancelUrl:  cancelUrl  || 'https://www.lungiza.co.za/home?payment=cancelled',
         metadata: { jobId, jobTitle, homeownerId, tradespersonId },
       }),
     })
 
-    const charge = await chargeRes.json()
+    const checkout = await yocoRes.json()
+    console.log('Yoco response status:', yocoRes.status)
+    console.log('Yoco response body:', JSON.stringify(checkout))
 
-    // Handle Yoco error response
-    if(!chargeRes.ok || charge.error || charge.status === 'failed') {
-      console.error('Yoco charge failed:', charge)
+    if(!yocoRes.ok || checkout.error) {
+      console.error('Yoco error:', JSON.stringify(checkout))
       return NextResponse.json({
-        error: charge.displayMessage || charge.message || 'Payment failed — please try again'
+        error: checkout.displayMessage || checkout.message || 'Payment setup failed — try again'
       }, { status: 400 })
     }
 
-    // ── Payment succeeded — update DB ────────────────────────────────
-    // Update job to in_progress
-    await supabase
-      .from('jobs')
-      .update({ status: 'in_progress' })
-      .eq('id', jobId)
+    // ── Update job status ───────────────────────────────────────────
+    await supabase.from('jobs').update({ status: 'in_progress' }).eq('id', jobId)
 
-    // Record payment in payments table
-    const netAmount = Math.round(amountInCents * 0.95)
+    // ── Record payment ──────────────────────────────────────────────
     try {
       await supabase.from('payments').insert({
         job_id:          jobId,
         homeowner_id:    homeownerId,
         tradesperson_id: tradespersonId,
         amount:          amountInCents / 100,
-        net_amount:      netAmount / 100,
+        net_amount:      Math.round(amountInCents * 0.95) / 100,
         currency,
-        yoco_charge_id:  charge.id,
+        yoco_charge_id:  checkout.id,
         status:          'held',
       })
-    } catch(e) { console.log('Payment record error:', e) }
+    } catch(e) { console.log('Payment record error (non-fatal):', e) }
 
-    // Send confirmation emails
-    fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'https://lungiza.co.za'}/api/send-email`, {
+    // ── Send payment confirmation email ─────────────────────────────
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.lungiza.co.za'
+    fetch(`${appUrl}/api/send-email`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({
@@ -88,13 +91,13 @@ export async function POST(req: NextRequest) {
     }).catch(e => console.log('Email error:', e))
 
     return NextResponse.json({
-      success:  true,
-      chargeId: charge.id,
-      amount:   amountInCents / 100,
+      success:     true,
+      redirectUrl: checkout.redirectUrl,
+      checkoutId:  checkout.id,
     })
 
   } catch(error) {
     console.error('Charge route error:', error)
-    return NextResponse.json({ error: String(error) }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
