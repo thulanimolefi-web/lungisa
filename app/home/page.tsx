@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import Script from 'next/script'
 import { supabase } from '../lib/supabase'
 import NotificationBell from '../components/NotificationBell'
 import Messaging from '../components/Messaging'
@@ -433,36 +434,60 @@ export default function HomeDashboard() {
   }
 
   async function releasePayment(jobId:string, amount:number){
+    const job = jobs.find(j=>j.id===jobId)
+    const acceptedBid = job?.bids.find(b=>b.status==='accepted'||b.status==='completed')
+
+    // Check Yoco SDK is loaded
+    if(typeof (window as any).YocoSDK === 'undefined') {
+      toast('Payment error','Payment system not loaded — please refresh and try again','#E24B4A')
+      return
+    }
+
     const yoco = new (window as any).YocoSDK({
-      publicKey: process.env.NEXT_PUBLIC_YOCO_PUBLIC_KEY||'pk_test_c70ac83fqWJLLjJdfd54',
+      publicKey: process.env.NEXT_PUBLIC_YOCO_PUBLIC_KEY || 'pk_test_c70ac83fqWJLLjJdfd54',
     })
+
     yoco.showPopup({
-      amountInCents: amount*100,
-      currency: 'ZAR',
-      name: 'Lungisa',
-      description: `Payment for: ${jobs.find(j=>j.id===jobId)?.title}`,
-      callback: async (result:any)=>{
-        if(result.error){ toast('Payment failed',result.error.message,'#E24B4A'); return }
+      amountInCents: Math.round(amount * 100),
+      currency:      'ZAR',
+      name:          'Lungisa',
+      description:   `${job?.title || 'Home repair job'} · ${acceptedBid?.name || ''}`,
+      callback: async (result:any) => {
+        if(result.error) {
+          toast('Payment failed', result.error.message || 'Please try again', '#E24B4A')
+          return
+        }
+
+        // Payment token received — process on server
         try {
-          await supabase.from('jobs').update({ status:'completed' }).eq('id', jobId)
-          const job = jobs.find(j=>j.id===jobId)
-          const acceptedBid = job?.bids.find(b=>b.status==='accepted')
-          if(acceptedBid) await supabase.from('bids').update({ status:'completed' }).eq('id', acceptedBid.id)
           const { data:{ session } } = await supabase.auth.getSession()
-          fetch('/api/send-email',{
-            method:'POST',headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({
-              type:'payment_confirmed', jobId, amount,
-              homeownerId: session?.user?.id,
-              tradespersonId: acceptedBid?.id,
+
+          // Update job and bid status
+          await supabase.from('jobs').update({ status:'in_progress' }).eq('id', jobId)
+          if(acceptedBid) {
+            await supabase.from('bids').update({ status:'accepted' }).eq('id', acceptedBid.id)
+          }
+
+          // Fire payment confirmed email
+          fetch('/api/send-email', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({
+              type:           'payment_confirmed',
+              jobId,
+              amount,
+              homeownerId:    session?.user?.id,
+              tradespersonId: acceptedBid?.tradespersonId || '',
             })
-          }).catch(e=>console.log('Email error:',e))
-        } catch(e){ console.log('Payment update error:', e) }
-        setPaidJobs(p=>({...p,[jobId]:true}))
-        toast('Payment confirmed!','Job locked in 🎉','#3DAA6A')
-        setReviewJob(jobId)
-        loadHistoryJobs()
-        loadRealJobs(true)
+          }).catch(e => console.log('Email error:',e))
+
+          setPaidJobs(p=>({...p,[jobId]:true}))
+          toast('Payment confirmed! 🎉','Funds held in escrow · Tradesperson notified','#3DAA6A')
+          loadRealJobs(true)
+
+        } catch(e) {
+          console.error('Post-payment error:', e)
+          toast('Payment received','But there was an issue updating the job — contact support','#E8A020')
+        }
       }
     })
   }
@@ -607,11 +632,52 @@ export default function HomeDashboard() {
     .loading-state{display:flex;align-items:center;justify-content:center;padding:80px;color:var(--charcoal-l);font-family:var(--fc);font-size:13px;letter-spacing:1px;gap:12px}
     .spin{display:inline-block;width:20px;height:20px;border:2px solid var(--cream-d);border-top-color:var(--terra);border-radius:50%;animation:spin .6s linear infinite}
     @keyframes spin{to{transform:rotate(360deg)}}
-    @media(max-width:900px){.sidenav{display:none}.stat-strip{grid-template-columns:1fr 1fr}.content{padding:20px 16px}.topbar{padding:0 16px}}
+    @media(max-width:900px){
+      .sidenav{display:none}
+      .stat-strip{grid-template-columns:1fr 1fr}
+      .content{padding:16px}
+      .topbar{padding:0 16px}
+      .job-detail-grid{grid-template-columns:1fr!important}
+      .pay-grid{grid-template-columns:1fr!important}
+      .modal{padding:20px!important;margin:8px!important;max-height:95vh!important}
+      .stars-row .star{font-size:36px}
+    }
+    @media(max-width:600px){
+      .stat-strip{grid-template-columns:1fr 1fr;gap:8px!important;margin-bottom:16px!important}
+      .stat-card{padding:14px 16px!important}
+      .stat-num{font-size:28px!important}
+      .topbar{height:52px!important}
+      .page-title{font-size:20px!important}
+      .job-card .jc-top{padding:14px 14px 10px!important}
+      .job-card .jc-bot{padding:8px 14px!important}
+      .bc-price{font-size:22px!important}
+      .bid-card{padding:12px 14px!important}
+      .detail-panel .dp-body{padding:16px!important}
+      .detail-panel .dp-header{padding:18px!important}
+      .dp-title{font-size:22px!important}
+      .btn{padding:10px 14px!important;font-size:11px!important}
+      .counter-row{flex-wrap:wrap}
+      .counter-in{min-width:0}
+      .modal{border-radius:12px!important}
+    }
+    /* Mobile bottom nav */
+    .mobile-nav{display:none}
+    @media(max-width:900px){
+      .mobile-nav{
+        display:flex;position:fixed;bottom:0;left:0;right:0;
+        background:var(--charcoal);border-top:1px solid rgba(255,255,255,.08);
+        z-index:50;height:60px;
+      }
+      .main{padding-bottom:60px}
+    }
   `
 
   return (
     <>
+      <Script
+        src="https://js.yoco.com/sdk/v1/yoco-sdk-web.js"
+        strategy="beforeInteractive"
+      />
       <style>{css}</style>
       <div className="shell">
         {/* SIDEBAR */}
@@ -699,7 +765,7 @@ export default function HomeDashboard() {
                     <button className="btn btn-terra" onClick={()=>router.push('/post')}>Post your first job →</button>
                   </div>
                 ):(
-                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:24,alignItems:'start'}}>
+                  <div className="job-detail-grid" style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:24,alignItems:'start'}}>
                     <div>
                       <div className="sec-hdr"><div className="sec-title">Your jobs</div></div>
                       {activeJobs.map(job=>(
@@ -1176,6 +1242,29 @@ export default function HomeDashboard() {
           </div>
         </div>
       )}
+
+      {/* MOBILE BOTTOM NAV */}
+      <nav className="mobile-nav">
+        {[
+          {id:'active', icon:'🏠', label:'Jobs',     badge:activeJobs.filter(j=>j.bids.length>0).length},
+          {id:'messages',icon:'💬',label:'Messages',  badge:0},
+          {id:'history', icon:'📋', label:'History',  badge:0},
+          {id:'profile', icon:'👤', label:'Profile',  badge:0},
+        ].map(item=>(
+          <div key={item.id} onClick={()=>setTab(item.id as Tab)}
+            style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,cursor:'pointer',position:'relative',
+              color:tab===item.id?'var(--terra-l)':'rgba(245,240,232,.4)',transition:'color .15s'}}>
+            {item.badge>0&&(
+              <div style={{position:'absolute',top:6,right:'25%',width:16,height:16,borderRadius:'50%',background:'var(--terra)',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'var(--fc)',fontSize:9,fontWeight:700,color:'#fff'}}>
+                {item.badge}
+              </div>
+            )}
+            <span style={{fontSize:20}}>{item.icon}</span>
+            <span style={{fontFamily:'var(--fc)',fontSize:9,fontWeight:600,letterSpacing:1,textTransform:'uppercase'}}>{item.label}</span>
+            {tab===item.id&&<div style={{position:'absolute',top:0,left:'25%',right:'25%',height:2,background:'var(--terra)',borderRadius:1}}/>}
+          </div>
+        ))}
+      </nav>
 
       {/* TOASTS */}
       <div className="toast-stack">

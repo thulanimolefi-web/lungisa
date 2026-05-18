@@ -575,7 +575,22 @@ export default function Dashboard() {
         .spin{display:inline-block;width:20px;height:20px;border:2px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
         .media-thumb{cursor:pointer;transition:transform .15s,opacity .15s}
         .media-thumb:hover{transform:scale(1.04);opacity:.9}
-        @media(max-width:900px){.sidenav{display:none!important}.stat-strip{grid-template-columns:1fr 1fr!important}}
+        @media(max-width:900px){
+          .sidenav{display:none!important}
+          .stat-strip{grid-template-columns:1fr 1fr!important}
+          .mobile-dash-nav{display:flex!important}
+          .dash-main{padding-bottom:60px!important}
+        }
+        @media(max-width:600px){
+          .stat-strip{grid-template-columns:1fr 1fr!important;gap:8px!important;margin-bottom:16px!important}
+          .stat-card{padding:14px 16px!important}
+          .bid-in .bc-top{flex-wrap:wrap}
+        }
+        .mobile-dash-nav{
+          display:none;position:fixed;bottom:0;left:0;right:0;
+          background:#111110;border-top:1px solid rgba(255,255,255,.08);
+          z-index:50;height:60px;
+        }
       `}</style>
 
       <div style={S.shell}>
@@ -628,7 +643,7 @@ export default function Dashboard() {
         </nav>
 
         {/* MAIN */}
-        <div style={{flex:1,overflowX:'hidden'}}>
+        <div className="dash-main" style={{flex:1,overflowX:'hidden'}}>
           <div style={S.topbar}>
             <span style={S.pageTitle}>{viewTitles[view]}</span>
             <NotificationBell theme="dark" />
@@ -1319,6 +1334,24 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* MOBILE BOTTOM NAV */}
+      <nav className="mobile-dash-nav">
+        {navItems.map(item=>(
+          <div key={item.view} onClick={()=>setView(item.view)}
+            style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,cursor:'pointer',position:'relative',
+              color:view===item.view?'#E07A5F':'rgba(245,240,232,.4)',transition:'color .15s'}}>
+            {item.badge!==undefined&&item.badge>0&&(
+              <div style={{position:'absolute',top:6,right:'22%',width:16,height:16,borderRadius:'50%',background:countersPending.length>0&&item.view==='bids'?'#E8A020':'#C4593A',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:700,color:'#fff'}}>
+                {item.badge > 9 ? '9+' : item.badge}
+              </div>
+            )}
+            <span style={{fontSize:20}}>{item.icon}</span>
+            <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:600,letterSpacing:1,textTransform:'uppercase'}}>{item.label}</span>
+            {view===item.view&&<div style={{position:'absolute',top:0,left:'20%',right:'20%',height:2,background:'#C4593A',borderRadius:1}}/>}
+          </div>
+        ))}
+      </nav>
 
       {/* TOASTS */}
       <div style={{position:'fixed',top:70,right:20,zIndex:200,pointerEvents:'none'}}>
