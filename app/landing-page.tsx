@@ -262,7 +262,7 @@ export default function LandingPage() {
         <div style={{maxWidth:1100,margin:'0 auto',width:'100%',position:'relative',zIndex:1}}>
           <div className="hero-tag">
             <div className="hero-dot"/>
-            South Africa's home repair marketplace
+            South Africa&apos;s home repair marketplace
           </div>
           <h1 className="hero-h1">FIX IT.<br/><span>RIGHT.</span></h1>
           <p className="hero-sub">
@@ -273,7 +273,7 @@ export default function LandingPage() {
               Post a job free →
             </button>
             <button className="btn-secondary" onClick={()=>router.push('/auth?role=tradesperson')}>
-              I'm a tradesperson
+              I&apos;m a tradesperson
             </button>
           </div>
         </div>
@@ -340,7 +340,7 @@ export default function LandingPage() {
         <div className="hiw-inner">
           <div className="section-tag">How it works</div>
           <h2 className="section-h" style={{marginBottom:16}}>Simple.<br/><span>Fair.</span> Secure.</h2>
-          <p className="section-sub" style={{marginBottom:40}}>Whether you need a job done or you're a tradesperson looking for work — Lungisa makes it simple.</p>
+          <p className="section-sub" style={{marginBottom:40}}>Whether you need a job done or you&apos;re a tradesperson looking for work — Lungisa makes it simple.</p>
 
           <div className="hiw-tabs">
             <button className={`hiw-tab${activeTab==='homeowner'?' active':''}`} onClick={()=>setActiveTab('homeowner')}>For homeowners</button>
@@ -374,7 +374,7 @@ export default function LandingPage() {
             <div className="section-tag" style={{color:' var(--terra-l)'}}>Why Lungisa</div>
             <h2 className="section-h" style={{color:'#F5F0E8',marginBottom:20}}>Built for<br/><span>South Africa.</span></h2>
             <p style={{fontSize:16,color:'rgba(245,240,232,.45)',lineHeight:1.8,marginBottom:32}}>
-              Existing platforms don't negotiate. They quote, you accept or decline. Lungisa gives both parties a voice — and escrow makes sure everyone's protected.
+              Existing platforms don&apos;t negotiate. They quote, you accept or decline. Lungisa gives both parties a voice — and escrow makes sure everyone&apos;s protected.
             </p>
             <button className="btn-primary" onClick={()=>router.push('/auth')}>Get started free →</button>
           </div>
@@ -437,7 +437,7 @@ export default function LandingPage() {
         <h2 className="cta-h">READY TO<br/>LUNGISA?</h2>
         <p className="cta-sub">Join homeowners and tradespeople across Johannesburg. Free to start.</p>
         <div className="cta-btns">
-          <button className="btn-white" onClick={()=>router.push('/auth')}>Post a job — it's free</button>
+          <button className="btn-white" onClick={()=>router.push('/auth')}>Post a job — it&apos;s free</button>
           <button className="btn-outline-white" onClick={()=>router.push('/auth?role=tradesperson')}>Join as a tradesperson</button>
         </div>
       </div>
@@ -455,7 +455,7 @@ export default function LandingPage() {
                 </div>
                 <span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:24,letterSpacing:3,color:'#F5F0E8'}}>LUNGISA</span>
               </div>
-              <p>South Africa's home repair marketplace. Fix it right, pay safely, build trust.</p>
+              <p>South Africa&apos;s home repair marketplace. Fix it right, pay safely, build trust.</p>
               <div style={{marginTop:16,fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(245,240,232,.2)'}}>
                 A VaultLink Africa product
               </div>
