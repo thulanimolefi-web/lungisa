@@ -368,16 +368,18 @@ export default function AdminPanel() {
                           <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'#3DAA6A',marginBottom:10}}>🏦 Banking details — EFT to:</div>
                           <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10}}>
                             {[
-                              {l:'Bank',p.banking.bank_name},
-                              {l:'Account holder',p.banking.account_holder},
-                              {l:'Account number',p.banking.account_number},
-                              {l:'Account type',p.banking.account_type},
-                              {l:'Branch code',p.banking.branch_code},
-                              {l:'Reference',`LUNGISA-${p.id.substring(0,8).toUpperCase()}`},
-                            ].map((r:any,i:number)=>(
+                              {l:'Bank',                v:p.banking.bank_name},
+                              {l:'Account holder',      v:p.banking.account_holder},
+                              {l:'Account number',      v:p.banking.account_number},
+                              {l:'Account type',        v:p.banking.account_type},
+                              {l:'Branch code',         v:p.banking.branch_code},
+                              {l:'Reference',           v:`LUNGISA-${p.id.substring(0,8).toUpperCase()}`},
+                            ].map((r,i)=>(
                               <div key={i}>
                                 <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(245,240,232,.3)',marginBottom:3}}>{r.l}</div>
-                                <div style={{fontSize:13,color:'#F5F0E8',fontWeight:600,fontFamily:r.l==='Account number'||r.l==='Branch code'||r.l==='Reference'?'monospace':'inherit',letterSpacing:r.l==='Account number'||r.l==='Branch code'?2:0}}>{r[1]}</div>
+                                <div style={{fontSize:13,color:'#F5F0E8',fontWeight:600,
+                                  fontFamily:['Account number','Branch code','Reference'].includes(r.l)?'monospace':'inherit',
+                                  letterSpacing:['Account number','Branch code'].includes(r.l)?2:0}}>{r.v}</div>
                               </div>
                             ))}
                           </div>
