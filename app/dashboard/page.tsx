@@ -17,6 +17,7 @@ type Bid = {
   counterAmount: number|null
   counterBy: string|null
   counterRound: number
+  counterUpdatedAt: string|null
   jobId: string
   jobStatus: string
 }
@@ -130,6 +131,8 @@ export default function Dashboard() {
         .eq('id',session.user.id)
         .single()
 
+      console.log('[feed] tp profile:', tp)
+
       // Query jobs table directly — only open/bidding, not owned by this user
       let query=supabase
         .from('jobs')
@@ -138,17 +141,21 @@ export default function Dashboard() {
         .neq('homeowner_id', session.user.id)
         .order('created_at',{ascending:false})
 
-      // Filter by trade category
+      // Filter by trade category — case insensitive
       if(tp?.trade_category){
         query=query.eq('category', tp.trade_category.toLowerCase())
       }
 
-      // Filter by service areas
+      // Filter by service areas — case insensitive comparison
       if(tp?.service_areas && tp.service_areas.length > 0){
-        query=query.in('area', tp.service_areas.map((a:string)=>a.trim()))
+        const areas = tp.service_areas.map((a:string)=>a.trim())
+        // Use ilike for case-insensitive matching on each area
+        const areaFilter = areas.map((a:string)=>`area.ilike.${a}`).join(',')
+        query = query.or(areaFilter)
       }
 
       const {data,error}=await query
+      console.log('[feed] jobs found:', data?.length, error?.message)
 
       if(!error&&data){
         // Exclude jobs this tradesperson already bid on
@@ -158,6 +165,18 @@ export default function Dashboard() {
           .eq('tradesperson_id', session.user.id)
 
         const bidJobIds = new Set((myBidJobIds||[]).map((b:any)=>b.job_id))
+
+        // Get photo counts for all jobs
+        const jobIds = data.map((j:any)=>j.id)
+        const {data:photoCounts} = await supabase
+          .from('job_photos')
+          .select('job_id')
+          .in('job_id', jobIds)
+
+        const photoCountMap: Record<string,number> = {}
+        for(const p of (photoCounts||[])){
+          photoCountMap[p.job_id] = (photoCountMap[p.job_id]||0) + 1
+        }
 
         setJobs(data
           .filter((j:any)=>!bidJobIds.has(j.id))
@@ -175,7 +194,7 @@ export default function Dashboard() {
             budgetNum:    j.budget_max||0,
             desc:         j.description,
             time:         `Posted ${getTimeAgo(j.created_at)}`,
-            photos:       0,
+            photos:       photoCountMap[j.id]||0,
             bids:         j.bid_count||0,
             tags:         getJobTags(j),
             timing:       j.preferred_time||'Flexible',
@@ -194,7 +213,7 @@ export default function Dashboard() {
       if(!session?.user) return
       const {data,error}=await supabase
         .from('bids')
-        .select('*, jobs(id, title, area, status)')
+        .select('*, jobs(id, title, area, status), updated_at')
         .eq('tradesperson_id',session.user.id)
         .order('created_at',{ascending:false})
       if(!error&&data){
@@ -209,6 +228,7 @@ export default function Dashboard() {
           counterAmount: b.counter_amount||null,
           counterBy:     b.counter_by||null,
           counterRound:  b.counter_round||0,
+          counterUpdatedAt: b.updated_at||null,
           jobId:         b.jobs?.id||b.job_id,
         })))
       }
@@ -294,24 +314,22 @@ export default function Dashboard() {
     setBidEta('30 mins')
     setModalMedia([])
 
-    // Fetch photos/videos for this job
-    if(job.photos > 0) {
-      setMediaLoading(true)
-      try{
-        const {data, error} = await supabase
-          .from('job_photos')
-          .select('storage_url, file_type, sort_order')
-          .eq('job_id', job.id)
-          .order('sort_order', {ascending:true})
-        if(!error && data && data.length > 0){
-          setModalMedia(data.map((m:any)=>({
-            url:  m.storage_url,
-            type: (m.file_type||'image') as 'image'|'video',
-          })))
-        }
-      }catch(e){ console.log('Media load error:',e) }
-      setMediaLoading(false)
-    }
+    // Always fetch photos/videos for this job
+    setMediaLoading(true)
+    try{
+      const {data, error} = await supabase
+        .from('job_photos')
+        .select('storage_url, file_type, sort_order')
+        .eq('job_id', job.id)
+        .order('sort_order', {ascending:true})
+      if(!error && data && data.length > 0){
+        setModalMedia(data.map((m:any)=>({
+          url:  m.storage_url,
+          type: (m.file_type||'image') as 'image'|'video',
+        })))
+      }
+    }catch(e){ console.log('Media load error:',e) }
+    setMediaLoading(false)
   }
 
   function toast(title:string,sub:string,alert:boolean){
@@ -765,6 +783,11 @@ export default function Dashboard() {
                 const isCompleted       =b.status==='completed'||b.jobStatus==='completed'
                 const isInEscrow        =['in_progress','completion_submitted'].includes(b.jobStatus)
                 const isCompletionSubmitted = b.jobStatus==='completion_submitted'
+                // Check if counter is expired (48h)
+                const counterAge = b.counterUpdatedAt
+                  ? (Date.now() - new Date(b.counterUpdatedAt).getTime()) / (1000*60*60)
+                  : 0
+                const isCounterExpired = (homeownerCountered||iSentCounter) && counterAge > 48
 
                 return (
                   <div key={b.id} style={{
@@ -780,8 +803,8 @@ export default function Dashboard() {
                       <div style={{textAlign:'right'}}>
                         <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:'#E07A5F'}}>R{b.price}</div>
                         <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1,textTransform:'uppercase',
-                          color:isCompleted?'#3DAA6A':isAccepted||isInEscrow?'#3DAA6A':isDeclined?'#f08080':homeownerCountered?'#E8A020':iSentCounter?'rgba(232,160,32,.6)':'rgba(245,240,232,.4)'}}>
-                          {isCompleted?'✓ Completed & paid':isCompletionSubmitted?'⏳ Awaiting homeowner confirmation':isInEscrow?'🔒 In escrow — complete the job':isAccepted&&!isInEscrow?'✓ Accepted — awaiting payment':homeownerCountered?'⚡ Counter received':iSentCounter?'⏳ Counter sent':isDeclined?'Declined':'Pending'}
+                          color:isCompleted?'#3DAA6A':isAccepted||isInEscrow?'#3DAA6A':isDeclined?'#f08080':isCounterExpired?'#E24B4A':homeownerCountered?'#E8A020':iSentCounter?'rgba(232,160,32,.6)':'rgba(245,240,232,.4)'}}>
+                          {isCompleted?'✓ Completed & paid':isCompletionSubmitted?'⏳ Awaiting homeowner confirmation':isInEscrow?'🔒 In escrow — complete the job':isAccepted&&!isInEscrow?'✓ Accepted — awaiting payment':isCounterExpired?'⚠ Counter expired — bid again':homeownerCountered?'⚡ Counter received':iSentCounter?'⏳ Counter sent':isDeclined?'Declined':'Pending'}
                         </div>
                       </div>
                     </div>

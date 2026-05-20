@@ -25,6 +25,7 @@ type BidData = {
   counterBy: string|null
   counterRound: number
   finalAmount: number|null
+  counterUpdatedAt: string|null
 }
 
 type JobData = {
@@ -51,6 +52,7 @@ type HistoryJob = {
   price: number
   rating: number
   date: string
+  status: string
 }
 
 const AVATAR_COLORS = ['#8B3A2A','#5A3A2A','#2A4A3A','#3A4A6A','#6A3A5A','#4A5A2A']
@@ -176,7 +178,7 @@ export default function HomeDashboard() {
       // ── Step 2: fetch bids for those jobs ───────────────────────
       const { data: bidsData } = await supabase
         .from('bids')
-        .select('id, job_id, amount, counter_amount, counter_by, counter_round, final_amount, eta_label, note, status, created_at, tradesperson_id')
+        .select('id, job_id, amount, counter_amount, counter_by, counter_round, final_amount, eta_label, note, status, created_at, updated_at, tradesperson_id')
         .in('job_id', jobIds)
         .order('created_at', {ascending: true})
 
@@ -231,6 +233,7 @@ export default function HomeDashboard() {
               counterBy:     b.counter_by||null,
               counterRound:  b.counter_round||0,
               finalAmount:   b.final_amount||null,
+              counterUpdatedAt: b.updated_at||null,
             }
           })
         }
@@ -251,12 +254,12 @@ export default function HomeDashboard() {
       const { data:{ session } } = await supabase.auth.getSession()
       if(!session?.user) return
 
-      // Step 1: fetch completed jobs
+      // Step 1: fetch all paid/in-progress/completed jobs
       const { data: jobsData, error } = await supabase
         .from('jobs')
-        .select('id, title, category, area, updated_at')
+        .select('id, title, category, area, updated_at, status')
         .eq('homeowner_id', session.user.id)
-        .eq('status','completed')
+        .in('status', ['in_progress','completion_submitted','completed','disputed'])
         .order('updated_at',{ascending:false})
 
       if(error || !jobsData) return
@@ -290,6 +293,7 @@ export default function HomeDashboard() {
           price:        agreed,
           rating:       review?.rating || 0,
           date:         new Date(j.updated_at).toLocaleDateString('en-ZA',{day:'numeric',month:'short',year:'numeric'}),
+          status:       j.status,
         }
       }))
     } catch(e){ console.log('History error:',e) }
@@ -586,10 +590,10 @@ export default function HomeDashboard() {
     loadHistoryJobs()
   }
 
-  const activeJobs  = jobs.filter(j=>j.status!=='completed')
+  const activeJobs  = jobs.filter(j=>!['completed','disputed'].includes(j.status))
   const allBids     = activeJobs.flatMap(j=>j.bids)
   const avgBidPrice = allBids.length>0 ? Math.round(allBids.reduce((s,b)=>s+b.price,0)/allBids.length) : 0
-  const totalSpent  = historyJobs.reduce((s,j)=>s+j.price,0)
+  const totalSpent  = historyJobs.filter(j=>j.status==='completed').reduce((s,j)=>s+j.price,0)
   const displayName = profile?.full_name||'—'
   const displayInitials = displayName.split(' ').map((n:string)=>n[0]).join('').substring(0,2).toUpperCase()||'?'
 
@@ -814,7 +818,7 @@ export default function HomeDashboard() {
                     {eye:'Active jobs',    val:String(activeJobs.length),                              cls:'terra', delta:activeJobs.length>0?`${activeJobs.filter(j=>j.bids.length>0).length} receiving bids`:'Post your first job'},
                     {eye:'Total bids',     val:String(allBids.length),                                 cls:'',      delta:allBids.length>0?'Across all your jobs':'No bids yet'},
                     {eye:'Avg bid price',  val:avgBidPrice>0?`R${avgBidPrice.toLocaleString()}`:'—',   cls:'green', delta:avgBidPrice>0?'Current average':'No bids yet'},
-                    {eye:'Jobs completed', val:String(historyJobs.length),                             cls:'',      delta:historyJobs.length>0?`R${totalSpent.toLocaleString()} total spent`:'Complete your first job'},
+                    {eye:'Jobs completed', val:String(historyJobs.filter(j=>j.status==='completed').length), cls:'', delta:historyJobs.filter(j=>j.status==='completed').length>0?`R${totalSpent.toLocaleString()} total spent`:'Complete your first job'},
                   ].map(s=>(
                     <div key={s.eye} className="stat-card">
                       <div className="stat-eye">{s.eye}</div>
@@ -882,7 +886,8 @@ export default function HomeDashboard() {
                                   {selectedJob.bids.length} bid{selectedJob.bids.length!==1?'s':''} received
                                 </div>
                                 {selectedJob.bids.map((bid)=>{
-                                  const isPaid             = paidJobs[selectedJob.id]
+                                  // isPaid is true if job moved past accepted (payment was made)
+                                  const isPaid             = ['in_progress','completion_submitted','completed','disputed'].includes(selectedJob.status)
                                   const isAccepted         = bid.status==='accepted'||bid.status==='completed'
                                   const isDeclined         = bid.status==='declined'
                                   const homeownerCountered = bid.status==='countered'&&bid.counterBy==='homeowner'
@@ -976,6 +981,12 @@ export default function HomeDashboard() {
                                           </div>
                                           <div style={{fontSize:12,color:'var(--charcoal-l)',marginBottom:8}}>
                                             Waiting for their response...{bid.counterRound===3?' This is the final round — they must accept or decline.':''}
+                                            {bid.counterUpdatedAt&&(Date.now()-new Date(bid.counterUpdatedAt).getTime())/(1000*60*60)>24&&(Date.now()-new Date(bid.counterUpdatedAt).getTime())/(1000*60*60)<48&&(
+                                              <span style={{color:'#E8A020',marginLeft:6,fontSize:11}}>⚠ Expires in {Math.round(48-((Date.now()-new Date(bid.counterUpdatedAt).getTime())/(1000*60*60)))}h</span>
+                                            )}
+                                            {bid.counterUpdatedAt&&(Date.now()-new Date(bid.counterUpdatedAt).getTime())/(1000*60*60)>48&&(
+                                              <span style={{color:'#E24B4A',marginLeft:6,fontSize:11}}>⚠ Counter expired — awaiting new bid</span>
+                                            )}
                                           </div>
                                           <button className="btn btn-ghost" style={{fontSize:11,padding:'6px 12px'}} onClick={()=>acceptBid(selectedJob.id,bid.id,bid.name)}>
                                             Accept original R{bid.price} instead
@@ -1198,17 +1209,39 @@ export default function HomeDashboard() {
                     <div style={{flex:1}}>
                       <div className="hist-title">{j.title}</div>
                       <div className="hist-meta">{j.area} · {j.tradesperson}</div>
-                      <div style={{marginTop:4}}>
-                        {j.rating > 0 ? (
-                          <span style={{color:'#E8A020',fontSize:14}}>
-                            {'★'.repeat(j.rating)}{'☆'.repeat(5-j.rating)}
-                            <span style={{fontSize:11,color:'var(--charcoal-l)',marginLeft:6}}>Your rating</span>
-                          </span>
-                        ) : (
+                      <div style={{marginTop:5,display:'flex',alignItems:'center',gap:8}}>
+                        {/* Status badge */}
+                        {j.status==='completed'&&(
+                          <span style={{fontFamily:'var(--fc)',fontSize:9,fontWeight:700,letterSpacing:1,textTransform:'uppercase',background:'rgba(61,170,106,.1)',border:'1px solid rgba(61,170,106,.2)',color:'#1a6e35',padding:'2px 8px',borderRadius:3}}>✓ Completed</span>
+                        )}
+                        {j.status==='in_progress'&&(
+                          <span style={{fontFamily:'var(--fc)',fontSize:9,fontWeight:700,letterSpacing:1,textTransform:'uppercase',background:'rgba(46,127,212,.1)',border:'1px solid rgba(46,127,212,.2)',color:'#1a4e8e',padding:'2px 8px',borderRadius:3}}>⚙ In progress</span>
+                        )}
+                        {j.status==='completion_submitted'&&(
+                          <span style={{fontFamily:'var(--fc)',fontSize:9,fontWeight:700,letterSpacing:1,textTransform:'uppercase',background:'rgba(232,160,32,.1)',border:'1px solid rgba(232,160,32,.2)',color:'#b87a00',padding:'2px 8px',borderRadius:3}}>⏳ Awaiting confirmation</span>
+                        )}
+                        {j.status==='disputed'&&(
+                          <span style={{fontFamily:'var(--fc)',fontSize:9,fontWeight:700,letterSpacing:1,textTransform:'uppercase',background:'rgba(226,75,74,.1)',border:'1px solid rgba(226,75,74,.2)',color:'#c0392b',padding:'2px 8px',borderRadius:3}}>⚠ Disputed</span>
+                        )}
+                        {/* Rating or review prompt */}
+                        {j.status==='completed'&&(
+                          j.rating > 0 ? (
+                            <span style={{color:'#E8A020',fontSize:13}}>
+                              {'★'.repeat(j.rating)}{'☆'.repeat(5-j.rating)}
+                            </span>
+                          ) : (
+                            <span
+                              onClick={()=>{setReviewJob(j.id);setRating(5);setReviewText('')}}
+                              style={{fontSize:12,color:'var(--terra)',fontFamily:'var(--fc)',fontWeight:600,letterSpacing:.5,cursor:'pointer',textDecoration:'underline'}}>
+                              ⭐ Leave a review
+                            </span>
+                          )
+                        )}
+                        {j.status==='completion_submitted'&&(
                           <span
-                            onClick={()=>{setReviewJob(j.id);setRating(5);setReviewText('')}}
+                            onClick={()=>setSelectedJob(jobs.find(x=>x.id===j.id)||null)}
                             style={{fontSize:12,color:'var(--terra)',fontFamily:'var(--fc)',fontWeight:600,letterSpacing:.5,cursor:'pointer',textDecoration:'underline'}}>
-                            ⭐ Leave a review
+                            → Review & confirm
                           </span>
                         )}
                       </div>
