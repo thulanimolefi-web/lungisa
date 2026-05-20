@@ -146,12 +146,13 @@ export default function Dashboard() {
         query=query.eq('category', tp.trade_category.toLowerCase())
       }
 
-      // Filter by service areas — case insensitive comparison
+      // Filter by service areas — case insensitive
       if(tp?.service_areas && tp.service_areas.length > 0){
-        const areas = tp.service_areas.map((a:string)=>a.trim())
-        // Use ilike for case-insensitive matching on each area
-        const areaFilter = areas.map((a:string)=>`area.ilike.${a}`).join(',')
-        query = query.or(areaFilter)
+        const areas = tp.service_areas.map((a:string)=>a.trim().toLowerCase())
+        query = query.in('area', [
+          ...areas,
+          ...areas.map((a:string)=>a.charAt(0).toUpperCase()+a.slice(1)),
+        ])
       }
 
       const {data,error}=await query
