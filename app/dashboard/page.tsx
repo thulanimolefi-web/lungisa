@@ -124,62 +124,65 @@ export default function Dashboard() {
       const {data:{session}}=await supabase.auth.getSession()
       if(!session?.user){ setLoading(false); return }
 
-      // Get tradesperson profile for category + area filtering
+      // Get tradesperson profile
       const {data:tp}=await supabase
         .from('tradesperson_profiles')
         .select('trade_category, service_areas')
         .eq('id',session.user.id)
         .single()
 
-      console.log('[feed] tp profile:', tp)
+      console.log('[feed] session user:', session.user.id)
+      console.log('[feed] tradesperson profile:', JSON.stringify(tp))
 
-      // Query jobs table directly — only open/bidding, not owned by this user
-      let query=supabase
+      // Step 1: Get ALL open/bidding jobs first — no filters
+      const {data,error}=await supabase
         .from('jobs')
         .select('id,title,category,area,urgency,budget_max,description,created_at,status,bid_count,homeowner_id,preferred_time')
         .in('status',['open','bidding'])
-        .neq('homeowner_id', session.user.id)
         .order('created_at',{ascending:false})
 
-      // Filter by trade category — case insensitive
-      if(tp?.trade_category){
-        query=query.eq('category', tp.trade_category.toLowerCase())
-      }
-
-      // Filter by service areas — case insensitive
-      if(tp?.service_areas && tp.service_areas.length > 0){
-        const areas = tp.service_areas.map((a:string)=>a.trim().toLowerCase())
-        query = query.in('area', [
-          ...areas,
-          ...areas.map((a:string)=>a.charAt(0).toUpperCase()+a.slice(1)),
-        ])
-      }
-
-      const {data,error}=await query
-      console.log('[feed] jobs found:', data?.length, error?.message)
+      console.log('[feed] all open jobs:', data?.length, error?.message)
+      console.log('[feed] jobs:', JSON.stringify(data?.map((j:any)=>({title:j.title,area:j.area,category:j.category}))))
 
       if(!error&&data){
-        // Exclude jobs this tradesperson already bid on
+        // Filter client-side for now to debug
+        const filtered = data.filter((j:any)=>{
+          // Don't show own jobs
+          if(j.homeowner_id === session.user.id) return false
+          // Category match
+          if(tp?.trade_category && j.category.toLowerCase() !== tp.trade_category.toLowerCase()) return false
+          // Area match — case insensitive
+          if(tp?.service_areas && tp.service_areas.length > 0){
+            const match = tp.service_areas.some((a:string)=>
+              a.trim().toLowerCase() === j.area.trim().toLowerCase()
+            )
+            if(!match) return false
+          }
+          return true
+        })
+
+        console.log('[feed] filtered jobs:', filtered.length)
+
+        // Exclude already-bid jobs
         const {data:myBidJobIds}=await supabase
           .from('bids')
           .select('job_id')
           .eq('tradesperson_id', session.user.id)
-
         const bidJobIds = new Set((myBidJobIds||[]).map((b:any)=>b.job_id))
 
-        // Get photo counts for all jobs
-        const jobIds = data.map((j:any)=>j.id)
-        const {data:photoCounts} = await supabase
+        // Get photo counts
+        const jobIds = filtered.map((j:any)=>j.id)
+        const {data:photoCounts} = jobIds.length > 0 ? await supabase
           .from('job_photos')
           .select('job_id')
-          .in('job_id', jobIds)
+          .in('job_id', jobIds) : {data:[]}
 
         const photoCountMap: Record<string,number> = {}
         for(const p of (photoCounts||[])){
           photoCountMap[p.job_id] = (photoCountMap[p.job_id]||0) + 1
         }
 
-        setJobs(data
+        setJobs(filtered
           .filter((j:any)=>!bidJobIds.has(j.id))
           .map((j:any)=>({
             id:           j.id,
@@ -204,7 +207,7 @@ export default function Dashboard() {
             media:        [],
           })))
       }
-    }catch(e){console.log('Jobs error:',e)}
+    }catch(e){console.log('[feed] exception:',e)}
     setLoading(false)
   }
 
