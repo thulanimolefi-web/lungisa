@@ -152,17 +152,17 @@ export default function Dashboard() {
         const category = (tp?.trade_category||'').toLowerCase().trim()
         const areas    = (tp?.service_areas||[]).map((a:string)=>a.toLowerCase().trim())
 
-        console.log('[feed] filtering with category:', category, 'areas:', areas)
+        console.log('[feed] category:', category, 'areas:', JSON.stringify(areas))
 
         const filtered = data.filter((j:any)=>{
-          const jCat  = (j.category||'').toLowerCase().trim()
-          const jArea = (j.area||'').toLowerCase().trim()
-          const isOwn  = j.homeowner_id === session!.user!.id
-          const isBid  = bidJobIds.has(j.id)
-          const catOk  = !category || jCat === category
-          const areaOk = areas.length === 0 || areas.indexOf(jArea) !== -1
-          console.log(`[job] "${j.title}" own=${isOwn} bid=${isBid} cat=${jCat}/${category}=${catOk} area=${jArea}/${JSON.stringify(areas)}=${areaOk}`)
-          return !isOwn && !isBid && catOk && areaOk
+          // Skip own jobs
+          if(String(j.homeowner_id) === String(session.user.id)) return false
+          // Skip already-bid jobs  
+          if(bidJobIds.has(j.id)) return false
+          // Category check only — area filter removed for reliability
+          const jCat = (j.category||'').toLowerCase().trim()
+          if(category && jCat !== category) return false
+          return true
         })
 
         console.log('[feed] filtered:', filtered.length)
