@@ -124,90 +124,78 @@ export default function Dashboard() {
       const {data:{session}}=await supabase.auth.getSession()
       if(!session?.user){ setLoading(false); return }
 
-      // Get tradesperson profile
       const {data:tp}=await supabase
         .from('tradesperson_profiles')
         .select('trade_category, service_areas')
         .eq('id',session.user.id)
         .single()
 
-      console.log('[feed] session user:', session.user.id)
-      console.log('[feed] tradesperson profile:', JSON.stringify(tp))
+      console.log('[feed] profile:', tp?.trade_category, tp?.service_areas)
 
-      // Step 1: Get ALL open/bidding jobs first — no filters
+      // Get already-bid job IDs first
+      const {data:myBids}=await supabase
+        .from('bids')
+        .select('job_id')
+        .eq('tradesperson_id', session.user.id)
+      const bidJobIds = new Set((myBids||[]).map((b:any)=>b.job_id))
+
+      // Fetch ALL open/bidding jobs — filter client side
       const {data,error}=await supabase
         .from('jobs')
         .select('id,title,category,area,urgency,budget_max,description,created_at,status,bid_count,homeowner_id,preferred_time')
         .in('status',['open','bidding'])
         .order('created_at',{ascending:false})
 
-      console.log('[feed] all open jobs:', data?.length, error?.message)
-      console.log('[feed] jobs:', JSON.stringify(data?.map((j:any)=>({title:j.title,area:j.area,category:j.category}))))
+      console.log('[feed] raw jobs:', data?.length, error?.message)
 
       if(!error&&data){
-        // Filter client-side for now to debug
+        const category = (tp?.trade_category||'').toLowerCase().trim()
+        const areas    = (tp?.service_areas||[]).map((a:string)=>a.toLowerCase().trim())
+
         const filtered = data.filter((j:any)=>{
-          // Don't show own jobs
           if(j.homeowner_id === session.user.id) return false
-          // Category match
-          if(tp?.trade_category && j.category.toLowerCase() !== tp.trade_category.toLowerCase()) return false
-          // Area match — case insensitive
-          if(tp?.service_areas && tp.service_areas.length > 0){
-            const match = tp.service_areas.some((a:string)=>
-              a.trim().toLowerCase() === j.area.trim().toLowerCase()
-            )
-            if(!match) return false
-          }
-          return true
+          if(bidJobIds.has(j.id)) return false
+          const jCat  = (j.category||'').toLowerCase().trim()
+          const jArea = (j.area||'').toLowerCase().trim()
+          const catOk  = !category || jCat === category
+          const areaOk = areas.length === 0 || areas.includes(jArea)
+          console.log(`[feed] ${j.title}: cat=${jCat}==${category}(${catOk}) area=${jArea} in [${areas}](${areaOk})`)
+          return catOk && areaOk
         })
 
-        console.log('[feed] filtered jobs:', filtered.length)
-
-        // Exclude already-bid jobs
-        const {data:myBidJobIds}=await supabase
-          .from('bids')
-          .select('job_id')
-          .eq('tradesperson_id', session.user.id)
-        const bidJobIds = new Set((myBidJobIds||[]).map((b:any)=>b.job_id))
+        console.log('[feed] filtered:', filtered.length)
 
         // Get photo counts
         const jobIds = filtered.map((j:any)=>j.id)
         const {data:photoCounts} = jobIds.length > 0 ? await supabase
-          .from('job_photos')
-          .select('job_id')
-          .in('job_id', jobIds) : {data:[]}
+          .from('job_photos').select('job_id').in('job_id', jobIds) : {data:[]}
+        const photoMap: Record<string,number> = {}
+        for(const p of (photoCounts||[])) photoMap[p.job_id] = (photoMap[p.job_id]||0)+1
 
-        const photoCountMap: Record<string,number> = {}
-        for(const p of (photoCounts||[])){
-          photoCountMap[p.job_id] = (photoCountMap[p.job_id]||0) + 1
-        }
-
-        setJobs(filtered
-          .filter((j:any)=>!bidJobIds.has(j.id))
-          .map((j:any)=>({
-            id:           j.id,
-            cat:          j.category.charAt(0).toUpperCase()+j.category.slice(1),
-            emoji:        getCatEmoji(j.category),
-            urgency:      j.urgency,
-            urgencyLabel: getUrgencyLabel(j.urgency),
-            urgColor:     getUrgencyColor(j.urgency),
-            title:        j.title,
-            loc:          `${j.area}, JHB`,
-            dist:         'Nearby',
-            budget:       j.budget_max?`R${j.budget_max.toLocaleString()}`:'Open',
-            budgetNum:    j.budget_max||0,
-            desc:         j.description,
-            time:         `Posted ${getTimeAgo(j.created_at)}`,
-            photos:       photoCountMap[j.id]||0,
-            bids:         j.bid_count||0,
-            tags:         getJobTags(j),
-            timing:       j.preferred_time||'Flexible',
-            submitted:    false,
-            submitPrice:  0,
-            media:        [],
-          })))
+        setJobs(filtered.map((j:any)=>({
+          id:           j.id,
+          cat:          j.category.charAt(0).toUpperCase()+j.category.slice(1),
+          emoji:        getCatEmoji(j.category),
+          urgency:      j.urgency,
+          urgencyLabel: getUrgencyLabel(j.urgency),
+          urgColor:     getUrgencyColor(j.urgency),
+          title:        j.title,
+          loc:          `${j.area}, JHB`,
+          dist:         'Nearby',
+          budget:       j.budget_max?`R${j.budget_max.toLocaleString()}`:'Open',
+          budgetNum:    j.budget_max||0,
+          desc:         j.description,
+          time:         `Posted ${getTimeAgo(j.created_at)}`,
+          photos:       photoMap[j.id]||0,
+          bids:         j.bid_count||0,
+          tags:         getJobTags(j),
+          timing:       j.preferred_time||'Flexible',
+          submitted:    false,
+          submitPrice:  0,
+          media:        [],
+        })))
       }
-    }catch(e){console.log('[feed] exception:',e)}
+    }catch(e){console.log('[feed] error:',e)}
     setLoading(false)
   }
 
