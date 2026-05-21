@@ -155,11 +155,9 @@ export default function Dashboard() {
         console.log('[feed] category:', category, 'areas:', JSON.stringify(areas))
 
         const filtered = data.filter((j:any)=>{
-          // Skip own jobs
-          if(String(j.homeowner_id) === String(session.user.id)) return false
-          // Skip already-bid jobs  
+          // Skip already-bid jobs only
           if(bidJobIds.has(j.id)) return false
-          // Category check only — area filter removed for reliability
+          // Category check only
           const jCat = (j.category||'').toLowerCase().trim()
           if(category && jCat !== category) return false
           return true
