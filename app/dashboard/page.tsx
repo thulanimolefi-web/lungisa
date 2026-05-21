@@ -152,15 +152,17 @@ export default function Dashboard() {
         const category = (tp?.trade_category||'').toLowerCase().trim()
         const areas    = (tp?.service_areas||[]).map((a:string)=>a.toLowerCase().trim())
 
+        console.log('[feed] filtering with category:', category, 'areas:', areas)
+
         const filtered = data.filter((j:any)=>{
-          if(j.homeowner_id === session.user.id) return false
-          if(bidJobIds.has(j.id)) return false
           const jCat  = (j.category||'').toLowerCase().trim()
           const jArea = (j.area||'').toLowerCase().trim()
+          const isOwn  = j.homeowner_id === session!.user!.id
+          const isBid  = bidJobIds.has(j.id)
           const catOk  = !category || jCat === category
-          const areaOk = areas.length === 0 || areas.includes(jArea)
-          console.log(`[feed] ${j.title}: cat=${jCat}==${category}(${catOk}) area=${jArea} in [${areas}](${areaOk})`)
-          return catOk && areaOk
+          const areaOk = areas.length === 0 || areas.indexOf(jArea) !== -1
+          console.log(`[job] "${j.title}" own=${isOwn} bid=${isBid} cat=${jCat}/${category}=${catOk} area=${jArea}/${JSON.stringify(areas)}=${areaOk}`)
+          return !isOwn && !isBid && catOk && areaOk
         })
 
         console.log('[feed] filtered:', filtered.length)
