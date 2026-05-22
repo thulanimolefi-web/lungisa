@@ -6,7 +6,6 @@ import { supabase } from '../lib/supabase'
 type VerificationStatus = 'unsubmitted' | 'pending' | 'verified' | 'rejected'
 
 type Props = {
-  /** compact = small inline badge only, full = full card with CTA */
   variant?: 'compact' | 'full'
 }
 
@@ -22,6 +21,9 @@ export default function VerificationBadge({ variant = 'full' }: Props) {
   const [uploading, setUploading]             = useState(false)
   const [uploadProgress, setUploadProgress]   = useState(0)
   const [uploadErr, setUploadErr]             = useState('')
+  const [rejectionReason, setRejectionReason] = useState('')
+  const [submittedAt, setSubmittedAt]         = useState<string|null>(null)
+  const [canResubmit, setCanResubmit]         = useState(false)
 
   useEffect(() => { loadStatus() }, [])
 
@@ -31,7 +33,7 @@ export default function VerificationBadge({ variant = 'full' }: Props) {
       if(!session?.user) { setLoading(false); return }
       const { data } = await supabase
         .from('tradesperson_profiles')
-        .select('id_verified, verification_status, id_submitted_at')
+        .select('id_verified, verification_status, id_submitted_at, rejection_reason')
         .eq('id', session.user.id)
         .single()
       if(data) {
@@ -39,6 +41,16 @@ export default function VerificationBadge({ variant = 'full' }: Props) {
         else if(data.verification_status==='pending')  setStatus('pending')
         else if(data.verification_status==='rejected') setStatus('rejected')
         else                                           setStatus('unsubmitted')
+
+        if(data.rejection_reason) setRejectionReason(data.rejection_reason)
+        if(data.id_submitted_at)  setSubmittedAt(data.id_submitted_at)
+
+        // Allow resubmit if pending > 24h or rejected
+        if(data.verification_status==='pending' && data.id_submitted_at) {
+          const hrs = (Date.now() - new Date(data.id_submitted_at).getTime()) / (1000*60*60)
+          if(hrs > 24) setCanResubmit(true)
+        }
+        if(data.verification_status==='rejected') setCanResubmit(true)
       }
     } catch(e) { console.log('Verification status error:', e) }
     setLoading(false)
@@ -189,19 +201,35 @@ export default function VerificationBadge({ variant = 'full' }: Props) {
 
   if(status === 'pending') return (
     <div style={{...card, background:'rgba(232,160,32,.05)', borderColor:'rgba(232,160,32,.2)'}}>
-      <div style={{display:'flex',alignItems:'center',gap:12}}>
+      <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:canResubmit?14:0}}>
         <div style={{width:40,height:40,borderRadius:'50%',background:'rgba(232,160,32,.12)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:18}}>
           ⏳
         </div>
-        <div>
+        <div style={{flex:1}}>
           <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:13,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:'#b87a00',marginBottom:2}}>
             Verification in progress
           </div>
           <div style={{fontSize:12,color:'rgba(184,122,0,.8)',lineHeight:1.5}}>
-            Your ID is being reviewed by the Lungisa team. This usually takes less than 24 hours. You&apos;ll get an email and notification when it&apos;s done.
+            Your ID is being reviewed by the Lungisa team. Usually takes less than 24 hours.
+            {submittedAt && (
+              <span style={{display:'block',marginTop:4,fontSize:11,color:'rgba(184,122,0,.6)'}}>
+                Submitted {new Date(submittedAt).toLocaleDateString('en-ZA',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}
+              </span>
+            )}
           </div>
         </div>
       </div>
+      {canResubmit && (
+        <div style={{borderTop:'1px solid rgba(232,160,32,.15)',paddingTop:12}}>
+          <div style={{fontSize:12,color:'rgba(184,122,0,.7)',marginBottom:10,lineHeight:1.5}}>
+            ⚠ It&apos;s been over 24 hours. You can resubmit your ID if you haven&apos;t heard back.
+          </div>
+          <button onClick={()=>{setShowUpload(true); setStatus('unsubmitted')}}
+            style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:'rgba(232,160,32,.15)',color:'#b87a00',border:'1px solid rgba(232,160,32,.3)',padding:'9px 18px',borderRadius:6,cursor:'pointer',width:'100%'}}>
+            Resubmit ID →
+          </button>
+        </div>
+      )}
     </div>
   )
 
@@ -210,17 +238,31 @@ export default function VerificationBadge({ variant = 'full' }: Props) {
       <div style={{display:'flex',alignItems:'flex-start',gap:12,marginBottom:14}}>
         <div style={{width:40,height:40,borderRadius:'50%',background:'rgba(226,75,74,.1)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:18}}>✗</div>
         <div>
-          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:13,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:'#b03030',marginBottom:2}}>
-            Verification failed
+          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:13,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:'#b03030',marginBottom:4}}>
+            Verification unsuccessful
           </div>
-          <div style={{fontSize:12,color:'rgba(176,48,48,.8)',lineHeight:1.4}}>
-            We couldn&apos;t verify your ID. Please re-upload a clear photo and try again.
+          {rejectionReason ? (
+            <div style={{background:'rgba(226,75,74,.08)',border:'1px solid rgba(226,75,74,.15)',borderRadius:6,padding:'10px 12px',marginBottom:8}}>
+              <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(176,48,48,.7)',marginBottom:4}}>
+                Reason from Lungisa team:
+              </div>
+              <div style={{fontSize:13,color:'rgba(176,48,48,.9)',lineHeight:1.5}}>
+                {rejectionReason}
+              </div>
+            </div>
+          ) : (
+            <div style={{fontSize:12,color:'rgba(176,48,48,.8)',lineHeight:1.4,marginBottom:8}}>
+              We couldn&apos;t verify your ID. Please re-upload a clear photo and try again.
+            </div>
+          )}
+          <div style={{fontSize:11,color:'rgba(176,48,48,.6)',lineHeight:1.5}}>
+            Tips: Make sure your ID is well-lit, not blurry, and all 4 corners are visible. Your selfie must clearly show your face.
           </div>
         </div>
       </div>
       <button onClick={()=>setShowUpload(true)}
         style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:'#C4593A',color:'#fff',border:'none',padding:'10px 18px',borderRadius:6,cursor:'pointer',width:'100%'}}>
-        Re-upload ID →
+        Resubmit ID →
       </button>
     </div>
   )

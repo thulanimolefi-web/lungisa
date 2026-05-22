@@ -18,7 +18,8 @@ export default function AdminPanel() {
   const [disputes, setDisputes] = useState<any[]>([])
   const [users, setUsers]       = useState<any[]>([])
   const [jobs, setJobs]         = useState<any[]>([])
-  const [toast, setToast]       = useState('')
+  const [toast, setToast]           = useState('')
+  const [rejectionInputs, setRejectionInputs] = useState<Record<string,string>>({})
 
   useEffect(()=>{
     checkAuth()
@@ -103,7 +104,7 @@ export default function AdminPanel() {
       .from('profiles')
       .select(`
         id, full_name, email, phone, role, area, created_at,
-        tradesperson_profiles(trade_category, service_areas, rating_avg, jobs_completed, id_verified, verification_status)
+        tradesperson_profiles(trade_category, service_areas, rating_avg, jobs_completed, id_verified, verification_status, rejection_reason)
       `)
       .order('created_at', {ascending:false})
       .limit(50)
@@ -143,8 +144,45 @@ export default function AdminPanel() {
   }
 
   async function verifyTradesperson(userId:string){
-    await supabase.from('tradesperson_profiles').update({ id_verified:true, verification_status:'verified' }).eq('id', userId)
+    await supabase.from('tradesperson_profiles').update({
+      id_verified:true,
+      verification_status:'verified',
+      rejection_reason: null,
+    }).eq('id', userId)
+
+    // Notify tradesperson
+    await supabase.from('notifications').insert({
+      user_id:  userId,
+      type:     'id_verified',
+      title:    '✅ Identity verified!',
+      message:  'Your ID has been verified. Your verified badge is now visible on all your bids.',
+      link:     '/dashboard',
+      read:     false,
+    })
+
     showToast('Tradesperson verified ✓')
+    loadUsers()
+  }
+
+  async function rejectTradesperson(userId:string, reason:string){
+    if(!reason.trim()){ showToast('Please enter a rejection reason'); return }
+    await supabase.from('tradesperson_profiles').update({
+      id_verified:         false,
+      verification_status: 'rejected',
+      rejection_reason:    reason,
+    }).eq('id', userId)
+
+    // Notify tradesperson
+    await supabase.from('notifications').insert({
+      user_id:  userId,
+      type:     'id_rejected',
+      title:    'ID verification unsuccessful',
+      message:  `Your ID could not be verified. Reason: ${reason}. Please resubmit.`,
+      link:     '/dashboard',
+      read:     false,
+    })
+
+    showToast('Tradesperson rejected with reason ✓')
     loadUsers()
   }
 
@@ -488,9 +526,36 @@ export default function AdminPanel() {
                           </td>
                           <td>
                             {u.tradesperson_profiles?.verification_status==='pending'&&(
-                              <button className="btn-sm btn-green" onClick={()=>verifyTradesperson(u.id)}>
-                                ✓ Verify
-                              </button>
+                              <div style={{display:'flex',flexDirection:'column',gap:6,minWidth:200}}>
+                                <div style={{display:'flex',gap:6}}>
+                                  <button className="btn-sm btn-green" onClick={()=>verifyTradesperson(u.id)}>
+                                    ✓ Verify
+                                  </button>
+                                </div>
+                                <div style={{display:'flex',gap:6}}>
+                                  <input
+                                    type="text"
+                                    placeholder="Rejection reason..."
+                                    value={rejectionInputs[u.id]||''}
+                                    onChange={e=>setRejectionInputs(r=>({...r,[u.id]:e.target.value}))}
+                                    style={{flex:1,background:'rgba(226,75,74,.08)',border:'1px solid rgba(226,75,74,.2)',borderRadius:4,padding:'5px 8px',fontSize:11,color:'#F5F0E8',outline:'none'}}
+                                  />
+                                  <button className="btn-sm btn-red"
+                                    onClick={()=>rejectTradesperson(u.id, rejectionInputs[u.id]||'')}>
+                                    ✗
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                            {u.tradesperson_profiles?.verification_status==='rejected'&&(
+                              <div style={{display:'flex',flexDirection:'column',gap:6,minWidth:200}}>
+                                <div style={{fontSize:11,color:'rgba(226,75,74,.7)',marginBottom:4}}>
+                                  {u.tradesperson_profiles.rejection_reason||'No reason given'}
+                                </div>
+                                <button className="btn-sm btn-green" onClick={()=>verifyTradesperson(u.id)}>
+                                  ✓ Verify anyway
+                                </button>
+                              </div>
                             )}
                           </td>
                         </tr>
