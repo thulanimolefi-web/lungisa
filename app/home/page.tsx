@@ -1073,14 +1073,15 @@ export default function HomeDashboard() {
                                               <div style={{fontSize:12,color:'var(--charcoal-l)'}}>agreed amount</div>
                                             </div>
                                             <div className="escrow-note">🔒 Your payment is held in escrow. <strong>{bid.name.split(' ')[0]}</strong> only gets paid once you confirm the job is done.</div>
-                                            <div className="pay-grid">
-                                              <div className="pay-btn" onClick={()=>releasePayment(selectedJob.id, agreedAmount)}>
-                                                <div className="pay-lbl">Pay by card</div>
-                                                <div className="pay-sub">Visa · Mastercard</div>
-                                              </div>
-                                              <div className="pay-btn" onClick={()=>releasePayment(selectedJob.id, agreedAmount)}>
-                                                <div className="pay-lbl">Pay by EFT</div>
-                                                <div className="pay-sub">Instant via Ozow</div>
+                                            <div onClick={()=>releasePayment(selectedJob.id, agreedAmount)}
+                                              style={{border:'1.5px solid var(--cream-d)',borderRadius:8,padding:'14px',background:'var(--white)',cursor:'pointer',textAlign:'center',transition:'all .18s',marginTop:8}}
+                                              onMouseEnter={e=>(e.currentTarget.style.borderColor='#C4593A')}
+                                              onMouseLeave={e=>(e.currentTarget.style.borderColor='var(--cream-d)')}>
+                                              <div style={{fontFamily:'var(--fc)',fontSize:13,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:'var(--charcoal)',marginBottom:3}}>Pay by card</div>
+                                              <div style={{fontSize:11,color:'var(--charcoal-l)'}}>Visa · Mastercard · Google Pay</div>
+                                              <div style={{marginTop:6,display:'flex',alignItems:'center',justifyContent:'center',gap:4}}>
+                                                <span style={{fontFamily:'var(--fc)',fontSize:9,fontWeight:600,letterSpacing:1,color:'rgba(44,44,40,.4)'}}>Secured by</span>
+                                                <span style={{fontFamily:'var(--fc)',fontSize:10,fontWeight:800,color:'#00B2FF',letterSpacing:.5}}>YOCO</span>
                                               </div>
                                             </div>
                                           </>
