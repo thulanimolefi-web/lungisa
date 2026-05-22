@@ -39,6 +39,7 @@ type JobData = {
   budget: number
   status: string
   posted: string
+  expiresAt: string|null
   bids: BidData[]
 }
 
@@ -213,6 +214,7 @@ export default function HomeDashboard() {
           budget:   j.budget_max||0,
           status:   j.status,
           posted:   getTimeAgo(j.created_at),
+          expiresAt: j.expires_at||null,
           bids:     jobBids.map((b:any, bi:number) => {
             const tp = profileMap[b.tradesperson_id]
             const tpProfile = tp?.tradesperson_profiles
@@ -848,7 +850,14 @@ export default function HomeDashboard() {
                             <div style={{flex:1,minWidth:0}}>
                               <div className="jc-cat">{job.emoji} {job.category}</div>
                               <div className="jc-title">{job.title}</div>
-                              <div className="jc-meta">📍 {job.area} · Posted {job.posted}</div>
+                              <div className="jc-meta">📍 {job.area} · Posted {job.posted}
+                                {job.expiresAt&&(()=>{
+                                  const daysLeft = Math.ceil((new Date(job.expiresAt).getTime()-Date.now())/(1000*60*60*24))
+                                  if(daysLeft<=3) return <span style={{marginLeft:8,color:'#E24B4A',fontFamily:'var(--fc)',fontSize:10,fontWeight:700,letterSpacing:1}}>⚠ Expires in {daysLeft}d</span>
+                                  if(daysLeft<=7) return <span style={{marginLeft:8,color:'#E8A020',fontFamily:'var(--fc)',fontSize:10,fontWeight:700,letterSpacing:1}}>Expires in {daysLeft}d</span>
+                                  return null
+                                })()}
+                              </div>
                             </div>
                             <div>
                               <div style={{fontFamily:'var(--fc)',fontSize:10,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',padding:'4px 10px',borderRadius:4,background:job.bids.length>0?'rgba(196,89,58,.1)':'rgba(0,0,0,.06)',color:job.bids.length>0?'var(--terra-d)':'var(--charcoal-l)'}}>

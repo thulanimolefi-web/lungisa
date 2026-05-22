@@ -139,11 +139,12 @@ export default function Dashboard() {
         .eq('tradesperson_id', session.user.id)
       const bidJobIds = new Set((myBids||[]).map((b:any)=>b.job_id))
 
-      // Fetch ALL open/bidding jobs — filter client side
+      // Fetch ALL open/bidding jobs — exclude expired
       const {data,error}=await supabase
         .from('jobs')
-        .select('id,title,category,area,urgency,budget_max,description,created_at,status,bid_count,homeowner_id,preferred_time')
+        .select('id,title,category,area,urgency,budget_max,description,created_at,status,bid_count,homeowner_id,preferred_time,expires_at')
         .in('status',['open','bidding'])
+        .or('expires_at.is.null,expires_at.gt.'+new Date().toISOString())
         .order('created_at',{ascending:false})
 
       console.log('[feed] raw jobs:', data?.length, error?.message)
