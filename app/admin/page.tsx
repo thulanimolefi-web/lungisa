@@ -123,74 +123,45 @@ export default function AdminPanel() {
     if(data) setJobs(data)
   }
 
-  async function markPayoutReleased(paymentId:string){
-    await supabase.from('payments').update({ status:'released' }).eq('id', paymentId)
-    showToast('Payment marked as released ✓')
-    loadPayouts()
-    loadStats()
-  }
-
-  async function resolveDispute(disputeId:string, jobId:string, resolution:'approve'|'reject'){
-    await supabase.from('job_disputes').update({ status:'resolved' }).eq('id', disputeId)
-    if(resolution==='approve'){
-      await supabase.from('jobs').update({ status:'completed' }).eq('id', jobId)
-      showToast('Dispute resolved — job marked complete ✓')
-    } else {
-      await supabase.from('jobs').update({ status:'cancelled' }).eq('id', jobId)
-      showToast('Dispute resolved — job cancelled ✓')
-    }
-    loadDisputes()
-    loadStats()
+  async function adminAction(payload: Record<string,any>) {
+    const res = await fetch('/api/admin-actions', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(payload),
+    })
+    const data = await res.json()
+    if(!res.ok) { showToast('Error: ' + (data.error||'Something went wrong')); return false }
+    return true
   }
 
   async function verifyTradesperson(userId:string){
-    await supabase.from('tradesperson_profiles').update({
-      id_verified:true,
-      verification_status:'verified',
-      rejection_reason: null,
-    }).eq('id', userId)
-
-    // Notify tradesperson
-    await supabase.from('notifications').insert({
-      user_id:  userId,
-      type:     'id_verified',
-      title:    '✅ Identity verified!',
-      message:  'Your ID has been verified. Your verified badge is now visible on all your bids.',
-      link:     '/dashboard',
-      read:     false,
-    })
-
-    showToast('Tradesperson verified ✓')
-    loadUsers()
+    const ok = await adminAction({ action:'verify_tradesperson', userId })
+    if(ok){ showToast('Tradesperson verified ✓'); loadUsers(); loadStats() }
   }
 
   async function rejectTradesperson(userId:string, reason:string){
     if(!reason.trim()){ showToast('Please enter a rejection reason'); return }
-    await supabase.from('tradesperson_profiles').update({
-      id_verified:         false,
-      verification_status: 'rejected',
-      rejection_reason:    reason,
-    }).eq('id', userId)
+    const ok = await adminAction({ action:'reject_tradesperson', userId, reason })
+    if(ok){ showToast('Rejection sent with reason ✓'); loadUsers(); loadStats() }
+  }
 
-    // Notify tradesperson
-    await supabase.from('notifications').insert({
-      user_id:  userId,
-      type:     'id_rejected',
-      title:    'ID verification unsuccessful',
-      message:  `Your ID could not be verified. Reason: ${reason}. Please resubmit.`,
-      link:     '/dashboard',
-      read:     false,
-    })
+  async function markPayoutReleased(paymentId:string){
+    const ok = await adminAction({ action:'release_payment', paymentId })
+    if(ok){ showToast('Payment marked as released ✓'); loadPayouts(); loadStats() }
+  }
 
-    showToast('Tradesperson rejected with reason ✓')
-    loadUsers()
+  async function resolveDispute(disputeId:string, jobId:string, resolution:'approve'|'reject'){
+    const action = resolution==='approve' ? 'resolve_dispute_approve' : 'resolve_dispute_reject'
+    const ok = await adminAction({ action, disputeId, jobId })
+    if(ok){
+      showToast(resolution==='approve' ? 'Dispute resolved — job complete ✓' : 'Dispute resolved — job cancelled ✓')
+      loadDisputes(); loadStats()
+    }
   }
 
   async function cancelJob(jobId:string){
-    await supabase.from('jobs').update({ status:'cancelled' }).eq('id', jobId)
-    showToast('Job cancelled ✓')
-    loadJobs()
-    loadStats()
+    const ok = await adminAction({ action:'cancel_job', jobId })
+    if(ok){ showToast('Job cancelled ✓'); loadJobs(); loadStats() }
   }
 
   function showToast(msg:string){
