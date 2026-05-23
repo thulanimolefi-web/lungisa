@@ -65,7 +65,7 @@ export default function Dashboard() {
   const [completionBidId, setCompletionBidId] = useState<string|null>(null)
   const [completionReport, setCompletionReport] = useState('')
   const [completionDate, setCompletionDate] = useState(new Date().toISOString().split('T')[0])
-  const [completionPhotos, setCompletionPhotos] = useState<{url:string,name:string}[]>([])
+  const [completionPhotos, setCompletionPhotos] = useState<{url:string,name:string,type:'image'|'video'}[]>([])
   const [uploadingCompletion, setUploadingCompletion] = useState(false)
   const [submittingCompletion, setSubmittingCompletion] = useState(false)
   const [submittedCompletions, setSubmittedCompletions] = useState<Set<string>>(new Set())
@@ -331,6 +331,22 @@ export default function Dashboard() {
     setTimeout(()=>setToasts(t=>t.filter(x=>x.id!==id)),4500)
   }
 
+  async function withdrawBid(bidId:string, jobId:string){
+    try{
+      await supabase.from('bids').delete().eq('id', bidId)
+      // Reset job to open if no bids remain
+      const {data:remaining} = await supabase
+        .from('bids').select('id').eq('job_id', jobId)
+      if(!remaining || remaining.length === 0){
+        await supabase.from('jobs').update({ status:'open', bid_count:0 }).eq('id', jobId)
+      } else {
+        await supabase.from('jobs').update({ bid_count: remaining.length }).eq('id', jobId)
+      }
+      toast('Bid withdrawn','Your bid has been removed',false)
+      loadMyBids()
+    }catch(e){ console.log('Withdraw error:',e) }
+  }
+
   async function acceptCounter(bid:Bid){
     const amount=bid.counterAmount!
     try{
@@ -387,8 +403,16 @@ export default function Dashboard() {
 
   async function uploadCompletionPhoto(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
-    if(!file || completionPhotos.length >= 5) return
-    if(file.size > 10*1024*1024) { toast('File too large','Max 10MB per photo',false); return }
+    if(!file) return
+    const isVideo = file.type.startsWith('video/')
+    const isImage = file.type.startsWith('image/')
+    // Max 4 images + 1 video
+    const currentVideos = completionPhotos.filter(p=>p.type==='video').length
+    const currentImages = completionPhotos.filter(p=>p.type==='image').length
+    if(isVideo && currentVideos >= 1) { toast('Max 1 video','Remove the existing video to add a new one',false); return }
+    if(isImage && currentImages >= 4) { toast('Max 4 photos','You can add up to 4 photos',false); return }
+    const maxSize = isVideo ? 50*1024*1024 : 10*1024*1024
+    if(file.size > maxSize) { toast('File too large',isVideo?'Max 50MB for video':'Max 10MB per photo',false); return }
     setUploadingCompletion(true)
     try {
       const ext  = file.name.split('.').pop()
@@ -398,11 +422,11 @@ export default function Dashboard() {
         .upload(path, file, { cacheControl:'3600', upsert:false, contentType: file.type })
       if(!error && data) {
         const { data: urlData } = supabase.storage.from('job-photos').getPublicUrl(data.path)
-        setCompletionPhotos(prev => [...prev, { url: urlData.publicUrl, name: file.name }])
+        setCompletionPhotos(prev => [...prev, { url: urlData.publicUrl, name: file.name, type: isVideo?'video':'image' }])
       } else {
         toast('Upload failed', error?.message||'Try again', false)
       }
-    } catch(e) { console.log('Completion photo upload error:', e) }
+    } catch(e) { console.log('Upload error:', e) }
     setUploadingCompletion(false)
     if(e.target) e.target.value = ''
   }
@@ -435,6 +459,7 @@ export default function Dashboard() {
           completionPhotos.map((p, i) => ({
             completion_id: completion.id,
             storage_url:   p.url,
+            file_type:     p.type,
             sort_order:    i,
           }))
         )
@@ -914,6 +939,22 @@ export default function Dashboard() {
                     {/* DECLINED */}
                     {isDeclined&&(<div style={{background:'rgba(226,75,74,.06)',border:'1px solid rgba(226,75,74,.15)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(226,75,74,.7)',lineHeight:1.5}}>✗ Not accepted this time. Keep bidding on new jobs.</div>)}
 
+                    {/* PENDING — show withdraw option */}
+                    {!homeownerCountered&&!iSentCounter&&!isAccepted&&!isDeclined&&!isCompleted&&!isInEscrow&&(
+                      <div style={{display:'flex',justifyContent:'flex-end',marginTop:4,gap:8,alignItems:'center'}}>
+                        <span style={{fontSize:11,color:'rgba(245,240,232,.25)',fontFamily:"'Barlow Condensed',sans-serif"}}>
+                          Changed your mind?
+                        </span>
+                        <button
+                          onClick={()=>{ if(window.confirm('Withdraw this bid? This cannot be undone.')) withdrawBid(b.id, b.jobId) }}
+                          style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1,textTransform:'uppercase',background:'transparent',border:'1px solid rgba(226,75,74,.2)',color:'rgba(226,75,74,.5)',padding:'5px 12px',borderRadius:4,cursor:'pointer',transition:'all .15s'}}
+                          onMouseEnter={e=>{e.currentTarget.style.borderColor='rgba(226,75,74,.5)';e.currentTarget.style.color='#E24B4A'}}
+                          onMouseLeave={e=>{e.currentTarget.style.borderColor='rgba(226,75,74,.2)';e.currentTarget.style.color='rgba(226,75,74,.5)'}}>
+                          ✕ Withdraw bid
+                        </button>
+                      </div>
+                    )}
+
                     {/* COMPLETED — payment released */}
                     {isCompleted&&(
                       <div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(61,170,106,.9)',lineHeight:1.5}}>
@@ -1375,17 +1416,31 @@ export default function Dashboard() {
               />
               <div style={{fontSize:10,color:'rgba(245,240,232,.25)',textAlign:'right',marginBottom:16}}>{500-completionReport.length} chars left</div>
 
-              {/* Photo upload */}
+              {/* Photo/Video upload */}
               <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:8}}>
-                Photos of completed work <span style={{fontWeight:400,fontSize:9,textTransform:'none',letterSpacing:0,color:'rgba(245,240,232,.25)'}}>up to 5 · strongly recommended</span>
+                Photos & video <span style={{fontWeight:400,fontSize:9,textTransform:'none',letterSpacing:0,color:'rgba(245,240,232,.25)'}}>up to 4 photos + 1 video · strongly recommended</span>
               </div>
 
-              {/* Photo grid */}
-              <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:12}}>
+              {/* Media grid */}
+              <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:10}}>
                 {completionPhotos.map((p,i)=>(
-                  <div key={i} style={{width:80,height:80,borderRadius:8,overflow:'hidden',position:'relative',border:'2px solid rgba(61,170,106,.3)',flexShrink:0,background:'#111'}}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={p.url} alt={`Completion ${i+1}`} style={{width:'100%',height:'100%',objectFit:'cover'}}/>
+                  <div key={i} style={{width:80,height:80,borderRadius:8,overflow:'hidden',position:'relative',border:`2px solid ${p.type==='video'?'rgba(46,127,212,.4)':'rgba(61,170,106,.3)'}`,flexShrink:0,background:'#111'}}>
+                    {p.type==='video'?(
+                      <>
+                        <video src={p.url} style={{width:'100%',height:'100%',objectFit:'cover'}} muted playsInline/>
+                        <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,.35)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                          <div style={{width:24,height:24,borderRadius:'50%',background:'rgba(255,255,255,.9)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                            <span style={{fontSize:9,marginLeft:2}}>▶</span>
+                          </div>
+                        </div>
+                        <div style={{position:'absolute',bottom:2,left:2,background:'rgba(46,127,212,.85)',borderRadius:3,padding:'1px 5px',fontSize:8,color:'#fff',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700}}>
+                          VIDEO
+                        </div>
+                      </>
+                    ):(
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={p.url} alt={`Completion ${i+1}`} style={{width:'100%',height:'100%',objectFit:'cover'}}/>
+                    )}
                     <button
                       onClick={()=>setCompletionPhotos(prev=>prev.filter((_,j)=>j!==i))}
                       style={{position:'absolute',top:3,right:3,background:'rgba(0,0,0,.8)',border:'none',borderRadius:'50%',width:20,height:20,cursor:'pointer',color:'#fff',fontSize:11,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700}}>
@@ -1393,19 +1448,40 @@ export default function Dashboard() {
                     </button>
                   </div>
                 ))}
-                {completionPhotos.length < 5 && (
-                  <label style={{width:80,height:80,borderRadius:8,border:'2px dashed rgba(255,255,255,.15)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',cursor:'pointer',position:'relative',flexShrink:0,transition:'border-color .2s'}}
-                    onMouseEnter={e=>(e.currentTarget.style.borderColor='rgba(61,170,106,.4)')}
-                    onMouseLeave={e=>(e.currentTarget.style.borderColor='rgba(255,255,255,.15)')}>
+              </div>
+
+              {/* Upload buttons */}
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:12}}>
+                {/* Photo upload */}
+                {completionPhotos.filter(p=>p.type==='image').length < 4 && (
+                  <label style={{borderRadius:8,border:'2px dashed rgba(61,170,106,.3)',display:'flex',alignItems:'center',justifyContent:'center',gap:8,cursor:'pointer',position:'relative',padding:'10px',transition:'border-color .2s',background:'rgba(61,170,106,.04)'}}
+                    onMouseEnter={e=>(e.currentTarget.style.borderColor='rgba(61,170,106,.5)')}
+                    onMouseLeave={e=>(e.currentTarget.style.borderColor='rgba(61,170,106,.3)')}>
                     <input type="file" accept="image/jpeg,image/png,image/webp"
                       onChange={uploadCompletionPhoto}
                       style={{position:'absolute',inset:0,opacity:0,cursor:'pointer',width:'100%',height:'100%'}}/>
+                    <span style={{fontSize:16}}>📷</span>
+                    <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,color:'rgba(61,170,106,.7)',letterSpacing:.5}}>
+                      Add photo ({completionPhotos.filter(p=>p.type==='image').length}/4)
+                    </span>
+                  </label>
+                )}
+                {/* Video upload */}
+                {completionPhotos.filter(p=>p.type==='video').length < 1 && (
+                  <label style={{borderRadius:8,border:'2px dashed rgba(46,127,212,.3)',display:'flex',alignItems:'center',justifyContent:'center',gap:8,cursor:'pointer',position:'relative',padding:'10px',transition:'border-color .2s',background:'rgba(46,127,212,.04)'}}
+                    onMouseEnter={e=>(e.currentTarget.style.borderColor='rgba(46,127,212,.5)')}
+                    onMouseLeave={e=>(e.currentTarget.style.borderColor='rgba(46,127,212,.3)')}>
+                    <input type="file" accept="video/mp4,video/mov,video/quicktime,video/*"
+                      onChange={uploadCompletionPhoto}
+                      style={{position:'absolute',inset:0,opacity:0,cursor:'pointer',width:'100%',height:'100%'}}/>
                     {uploadingCompletion?(
-                      <div style={{width:16,height:16,border:'2px solid rgba(255,255,255,.2)',borderTopColor:'#fff',borderRadius:'50%',animation:'spin .6s linear infinite'}}/>
+                      <div style={{width:14,height:14,border:'2px solid rgba(255,255,255,.2)',borderTopColor:'#fff',borderRadius:'50%',animation:'spin .6s linear infinite'}}/>
                     ):(
                       <>
-                        <span style={{fontSize:20,marginBottom:2}}>📷</span>
-                        <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:8,fontWeight:600,color:'rgba(245,240,232,.3)',letterSpacing:.5}}>ADD</span>
+                        <span style={{fontSize:16}}>🎥</span>
+                        <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,color:'rgba(46,127,212,.7)',letterSpacing:.5}}>
+                          Add video (1 max)
+                        </span>
                       </>
                     )}
                   </label>
@@ -1414,7 +1490,7 @@ export default function Dashboard() {
 
               {completionPhotos.length === 0 && (
                 <div style={{fontSize:11,color:'rgba(245,240,232,.25)',fontStyle:'italic',marginBottom:12}}>
-                  Photos help the homeowner verify the work was done. Jobs with photos are confirmed faster.
+                  Photos and video help the homeowner verify the work was done. Jobs with media are confirmed faster.
                 </div>
               )}
 

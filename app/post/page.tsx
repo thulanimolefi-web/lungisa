@@ -18,7 +18,43 @@ const URGENCIES = [
   {label:'This week',color:'#3DAA6A'},
   {label:'Flexible',color:'#D4C9B4'},
 ]
-const AREAS = ['Soweto','Sandton','Roodepoort','Midrand','Randburg','Fourways','Boksburg','Pretoria Central','Centurion']
+const AREAS = [
+  // Johannesburg North
+  'Sandton','Fourways','Bryanston','Morningside','Rivonia','Sunninghill',
+  'Paulshof','Kyalami','Halfway House','Woodmead','Kramerville',
+  // Johannesburg Central & South
+  'Johannesburg CBD','Parktown','Rosebank','Melrose','Illovo','Hyde Park',
+  'Northcliff','Auckland Park','Greenside','Linden','Victory Park',
+  'Mayfair','Fordsburg','Newtown','Maboneng',
+  // Johannesburg West
+  'Randburg','Ferndale','Honeydew','Ruimsig','Florida','Krugersdorp',
+  'Roodepoort','Northgate','Weltevredenpark','Constantia Kloof',
+  'Strubensvalley','Radiokop','Wilgeheuwel',
+  // Johannesburg South & SW
+  'Soweto','Lenasia','Ennerdale','Orange Farm','Alberton','Germiston',
+  'Meyersdal','Glenvista','Bassonia','Kibler Park','Mulbarton',
+  'Winchester Hills','Turffontein','Booysens','Ophirton',
+  // East Rand / Ekurhuleni
+  'Boksburg','Benoni','Brakpan','Springs','Edenvale','Bedfordview',
+  'Kempton Park','Tembisa','Ekurhuleni','Vosloorus','Daveyton',
+  'Katlehong','Thokoza','Nigel','Heidelberg','Duduza',
+  // Midrand
+  'Midrand','Vorna Valley','Waterfall','Jukskei Park',
+  'Grand Central','Carlswald',
+  // Pretoria / Tshwane
+  'Pretoria Central','Centurion','Pretoria East','Pretoria North',
+  'Pretoria West','Soshanguve','Mamelodi','Atteridgeville','Hatfield',
+  'Menlyn','Lynnwood','Faerie Glen','Moreleta Park','Garsfontein',
+  'Queenswood','Arcadia','Muckleneuk','Brooklyn','Groenkloof',
+  'Montana','Gezina','Silverton','Eersterust','Watloo',
+  'Irene','Rooihuiskraal','Olievenhoutbosch',
+  // West Rand
+  'Randfontein','Westonaria','Carletonville','Fochville',
+  'Magaliesburg','Chamdor',
+  // Sedibeng
+  'Vereeniging','Vanderbijlpark','Meyerton','Evaton','Sebokeng',
+  'Sharpeville','Bophelong','Three Rivers',
+]
 const TIMES = ['Any time','Morning (7am–12pm)','Afternoon (12pm–5pm)','Evening (5pm–8pm)']
 const AVATAR_COLORS = ['#8B3A2A','#5A3A2A','#2A4A3A','#3A4A6A','#6A3A5A','#4A5A2A']
 
