@@ -221,9 +221,12 @@ export default function LandingPage() {
 
   const trades = [
     {e:'🔧',n:'Plumbing'},{e:'⚡',n:'Electrical'},{e:'🎨',n:'Painting'},
-    {e:'🪚',n:'Carpentry'},{e:'🏠',n:'Roofing'},{e:'🪟',n:'Tiling'},
-    {e:'☀️',n:'Solar'},{e:'🌿',n:'Landscaping'},{e:'🔩',n:'Welding'},
-    {e:'🧹',n:'Cleaning'},{e:'💧',n:'Waterproofing'},{e:'🛠️',n:'General'},
+    {e:'🪚',n:'Carpentry'},{e:'🏠',n:'Roofing'},{e:'🚿',n:'Tiling'},
+    {e:'☀️',n:'Solar'},{e:'🌿',n:'Landscaping'},{e:'💧',n:'Waterproofing'},
+    {e:'🔥',n:'Welding'},{e:'🧹',n:'Cleaning'},{e:'🔩',n:'General'},
+    {e:'🚛',n:'Moving'},{e:'🐛',n:'Pest Control'},{e:'🔌',n:'Appliance Repair'},
+    {e:'❄️',n:'Air Conditioning'},{e:'🔐',n:'Security'},{e:'🧱',n:'Paving'},
+    {e:'🏗️',n:'Plastering'},
   ]
 
   const testimonials = [

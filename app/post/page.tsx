@@ -7,10 +7,13 @@ import { useRouter } from 'next/navigation'
 type Step = 0 | 1 | 2 | 3 | 4 | 5
 
 const CATEGORIES = [
-  {name:'Plumbing',emoji:'🔧'},{name:'Electrical',emoji:'⚡'},{name:'Painting',emoji:'🎨'},
-  {name:'Carpentry',emoji:'🪚'},{name:'Roofing',emoji:'🏠'},{name:'Tiling',emoji:'🚿'},
-  {name:'Solar',emoji:'☀️'},{name:'Garden',emoji:'🌿'},{name:'Waterproofing',emoji:'💧'},
-  {name:'Welding',emoji:'🔥'},{name:'Cleaning',emoji:'🧹'},{name:'General',emoji:'🔩'},
+  {name:'Plumbing',      emoji:'🔧'},{name:'Electrical',     emoji:'⚡'},{name:'Painting',       emoji:'🎨'},
+  {name:'Carpentry',     emoji:'🪚'},{name:'Roofing',        emoji:'🏠'},{name:'Tiling',         emoji:'🚿'},
+  {name:'Solar',         emoji:'☀️'},{name:'Landscaping',    emoji:'🌿'},{name:'Waterproofing',  emoji:'💧'},
+  {name:'Welding',       emoji:'🔥'},{name:'Cleaning',       emoji:'🧹'},{name:'General',        emoji:'🔩'},
+  {name:'Moving',        emoji:'🚛'},{name:'Pest Control',   emoji:'🐛'},{name:'Appliance Repair',emoji:'🔌'},
+  {name:'Air Conditioning',emoji:'❄️'},{name:'Security',    emoji:'🔐'},{name:'Paving',         emoji:'🧱'},
+  {name:'Plastering',    emoji:'🏗️'},
 ]
 const URGENCIES = [
   {label:'Today — emergency',color:'#E24B4A'},
