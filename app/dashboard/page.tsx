@@ -110,7 +110,7 @@ export default function Dashboard() {
       if(session?.user){
         const {data}=await supabase
           .from('profiles')
-          .select(`*, tradesperson_profiles(trade_category,service_areas,years_experience,rating_avg,rating_count,jobs_completed,id_verified,verification_status)`)
+          .select(`*, tradesperson_profiles(trade_category,service_areas,years_experience,rating_avg,rating_count,jobs_completed,id_verified,verification_status,is_founding_member)`)
           .eq('id',session.user.id)
           .single()
         if(data) setProfile(data)
@@ -673,6 +673,11 @@ export default function Dashboard() {
               <div style={S.snName}>{displayName}</div>
               <div style={S.snTrade}>{displayTrade}</div>
               <div style={S.snRating}>{displayRating} · {displayJobs} jobs</div>
+              {profile?.tradesperson_profiles?.is_founding_member&&(
+                <div style={{marginTop:5,display:'inline-flex',alignItems:'center',gap:4,background:'rgba(196,89,58,.12)',border:'1px solid rgba(196,89,58,.25)',borderRadius:4,padding:'2px 7px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:'#E07A5F'}}>
+                  🔨 Founding Member
+                </div>
+              )}
               <div style={{marginTop:5}}><VerificationBadge variant="compact" /></div>
             </div>
           </div>
@@ -708,6 +713,92 @@ export default function Dashboard() {
           {/* JOB FEED */}
           {view==='feed'&&(
             <div style={S.content}>
+
+              {/* ── FOUNDING MEMBER BANNER ─────────────────────── */}
+              {profile?.tradesperson_profiles?.is_founding_member&&(
+                <div style={{background:'linear-gradient(135deg,#2C1810 0%,#1A1A16 100%)',border:'1px solid rgba(196,89,58,.4)',borderRadius:14,padding:'20px 24px',marginBottom:20,position:'relative',overflow:'hidden'}}>
+                  {/* Background texture */}
+                  <div style={{position:'absolute',top:-20,right:-20,fontSize:80,opacity:.06,transform:'rotate(15deg)'}}>🔨</div>
+                  <div style={{position:'absolute',bottom:-20,right:60,fontSize:60,opacity:.04,transform:'rotate(-10deg)'}}>🔨</div>
+
+                  <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:16,flexWrap:'wrap'}}>
+                    <div style={{flex:1}}>
+                      <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:8}}>
+                        <span style={{fontSize:22}}>🔨</span>
+                        <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:18,letterSpacing:2,color:'#E07A5F'}}>
+                          FOUNDING MEMBER
+                        </div>
+                        <div style={{background:'rgba(196,89,58,.2)',border:'1px solid rgba(196,89,58,.4)',borderRadius:100,padding:'2px 10px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:700,letterSpacing:2,textTransform:'uppercase',color:'#E07A5F'}}>
+                          Pre-launch
+                        </div>
+                      </div>
+                      <p style={{fontSize:13,color:'rgba(245,240,232,.65)',lineHeight:1.6,marginBottom:12,maxWidth:480}}>
+                        You&apos;re one of the <strong style={{color:'#E07A5F'}}>first 100 tradespeople</strong> on Lungisa. This badge is permanently yours — only 100 will ever exist. It appears on every bid you place, giving homeowners confidence to choose you over tradespeople who joined later.
+                      </p>
+                      <div style={{display:'flex',gap:16,flexWrap:'wrap'}}>
+                        <div style={{display:'flex',alignItems:'center',gap:6}}>
+                          <div style={{width:6,height:6,borderRadius:'50%',background:'#3DAA6A'}}/>
+                          <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,color:'rgba(245,240,232,.5)',letterSpacing:.5}}>Permanent badge on your profile</span>
+                        </div>
+                        <div style={{display:'flex',alignItems:'center',gap:6}}>
+                          <div style={{width:6,height:6,borderRadius:'50%',background:'#3DAA6A'}}/>
+                          <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,color:'rgba(245,240,232,.5)',letterSpacing:.5}}>Priority job notifications at launch</span>
+                        </div>
+                        <div style={{display:'flex',alignItems:'center',gap:6}}>
+                          <div style={{width:6,height:6,borderRadius:'50%',background:'#E8A020'}}/>
+                          <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,color:'rgba(232,160,32,.7)',letterSpacing:.5}}>🚀 Launch: 10 June 2026</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Referral teaser */}
+                  <div style={{marginTop:16,paddingTop:14,borderTop:'1px solid rgba(196,89,58,.15)',display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}>
+                    <div>
+                      <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(232,160,32,.8)',marginBottom:4}}>
+                        🎁 Coming soon — Founding Member Referral Rewards
+                      </div>
+                      <div style={{fontSize:12,color:'rgba(245,240,232,.4)',lineHeight:1.5}}>
+                        Refer fellow tradespeople to Lungisa and earn rewards when they complete their first job. Exclusive to founding members. Details dropping at launch.
+                      </div>
+                    </div>
+                    <div style={{background:'rgba(232,160,32,.08)',border:'1px solid rgba(232,160,32,.2)',borderRadius:6,padding:'6px 14px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',color:'#E8A020',whiteSpace:'nowrap',flexShrink:0}}>
+                      Coming 10 June
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── VERIFICATION PUSH ──────────────────────────── */}
+              {profile?.tradesperson_profiles?.verification_status!=='verified'&&profile?.tradesperson_profiles?.verification_status!=='pending'&&(
+                <div style={{background:'rgba(196,89,58,.06)',border:'1px solid rgba(196,89,58,.25)',borderRadius:10,padding:'16px 20px',marginBottom:20,display:'flex',alignItems:'center',justifyContent:'space-between',gap:16,flexWrap:'wrap'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:12}}>
+                    <span style={{fontSize:20,flexShrink:0}}>🪪</span>
+                    <div>
+                      <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:13,fontWeight:700,letterSpacing:.5,color:'#F5F0E8',marginBottom:3}}>
+                        Verify your ID to unlock more jobs
+                      </div>
+                      <div style={{fontSize:12,color:'rgba(245,240,232,.5)',lineHeight:1.5}}>
+                        Verified tradespeople win bids at <strong style={{color:'#E07A5F'}}>2x the rate</strong> of unverified ones. Takes less than 2 minutes.
+                      </div>
+                    </div>
+                  </div>
+                  <button onClick={()=>setView('profile')}
+                    style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:'#C4593A',color:'#fff',border:'none',padding:'10px 20px',borderRadius:6,cursor:'pointer',flexShrink:0,whiteSpace:'nowrap'}}>
+                    Verify now →
+                  </button>
+                </div>
+              )}
+
+              {/* Pending verification — show different message */}
+              {profile?.tradesperson_profiles?.verification_status==='pending'&&(
+                <div style={{background:'rgba(232,160,32,.06)',border:'1px solid rgba(232,160,32,.2)',borderRadius:10,padding:'14px 20px',marginBottom:20,display:'flex',alignItems:'center',gap:12}}>
+                  <span style={{fontSize:18}}>⏳</span>
+                  <div style={{fontSize:12,color:'rgba(232,160,32,.8)',lineHeight:1.5}}>
+                    <strong>ID verification in progress</strong> — the Lungisa team is reviewing your documents. Usually under 24 hours. You&apos;ll get a notification when it&apos;s done.
+                  </div>
+                </div>
+              )}
               <div style={{...S.statStrip}} className="stat-strip">
                 {[
                   {label:'This week',   val:earnings.thisWeek>0?`R${earnings.thisWeek.toLocaleString()}`:'R0',          color:'#52C47F',delta:earnings.thisWeek>0?'Earned this week':'Complete your first job'},
@@ -1068,6 +1159,11 @@ export default function Dashboard() {
                     <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
                       <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:28,letterSpacing:1,color:'#F5F0E8',lineHeight:1}}>{displayName.toUpperCase()}</div>
                       {isVerified&&(<span style={{display:'inline-flex',alignItems:'center',gap:4,background:'rgba(61,170,106,.12)',border:'1px solid rgba(61,170,106,.25)',borderRadius:4,padding:'3px 8px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:'#3DAA6A'}}><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Verified</span>)}
+                      {profile?.tradesperson_profiles?.is_founding_member&&(
+                        <span style={{display:'inline-flex',alignItems:'center',gap:4,background:'rgba(196,89,58,.12)',border:'1px solid rgba(196,89,58,.3)',borderRadius:4,padding:'3px 8px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:'#E07A5F'}}>
+                          🔨 Founding Member
+                        </span>
+                      )}
                     </div>
                     <div style={{fontSize:13,color:'rgba(245,240,232,.5)',marginTop:4}}>{displayTrade} · {profile?.tradesperson_profiles?.years_experience||0} yrs experience</div>
                     <div style={{fontSize:13,color:'#E8A020',marginTop:3}}>{displayRating} · {displayJobs} completed jobs</div>
