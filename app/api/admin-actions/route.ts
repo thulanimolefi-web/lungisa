@@ -54,14 +54,52 @@ export async function POST(req: NextRequest) {
       }
 
       case 'resolve_dispute_approve': {
-        await supabase.from('job_disputes').update({ status: 'resolved' }).eq('id', disputeId)
-        await supabase.from('jobs').update({ status: 'completed' }).eq('id', jobId)
+        await supabase.from('job_disputes')
+          .update({ status:'resolved', resolution_reason: reason||'Dispute resolved by Lungisa admin.' })
+          .eq('id', disputeId)
+        await supabase.from('jobs').update({ status:'completed' }).eq('id', jobId)
+        const { data: job } = await supabase.from('jobs').select('title, homeowner_id').eq('id', jobId).single()
+        const { data: bid } = await supabase.from('bids').select('tradesperson_id').eq('job_id', jobId).eq('status','accepted').single()
+        const msg = reason||'Work confirmed complete — payment released to tradesperson.'
+        if(job?.homeowner_id){
+          await supabase.from('notifications').insert({
+            user_id: job.homeowner_id, type:'dispute_resolved',
+            title:'✓ Dispute resolved', read:false, link:'/home',
+            message:`Dispute for "${job.title}" resolved. Decision: ${msg}`,
+          })
+        }
+        if(bid?.tradesperson_id){
+          await supabase.from('notifications').insert({
+            user_id: bid.tradesperson_id, type:'dispute_resolved',
+            title:'✓ Dispute resolved in your favour', read:false, link:'/dashboard',
+            message:`Dispute for "${job?.title}" resolved. Decision: ${msg}`,
+          })
+        }
         return NextResponse.json({ success: true })
       }
 
       case 'resolve_dispute_reject': {
-        await supabase.from('job_disputes').update({ status: 'resolved' }).eq('id', disputeId)
-        await supabase.from('jobs').update({ status: 'cancelled' }).eq('id', jobId)
+        await supabase.from('job_disputes')
+          .update({ status:'resolved', resolution_reason: reason||'Dispute resolved by Lungisa admin.' })
+          .eq('id', disputeId)
+        await supabase.from('jobs').update({ status:'cancelled' }).eq('id', jobId)
+        const { data: job } = await supabase.from('jobs').select('title, homeowner_id').eq('id', jobId).single()
+        const { data: bid } = await supabase.from('bids').select('tradesperson_id').eq('job_id', jobId).eq('status','accepted').single()
+        const msg = reason||'Job cancelled following dispute review.'
+        if(job?.homeowner_id){
+          await supabase.from('notifications').insert({
+            user_id: job.homeowner_id, type:'dispute_resolved',
+            title:'✓ Dispute resolved — job cancelled', read:false, link:'/home',
+            message:`Dispute for "${job.title}" resolved. Decision: ${msg}`,
+          })
+        }
+        if(bid?.tradesperson_id){
+          await supabase.from('notifications').insert({
+            user_id: bid.tradesperson_id, type:'dispute_resolved',
+            title:'Dispute outcome — job cancelled', read:false, link:'/dashboard',
+            message:`Dispute for "${job?.title}" resolved. Decision: ${msg}`,
+          })
+        }
         return NextResponse.json({ success: true })
       }
 

@@ -20,6 +20,7 @@ export default function AdminPanel() {
   const [jobs, setJobs]         = useState<any[]>([])
   const [toast, setToast]           = useState('')
   const [rejectionInputs, setRejectionInputs] = useState<Record<string,string>>({})
+  const [resolutionInputs, setResolutionInputs] = useState<Record<string,string>>({})
 
   useEffect(()=>{
     checkAuth()
@@ -91,11 +92,14 @@ export default function AdminPanel() {
     const { data } = await supabase
       .from('job_disputes')
       .select(`
-        id, reason, status, created_at,
-        jobs(id, title, status),
-        profiles!job_disputes_raised_by_fkey(full_name, email)
+        id, reason, status, created_at, resolution_reason,
+        jobs(id, title, status, homeowner_id,
+          profiles!jobs_homeowner_id_fkey(full_name, email)
+        ),
+        profiles!job_disputes_raised_by_fkey(full_name, email, role)
       `)
       .order('created_at', {ascending:false})
+    console.log('[disputes]', data, )
     if(data) setDisputes(data)
   }
 
@@ -150,11 +154,13 @@ export default function AdminPanel() {
     if(ok){ showToast('Payment marked as released ✓'); loadPayouts(); loadStats() }
   }
 
-  async function resolveDispute(disputeId:string, jobId:string, resolution:'approve'|'reject'){
+  async function resolveDispute(disputeId:string, jobId:string, resolution:'approve'|'reject', reason:string, homeownerId:string, tradespersonId:string){
+    if(!reason.trim()){ showToast('Please enter a resolution reason'); return }
     const action = resolution==='approve' ? 'resolve_dispute_approve' : 'resolve_dispute_reject'
-    const ok = await adminAction({ action, disputeId, jobId })
+    const ok = await adminAction({ action, disputeId, jobId, reason, homeownerId, tradespersonId })
     if(ok){
-      showToast(resolution==='approve' ? 'Dispute resolved — job complete ✓' : 'Dispute resolved — job cancelled ✓')
+      showToast(resolution==='approve' ? 'Dispute approved — payment released ✓' : 'Dispute rejected — job cancelled ✓')
+      setResolutionInputs(r=>({...r,[disputeId]:''}))
       loadDisputes(); loadStats()
     }
   }
@@ -420,35 +426,102 @@ export default function AdminPanel() {
                       <div style={{fontSize:40,marginBottom:12}}>✓</div>
                       <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:24,color:'rgba(245,240,232,.4)'}}>No disputes</div>
                     </div>
-                  ):disputes.map((d:any,i)=>(
-                    <div key={d.id} className="card" style={{marginBottom:16,animationDelay:`${i*.05}s`,
-                      borderColor:d.status==='open'?'rgba(226,75,74,.2)':'rgba(255,255,255,.06)'}}>
-                      <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:12}}>
-                        <div>
-                          <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20,letterSpacing:1,color:'#F5F0E8',marginBottom:4}}>{d.jobs?.title||'Job'}</div>
-                          <div style={{fontSize:12,color:'rgba(245,240,232,.4)'}}>{fmtDate(d.created_at)}</div>
+                  ):disputes.map((d:any,i)=>{
+                    const homeowner    = d.jobs?.profiles
+                    const raisedBy     = d.profiles
+                    const isOpen       = d.status==='open'
+                    const jobId        = d.jobs?.id
+                    const homeownerId  = d.jobs?.homeowner_id
+                    // Get tradesperson from bids — we'll pass what we have
+                    return (
+                      <div key={d.id} className="card" style={{marginBottom:20,animationDelay:`${i*.05}s`,
+                        borderColor:isOpen?'rgba(226,75,74,.3)':'rgba(255,255,255,.06)'}}>
+
+                        {/* Header */}
+                        <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:16,paddingBottom:14,borderBottom:'1px solid rgba(255,255,255,.06)'}}>
+                          <div>
+                            <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,letterSpacing:1,color:'#F5F0E8',marginBottom:4}}>
+                              {d.jobs?.title||'Job'}
+                            </div>
+                            <div style={{fontSize:12,color:'rgba(245,240,232,.4)'}}>
+                              Raised: {fmtDate(d.created_at)}
+                            </div>
+                          </div>
+                          <span className={`badge ${isOpen?'badge-red':d.status==='resolved'?'badge-green':'badge-grey'}`}>
+                            {d.status}
+                          </span>
                         </div>
-                        <span className={`badge ${d.status==='open'?'badge-red':d.status==='resolved'?'badge-green':'badge-grey'}`}>{d.status}</span>
-                      </div>
-                      <div style={{background:'rgba(226,75,74,.06)',border:'1px solid rgba(226,75,74,.1)',borderRadius:8,padding:'12px 14px',marginBottom:12}}>
-                        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(245,240,232,.3)',marginBottom:6}}>Reason</div>
-                        <div style={{fontSize:14,color:'#F5F0E8',lineHeight:1.6}}>{d.reason}</div>
-                      </div>
-                      <div style={{fontSize:12,color:'rgba(245,240,232,.4)',marginBottom:12}}>
-                        Raised by: <strong style={{color:'#F5F0E8'}}>{d.profiles?.full_name}</strong> ({d.profiles?.email})
-                      </div>
-                      {d.status==='open'&&(
-                        <div style={{display:'flex',gap:10}}>
-                          <button className="btn-sm btn-green" onClick={()=>resolveDispute(d.id, d.jobs?.id, 'approve')}>
-                            ✓ Approve completion — release payment
-                          </button>
-                          <button className="btn-sm btn-red" onClick={()=>resolveDispute(d.id, d.jobs?.id, 'reject')}>
-                            ✗ Reject — cancel job
-                          </button>
+
+                        {/* Dispute reason */}
+                        <div style={{background:'rgba(226,75,74,.06)',border:'1px solid rgba(226,75,74,.15)',borderRadius:8,padding:'14px 16px',marginBottom:14}}>
+                          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(226,75,74,.6)',marginBottom:8}}>
+                            ⚠ Dispute reason
+                          </div>
+                          <div style={{fontSize:14,color:'#F5F0E8',lineHeight:1.7}}>{d.reason}</div>
                         </div>
-                      )}
-                    </div>
-                  ))}
+
+                        {/* Parties */}
+                        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>
+                          <div style={{background:'rgba(255,255,255,.03)',borderRadius:8,padding:'12px 14px'}}>
+                            <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(245,240,232,.3)',marginBottom:8}}>
+                              🏠 Homeowner
+                            </div>
+                            <div style={{fontSize:13,color:'#F5F0E8',fontWeight:600}}>{homeowner?.full_name||'—'}</div>
+                            <div style={{fontSize:12,color:'rgba(245,240,232,.4)'}}>{homeowner?.email||'—'}</div>
+                          </div>
+                          <div style={{background:'rgba(255,255,255,.03)',borderRadius:8,padding:'12px 14px'}}>
+                            <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(245,240,232,.3)',marginBottom:8}}>
+                              🔨 Raised by
+                            </div>
+                            <div style={{fontSize:13,color:'#F5F0E8',fontWeight:600}}>{raisedBy?.full_name||'—'}</div>
+                            <div style={{fontSize:12,color:'rgba(245,240,232,.4)'}}>{raisedBy?.email||'—'}</div>
+                            <div style={{marginTop:4}}>
+                              <span className={`badge ${raisedBy?.role==='homeowner'?'badge-blue':'badge-yellow'}`}>
+                                {raisedBy?.role||'—'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Resolution — only for open disputes */}
+                        {isOpen&&(
+                          <div style={{background:'rgba(255,255,255,.02)',border:'1px solid rgba(255,255,255,.08)',borderRadius:10,padding:'16px'}}>
+                            <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:10}}>
+                              Resolution — your decision will be emailed to both parties
+                            </div>
+                            <textarea
+                              placeholder="Enter your resolution reason... (e.g. 'Photos show work was completed to standard — payment released' or 'Job was not completed as agreed — payment returned to homeowner')"
+                              value={resolutionInputs[d.id]||''}
+                              onChange={e=>setResolutionInputs(r=>({...r,[d.id]:e.target.value}))}
+                              style={{width:'100%',background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',borderRadius:6,padding:'10px 12px',fontFamily:"'Barlow',sans-serif",fontSize:13,color:'#F5F0E8',outline:'none',resize:'none',height:90,lineHeight:1.6,marginBottom:12}}
+                            />
+                            <div style={{display:'flex',gap:10}}>
+                              <button className="btn-sm btn-green"
+                                style={{flex:1}}
+                                onClick={()=>resolveDispute(d.id, jobId, 'approve', resolutionInputs[d.id]||'', homeownerId, '')}>
+                                ✓ Approve — release payment to tradesperson
+                              </button>
+                              <button className="btn-sm btn-red"
+                                style={{flex:1}}
+                                onClick={()=>resolveDispute(d.id, jobId, 'reject', resolutionInputs[d.id]||'', homeownerId, '')}>
+                                ✗ Reject — cancel job, return payment
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Resolved state */}
+                        {!isOpen&&d.resolution_reason&&(
+                          <div style={{background:'rgba(61,170,106,.06)',border:'1px solid rgba(61,170,106,.15)',borderRadius:8,padding:'12px 14px'}}>
+                            <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'#3DAA6A',marginBottom:6}}>
+                              ✓ Resolution
+                            </div>
+                            <div style={{fontSize:13,color:'rgba(245,240,232,.7)',lineHeight:1.6}}>{d.resolution_reason}</div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
 
