@@ -89,18 +89,35 @@ export default function AdminPanel() {
   }
 
   async function loadDisputes(){
-    const { data } = await supabase
-      .from('job_disputes')
-      .select(`
-        id, reason, status, created_at, resolution_reason,
-        jobs(id, title, status, homeowner_id,
-          profiles!jobs_homeowner_id_fkey(full_name, email)
-        ),
-        profiles!job_disputes_raised_by_fkey(full_name, email, role)
-      `)
-      .order('created_at', {ascending:false})
-    console.log('[disputes]', data, )
-    if(data) setDisputes(data)
+    try {
+      const { data, error } = await supabase
+        .from('job_disputes')
+        .select('*')
+        .order('created_at', {ascending:false})
+      
+      if(error){ console.log('[disputes] error:', error); return }
+      if(!data || data.length === 0){ console.log('[disputes] none found'); return }
+
+      // Enrich each dispute with job and profile data separately
+      const enriched = await Promise.all(data.map(async (d:any) => {
+        const { data: job } = await supabase
+          .from('jobs')
+          .select('id, title, status, homeowner_id')
+          .eq('id', d.job_id)
+          .single()
+
+        const { data: raiser } = await supabase
+          .from('profiles')
+          .select('full_name, email, role')
+          .eq('id', d.raised_by)
+          .single()
+
+        return { ...d, job, raiser }
+      }))
+
+      console.log('[disputes] enriched:', enriched)
+      setDisputes(enriched)
+    } catch(e) { console.log('[disputes] exception:', e) }
   }
 
   async function loadUsers(){
@@ -427,12 +444,76 @@ export default function AdminPanel() {
                       <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:24,color:'rgba(245,240,232,.4)'}}>No disputes</div>
                     </div>
                   ):disputes.map((d:any,i)=>{
-                    const homeowner    = d.jobs?.profiles
-                    const raisedBy     = d.profiles
-                    const isOpen       = d.status==='open'
-                    const jobId        = d.jobs?.id
-                    const homeownerId  = d.jobs?.homeowner_id
-                    // Get tradesperson from bids — we'll pass what we have
+                    const raisedBy    = d.raiser
+                    const isOpen      = d.status==='open'
+                    const jobId       = d.job?.id
+                    const homeownerId = d.job?.homeowner_id
+                    return (
+                      <div key={d.id} className="card" style={{marginBottom:20,animationDelay:`${i*.05}s`,
+                        borderColor:isOpen?'rgba(226,75,74,.3)':'rgba(255,255,255,.06)'}}>
+
+                        {/* Header */}
+                        <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:16,paddingBottom:14,borderBottom:'1px solid rgba(255,255,255,.06)'}}>
+                          <div>
+                            <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,letterSpacing:1,color:'#F5F0E8',marginBottom:4}}>
+                              {d.job?.title||'Job'}
+                            </div>
+                            <div style={{fontSize:12,color:'rgba(245,240,232,.4)'}}>
+                              Raised: {fmtDate(d.created_at)}
+                            </div>
+                          </div>
+                          <span className={`badge ${isOpen?'badge-red':d.status==='resolved'?'badge-green':'badge-grey'}`}>
+                            {d.status}
+                          </span>
+                        </div>
+
+                        {/* Dispute reason */}
+                        <div style={{background:'rgba(226,75,74,.06)',border:'1px solid rgba(226,75,74,.15)',borderRadius:8,padding:'14px 16px',marginBottom:14}}>
+                          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(226,75,74,.6)',marginBottom:8}}>
+                            ⚠ Dispute reason
+                          </div>
+                          <div style={{fontSize:14,color:'#F5F0E8',lineHeight:1.7}}>{d.reason}</div>
+                        </div>
+
+                        {/* Raised by */}
+                        <div style={{background:'rgba(255,255,255,.03)',borderRadius:8,padding:'12px 14px',marginBottom:14}}>
+                          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(245,240,232,.3)',marginBottom:8}}>
+                            Raised by
+                          </div>
+                          <div style={{fontSize:13,color:'#F5F0E8',fontWeight:600}}>{raisedBy?.full_name||'—'}</div>
+                          <div style={{fontSize:12,color:'rgba(245,240,232,.4)'}}>{raisedBy?.email||'—'}</div>
+                          <div style={{marginTop:4}}>
+                            <span className={`badge ${raisedBy?.role==='homeowner'?'badge-blue':'badge-yellow'}`}>
+                              {raisedBy?.role||'—'}
+                            </span>
+                          </div>
+                        </div>
+                      <div key={d.id} className="card" style={{marginBottom:20,animationDelay:`${i*.05}s`,
+                        borderColor:isOpen?'rgba(226,75,74,.3)':'rgba(255,255,255,.06)'}}>
+
+                        {/* Header */}
+                        <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:16,paddingBottom:14,borderBottom:'1px solid rgba(255,255,255,.06)'}}>
+                          <div>
+                            <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,letterSpacing:1,color:'#F5F0E8',marginBottom:4}}>
+                              {d.jobs?.title||'Job'}
+                            </div>
+                            <div style={{fontSize:12,color:'rgba(245,240,232,.4)'}}>
+                              Raised: {fmtDate(d.created_at)}
+                            </div>
+                          </div>
+                          <span className={`badge ${isOpen?'badge-red':d.status==='resolved'?'badge-green':'badge-grey'}`}>
+                            {d.status}
+                          </span>
+                        </div>
+
+                        {/* Dispute reason */}
+                        <div style={{background:'rgba(226,75,74,.06)',border:'1px solid rgba(226,75,74,.15)',borderRadius:8,padding:'14px 16px',marginBottom:14}}>
+                          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(226,75,74,.6)',marginBottom:8}}>
+                            ⚠ Dispute reason
+                          </div>
+                          <div style={{fontSize:14,color:'#F5F0E8',lineHeight:1.7}}>{d.reason}</div>
+                        </div>
+
                     return (
                       <div key={d.id} className="card" style={{marginBottom:20,animationDelay:`${i*.05}s`,
                         borderColor:isOpen?'rgba(226,75,74,.3)':'rgba(255,255,255,.06)'}}>
@@ -460,26 +541,17 @@ export default function AdminPanel() {
                           <div style={{fontSize:14,color:'#F5F0E8',lineHeight:1.7}}>{d.reason}</div>
                         </div>
 
-                        {/* Parties */}
-                        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>
-                          <div style={{background:'rgba(255,255,255,.03)',borderRadius:8,padding:'12px 14px'}}>
-                            <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(245,240,232,.3)',marginBottom:8}}>
-                              🏠 Homeowner
-                            </div>
-                            <div style={{fontSize:13,color:'#F5F0E8',fontWeight:600}}>{homeowner?.full_name||'—'}</div>
-                            <div style={{fontSize:12,color:'rgba(245,240,232,.4)'}}>{homeowner?.email||'—'}</div>
+                        {/* Raised by */}
+                        <div style={{background:'rgba(255,255,255,.03)',borderRadius:8,padding:'12px 14px',marginBottom:14}}>
+                          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(245,240,232,.3)',marginBottom:8}}>
+                            Raised by
                           </div>
-                          <div style={{background:'rgba(255,255,255,.03)',borderRadius:8,padding:'12px 14px'}}>
-                            <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(245,240,232,.3)',marginBottom:8}}>
-                              🔨 Raised by
-                            </div>
-                            <div style={{fontSize:13,color:'#F5F0E8',fontWeight:600}}>{raisedBy?.full_name||'—'}</div>
-                            <div style={{fontSize:12,color:'rgba(245,240,232,.4)'}}>{raisedBy?.email||'—'}</div>
-                            <div style={{marginTop:4}}>
-                              <span className={`badge ${raisedBy?.role==='homeowner'?'badge-blue':'badge-yellow'}`}>
-                                {raisedBy?.role||'—'}
-                              </span>
-                            </div>
+                          <div style={{fontSize:13,color:'#F5F0E8',fontWeight:600}}>{raisedBy?.full_name||'—'}</div>
+                          <div style={{fontSize:12,color:'rgba(245,240,232,.4)'}}>{raisedBy?.email||'—'}</div>
+                          <div style={{marginTop:4}}>
+                            <span className={`badge ${raisedBy?.role==='homeowner'?'badge-blue':'badge-yellow'}`}>
+                              {raisedBy?.role||'—'}
+                            </span>
                           </div>
                         </div>
 
