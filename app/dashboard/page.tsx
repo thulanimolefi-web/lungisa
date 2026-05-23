@@ -151,16 +151,19 @@ export default function Dashboard() {
 
       if(!error&&data){
         const category = (tp?.trade_category||'').toLowerCase().trim()
-        const areas    = (tp?.service_areas||[]).map((a:string)=>a.toLowerCase().trim())
-
-        console.log('[feed] category:', category, 'areas:', JSON.stringify(areas))
+        const areas    = (tp?.service_areas||[]).map((a:string)=>a.toLowerCase().trim()).filter(Boolean)
 
         const filtered = data.filter((j:any)=>{
-          // Skip already-bid jobs only
+          // Skip already-bid jobs
           if(bidJobIds.has(j.id)) return false
-          // Category check only
+          // Category check — lowercase both sides
           const jCat = (j.category||'').toLowerCase().trim()
           if(category && jCat !== category) return false
+          // Area check — lowercase both sides, skip if no areas set
+          if(areas.length > 0){
+            const jArea = (j.area||'').toLowerCase().trim()
+            if(!areas.includes(jArea)) return false
+          }
           return true
         })
 
