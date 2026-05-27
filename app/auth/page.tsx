@@ -7,8 +7,50 @@ import { supabase } from '../lib/supabase'
 type Role = 'homeowner' | 'tradesperson'
 type Screen = 'role' | 'signup' | 'otp' | 'verify-id' | 'success' | 'login' | 'login-otp' | 'forgot' | 'forgot-sent'
 
-const TRADES = ['Plumbing','Electrical','Painting','Carpentry','Roofing','Tiling','Landscaping','General','Solar']
-const AREAS  = ['Soweto','Sandton','Roodepoort','Midrand','Randburg','Fourways','Boksburg','Pretoria Central','Centurion']
+const TRADES = [
+  'Plumbing','Electrical','Painting','Carpentry','Roofing','Tiling',
+  'Solar','Landscaping','Waterproofing','Welding','Cleaning','General',
+  'Moving','Pest Control','Appliance Repair','Air Conditioning',
+  'Security','Paving','Plastering',
+]
+const AREAS = [
+  // Johannesburg North
+  'Sandton','Fourways','Bryanston','Morningside','Rivonia','Sunninghill',
+  'Paulshof','Kyalami','Halfway House','Woodmead','Kramerville',
+  // Johannesburg Central & South
+  'Johannesburg CBD','Parktown','Rosebank','Melrose','Illovo','Hyde Park',
+  'Northcliff','Auckland Park','Greenside','Linden','Victory Park',
+  'Mayfair','Fordsburg','Newtown','Maboneng',
+  // Johannesburg West
+  'Randburg','Ferndale','Honeydew','Ruimsig','Florida','Krugersdorp',
+  'Roodepoort','Northgate','Weltevredenpark','Constantia Kloof',
+  'Strubensvalley','Radiokop','Wilgeheuwel',
+  // Johannesburg South & SW
+  'Soweto','Lenasia','Ennerdale','Orange Farm','Alberton','Germiston',
+  'Meyersdal','Glenvista','Bassonia','Kibler Park','Mulbarton',
+  'Winchester Hills','Turffontein','Booysens','Ophirton',
+  // East Rand / Ekurhuleni
+  'Boksburg','Benoni','Brakpan','Springs','Edenvale','Bedfordview',
+  'Kempton Park','Tembisa','Ekurhuleni','Germiston','Alberton',
+  'Vosloorus','Daveyton','Katlehong','Thokoza','Nigel',
+  'Heidelberg','Duduza',
+  // Midrand
+  'Midrand','Vorna Valley','Halfway House','Waterfall','Jukskei Park',
+  'Grand Central','Carlswald',
+  // Pretoria / Tshwane
+  'Pretoria Central','Centurion','Pretoria East','Pretoria North',
+  'Pretoria West','Soshanguve','Mamelodi','Atteridgeville','Hatfield',
+  'Menlyn','Lynnwood','Faerie Glen','Moreleta Park','Garsfontein',
+  'Queenswood','Arcadia','Muckleneuk','Brooklyn','Groenkloof',
+  'Montana','Gezina','Silverton','Eersterust','Watloo',
+  'Irene','Rooihuiskraal','Olievenhoutbosch',
+  // West Rand
+  'Randfontein','Westonaria','Carletonville','Fochville',
+  'Magaliesburg','Krugersdorp','Chamdor',
+  // Sedibeng
+  'Vereeniging','Vanderbijlpark','Meyerton','Evaton','Sebokeng',
+  'Sharpeville','Bophelong','Three Rivers',
+]
 
 function getLastOtpDate(): string {
   if(typeof window === 'undefined') return ''
@@ -802,10 +844,24 @@ export default function AuthPage() {
               </ul>
               <button className="bm bsu" onClick={async()=>{
                 await new Promise(r=>setTimeout(r,500))
-                window.location.href = role==='homeowner'?'/home':'/dashboard'
+                if(role==='tradesperson' && !idFile){
+                  window.location.href = '/dashboard?verify=1'
+                } else {
+                  window.location.href = role==='homeowner'?'/home':'/dashboard'
+                }
               }}>
-                Go to my dashboard →
+                {role==='tradesperson'&&!idFile ? 'Verify my ID now →' : 'Go to my dashboard →'}
               </button>
+              {role==='tradesperson'&&!idFile&&(
+                <div style={{marginTop:10,fontSize:12,color:'var(--charcoal-l)',textAlign:'center',lineHeight:1.6}}>
+                  Verified tradespeople win bids at <strong>2x the rate</strong>. Takes 2 minutes.
+                  <br/>
+                  <span style={{fontSize:11,color:'rgba(44,44,40,.4)',cursor:'pointer'}}
+                    onClick={async()=>{await new Promise(r=>setTimeout(r,500));window.location.href='/dashboard'}}>
+                    Skip and verify later from dashboard
+                  </span>
+                </div>
+              )}
             </div>
           )}
 

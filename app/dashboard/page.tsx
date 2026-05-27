@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { supabase } from '../lib/supabase'
 import NotificationBell from '../components/NotificationBell'
 import VerificationBadge from '../components/VerificationBadge'
@@ -82,7 +83,12 @@ export default function Dashboard() {
 
   const ETAS = ['30 mins','1 hour','2 hours','Half day','Tomorrow']
 
+  const searchParams = useSearchParams()
+
   useEffect(()=>{
+    // Auto-open profile tab if redirected from signup with verify=1
+    if(searchParams.get('verify')==='1') setView('profile')
+
     loadProfile()
     loadRealJobs()
     loadMyBids()
