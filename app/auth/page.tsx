@@ -604,22 +604,36 @@ export default function AuthPage() {
                   </div>
 
                   <div className="fg">
-                    <label className="fl2">Service areas <span style={{color:'var(--charcoal-l)',fontWeight:400,textTransform:'none',letterSpacing:0,fontSize:11}}>(select up to 3)</span></label>
-                    <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:4}}>
-                      {AREAS.map(a=>{
-                        const sel=areas.includes(a)
-                        const maxed=areas.length>=3&&!sel
-                        return (
-                          <div key={a}
-                            style={{border:`1.5px solid ${sel?'var(--terra)':'var(--cream-d)'}`,borderRadius:8,padding:'10px 8px',cursor:maxed?'not-allowed':'pointer',textAlign:'center',background:sel?'rgba(196,89,58,.05)':'var(--white)',transition:'all .15s',fontFamily:'var(--fc)',fontSize:11,fontWeight:600,color:sel?'var(--terra-d)':'var(--charcoal-l)',opacity:maxed?.4:1}}
-                            onClick={()=>!maxed&&toggleArea(a)}>
+                    <label className="fl2">Service areas <span style={{color:'var(--charcoal-l)',fontWeight:400,textTransform:'none',letterSpacing:0,fontSize:11}}>(select up to 5)</span></label>
+                    <select
+                      className="fi2"
+                      value=""
+                      onChange={e=>{
+                        const val = e.target.value
+                        if(val && !areas.includes(val) && areas.length < 5){
+                          toggleArea(val)
+                        }
+                        e.target.value = ''
+                      }}
+                      style={{marginBottom:8}}>
+                      <option value="">— Select an area to add —</option>
+                      {AREAS.filter(a=>!areas.includes(a)).map(a=>(
+                        <option key={a} value={a}>{a}</option>
+                      ))}
+                    </select>
+                    {/* Selected areas as removable tags */}
+                    {areas.length > 0 && (
+                      <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:4}}>
+                        {areas.map(a=>(
+                          <div key={a} style={{display:'flex',alignItems:'center',gap:6,background:'rgba(196,89,58,.08)',border:'1px solid rgba(196,89,58,.25)',borderRadius:6,padding:'5px 10px',fontFamily:'var(--fc)',fontSize:11,fontWeight:600,color:'var(--terra-d)'}}>
                             {a}
+                            <span onClick={()=>toggleArea(a)} style={{cursor:'pointer',fontSize:12,color:'var(--terra)',fontWeight:700,lineHeight:1}}>✕</span>
                           </div>
-                        )
-                      })}
-                    </div>
+                        ))}
+                      </div>
+                    )}
                     {errors.areas&&<div className="err">{errors.areas}</div>}
-                    {areas.length>0&&<div style={{fontSize:11,color:'var(--terra)',fontFamily:'var(--fc)',fontWeight:600,letterSpacing:1,marginTop:4}}>✓ {areas.join(' · ')}</div>}
+                    {areas.length===0&&<div style={{fontSize:11,color:'rgba(44,44,40,.4)',marginTop:4}}>No areas selected yet — pick from the dropdown above</div>}
                   </div>
                 </>
               )}
