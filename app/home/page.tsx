@@ -1384,7 +1384,6 @@ export default function HomeDashboard() {
                 )}
               </div>
             )}
-            )}
           </div>
         </div>
       </div>
