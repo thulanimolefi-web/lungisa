@@ -653,9 +653,6 @@ export default function HomeDashboard() {
     setRating(5)
     setReviewText('')
   }
-    setReviewText('')
-    loadHistoryJobs()
-  }
 
   const activeJobs  = jobs.filter(j=>!['completed','disputed'].includes(j.status))
   const allBids     = activeJobs.flatMap(j=>j.bids)
