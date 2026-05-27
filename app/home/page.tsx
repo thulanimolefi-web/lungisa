@@ -87,6 +87,10 @@ export default function HomeDashboard() {
   const [submittingDispute, setSubmittingDispute] = useState(false)
   const [toasts, setToasts]         = useState<{id:number,msg:string,color:string}[]>([])
   const [profile, setProfile]       = useState<any>(null)
+  const [editingProfile, setEditingProfile] = useState(false)
+  const [profileForm, setProfileForm] = useState({full_name:'', phone:'', area:''})
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [profileMsg, setProfileMsg] = useState('')
   const [loading, setLoading]       = useState(true)
 
   useEffect(()=>{
@@ -134,9 +138,38 @@ export default function HomeDashboard() {
       const { data:{ session } } = await supabase.auth.getSession()
       if(session?.user) {
         const { data } = await supabase.from('profiles').select('*').eq('id',session.user.id).single()
-        if(data) setProfile(data)
+        if(data) {
+          setProfile(data)
+          setProfileForm({ full_name: data.full_name||'', phone: data.phone||'', area: data.area||'' })
+        }
       }
     } catch(e){ console.log('Profile error:',e) }
+  }
+
+  async function saveProfile() {
+    if(!profileForm.full_name.trim()){ setProfileMsg('Name is required'); return }
+    setSavingProfile(true)
+    setProfileMsg('')
+    try {
+      const { data:{ session } } = await supabase.auth.getSession()
+      if(!session?.user) return
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          full_name: profileForm.full_name.trim(),
+          phone:     profileForm.phone.trim(),
+          area:      profileForm.area.trim(),
+        })
+        .eq('id', session.user.id)
+      if(error){ setProfileMsg('Failed to save: '+error.message) }
+      else {
+        setProfile((p:any)=>({...p, ...profileForm}))
+        setEditingProfile(false)
+        setProfileMsg('✓ Profile updated')
+        setTimeout(()=>setProfileMsg(''),3000)
+      }
+    } catch(e){ setProfileMsg('Something went wrong') }
+    setSavingProfile(false)
   }
 
   async function loadRealJobs(silent = false) {
@@ -1275,27 +1308,82 @@ export default function HomeDashboard() {
             {/* PROFILE */}
             {tab==='profile'&&(
               <div style={{background:'var(--white)',borderRadius:12,border:'1px solid var(--cream-d)',padding:32,maxWidth:560}}>
+                {/* Header */}
                 <div style={{display:'flex',alignItems:'center',gap:16,marginBottom:24,paddingBottom:20,borderBottom:'1px solid var(--cream-d)'}}>
                   <div style={{width:64,height:64,borderRadius:'50%',background:'var(--terra)',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'var(--fd)',fontSize:28,color:'#fff'}}>{displayInitials}</div>
-                  <div>
-                    <div style={{fontFamily:'var(--fd)',fontSize:28,letterSpacing:1,color:'var(--charcoal)',lineHeight:1}}>{displayName.toUpperCase()}</div>
+                  <div style={{flex:1}}>
+                    <div style={{fontFamily:'var(--fd)',fontSize:28,letterSpacing:1,color:'var(--charcoal)',lineHeight:1}}>{(profile?.full_name||'').toUpperCase()}</div>
                     <div style={{fontSize:13,color:'var(--charcoal-l)',marginTop:4}}>Homeowner · {profile?.area||'Johannesburg'}</div>
                     <div style={{fontSize:13,color:'var(--terra)',marginTop:3}}>Member since {profile?.created_at?new Date(profile.created_at).toLocaleDateString('en-ZA',{month:'long',year:'numeric'}):'—'}</div>
                   </div>
+                  <button onClick={()=>setEditingProfile((e:boolean)=>!e)}
+                    style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:editingProfile?'rgba(226,75,74,.08)':'rgba(196,89,58,.08)',color:editingProfile?'#E24B4A':'var(--terra)',border:`1px solid ${editingProfile?'rgba(226,75,74,.2)':'rgba(196,89,58,.2)'}`,padding:'7px 14px',borderRadius:6,cursor:'pointer'}}>
+                    {editingProfile?'✕ Cancel':'✎ Edit'}
+                  </button>
                 </div>
-                {[
-                  {label:'Email',          val:profile?.email||'—'},
-                  {label:'Phone',          val:profile?.phone||'—'},
-                  {label:'Area',           val:profile?.area||'—'},
-                  {label:'Jobs posted',    val:String(jobs.length)},
-                  {label:'Jobs completed', val:String(historyJobs.length)},
-                ].map(r=>(
-                  <div key={r.label} style={{display:'flex',justifyContent:'space-between',padding:'10px 0',borderBottom:'1px solid var(--cream-d)'}}>
-                    <span style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'var(--charcoal-l)'}}>{r.label}</span>
-                    <span style={{fontSize:14,color:'var(--charcoal)',fontWeight:500}}>{r.val}</span>
+
+                {/* Stats */}
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:24}}>
+                  {[{label:'Jobs posted',val:String(jobs.length)},{label:'Jobs completed',val:String(historyJobs.length)}].map(s=>(
+                    <div key={s.label} style={{background:'var(--cream)',borderRadius:8,padding:'12px 16px',textAlign:'center'}}>
+                      <div style={{fontFamily:'var(--fd)',fontSize:28,color:'var(--terra)',letterSpacing:1}}>{s.val}</div>
+                      <div style={{fontFamily:'var(--fc)',fontSize:10,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'var(--charcoal-l)',marginTop:4}}>{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {editingProfile?(
+                  <div>
+                    {[
+                      {label:'Full name *',key:'full_name',type:'text',placeholder:'Your full name'},
+                      {label:'Phone number',key:'phone',type:'tel',placeholder:'e.g. 0821234567'},
+                    ].map((f:any)=>(
+                      <div key={f.key} style={{marginBottom:14}}>
+                        <label style={{display:'block',fontFamily:'var(--fc)',fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'var(--charcoal-l)',marginBottom:6}}>{f.label}</label>
+                        <input type={f.type} value={(profileForm as any)[f.key]}
+                          onChange={e=>setProfileForm((p:any)=>({...p,[f.key]:e.target.value}))}
+                          placeholder={f.placeholder}
+                          style={{width:'100%',border:'1.5px solid var(--cream-d)',borderRadius:8,padding:'11px 14px',fontFamily:'var(--fb)',fontSize:14,color:'var(--charcoal)',outline:'none',background:'#fff'}}/>
+                      </div>
+                    ))}
+                    <div style={{marginBottom:20}}>
+                      <label style={{display:'block',fontFamily:'var(--fc)',fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'var(--charcoal-l)',marginBottom:6}}>Area</label>
+                      <select value={profileForm.area} onChange={e=>setProfileForm((p:any)=>({...p,area:e.target.value}))}
+                        style={{width:'100%',border:'1.5px solid var(--cream-d)',borderRadius:8,padding:'11px 14px',fontFamily:'var(--fb)',fontSize:14,color:'var(--charcoal)',outline:'none',background:'#fff'}}>
+                        <option value="">Select your area</option>
+                        {AREAS.map((a:string)=><option key={a} value={a}>{a}</option>)}
+                      </select>
+                    </div>
+                    {profileMsg&&(
+                      <div style={{padding:'10px 14px',borderRadius:6,fontSize:13,marginBottom:14,
+                        background:profileMsg.startsWith('✓')?'rgba(61,170,106,.08)':'rgba(226,75,74,.08)',
+                        color:profileMsg.startsWith('✓')?'#3DAA6A':'#E24B4A',
+                        border:`1px solid ${profileMsg.startsWith('✓')?'rgba(61,170,106,.2)':'rgba(226,75,74,.2)'}`}}>
+                        {profileMsg}
+                      </div>
+                    )}
+                    <button onClick={saveProfile} disabled={savingProfile}
+                      style={{width:'100%',background:'var(--terra)',color:'#fff',border:'none',padding:'13px',borderRadius:8,fontFamily:'var(--fc)',fontSize:13,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',cursor:savingProfile?'not-allowed':'pointer',opacity:savingProfile?.6:1}}>
+                      {savingProfile?'Saving...':'Save changes'}
+                    </button>
                   </div>
-                ))}
+                ):(
+                  <div>
+                    {[
+                      {label:'Email',val:profile?.email||'—'},
+                      {label:'Phone',val:profile?.phone||'—'},
+                      {label:'Area', val:profile?.area||'—'},
+                    ].map((r:any)=>(
+                      <div key={r.label} style={{display:'flex',justifyContent:'space-between',padding:'12px 0',borderBottom:'1px solid var(--cream-d)'}}>
+                        <span style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'var(--charcoal-l)'}}>{r.label}</span>
+                        <span style={{fontSize:14,color:'var(--charcoal)',fontWeight:500}}>{r.val}</span>
+                      </div>
+                    ))}
+                    <div style={{marginTop:16,fontSize:12,color:'var(--charcoal-l)',textAlign:'center'}}>Click <strong>✎ Edit</strong> to update your details</div>
+                  </div>
+                )}
               </div>
+            )}
             )}
           </div>
         </div>

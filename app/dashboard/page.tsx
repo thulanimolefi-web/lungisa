@@ -80,6 +80,11 @@ export default function Dashboard() {
   })
   const [savingBanking, setSavingBanking] = useState(false)
   const [bankingMsg, setBankingMsg] = useState('')
+  // Profile editing
+  const [editingProfile, setEditingProfile] = useState(false)
+  const [profileForm, setProfileForm] = useState({full_name:'', phone:'', service_areas:[] as string[]})
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [profileMsg, setProfileMsg] = useState('')
 
   const ETAS = ['30 mins','1 hour','2 hours','Half day','Tomorrow']
 
@@ -119,9 +124,48 @@ export default function Dashboard() {
           .select(`*, tradesperson_profiles(trade_category,service_areas,years_experience,rating_avg,rating_count,jobs_completed,id_verified,verification_status,is_founding_member)`)
           .eq('id',session.user.id)
           .single()
-        if(data) setProfile(data)
+        if(data){
+          setProfile(data)
+          setProfileForm({
+            full_name:     data.full_name||'',
+            phone:         data.phone||'',
+            service_areas: data.tradesperson_profiles?.service_areas||[],
+          })
+        }
       }
     }catch(e){console.log('Profile error:',e)}
+  }
+
+  async function saveProfile(){
+    if(!profileForm.full_name.trim()){ setProfileMsg('Name is required'); return }
+    setSavingProfile(true)
+    setProfileMsg('')
+    try{
+      const {data:{session}}=await supabase.auth.getSession()
+      if(!session?.user) return
+      // Update profiles table
+      const {error:e1}=await supabase
+        .from('profiles')
+        .update({ full_name: profileForm.full_name.trim(), phone: profileForm.phone.trim() })
+        .eq('id', session.user.id)
+      // Update service_areas on tradesperson_profiles
+      const {error:e2}=await supabase
+        .from('tradesperson_profiles')
+        .update({ service_areas: profileForm.service_areas })
+        .eq('id', session.user.id)
+      if(e1||e2){ setProfileMsg('Failed to save: '+(e1?.message||e2?.message)) }
+      else{
+        setProfile((p:any)=>({...p,
+          full_name: profileForm.full_name,
+          phone:     profileForm.phone,
+          tradesperson_profiles:{...p.tradesperson_profiles, service_areas: profileForm.service_areas}
+        }))
+        setEditingProfile(false)
+        setProfileMsg('✓ Profile updated')
+        setTimeout(()=>setProfileMsg(''),3000)
+      }
+    }catch(e){ setProfileMsg('Something went wrong') }
+    setSavingProfile(false)
   }
 
   async function loadRealJobs(){
@@ -1159,13 +1203,13 @@ export default function Dashboard() {
 
               {/* Profile card */}
               <div style={{background:'#222220',borderRadius:12,border:'1px solid rgba(255,255,255,.06)',padding:28,marginBottom:16}}>
-                <div style={{display:'flex',alignItems:'center',gap:16,marginBottom:24,paddingBottom:20,borderBottom:'1px solid rgba(255,255,255,.06)'}}>
+                <div style={{display:'flex',alignItems:'flex-start',gap:16,marginBottom:24,paddingBottom:20,borderBottom:'1px solid rgba(255,255,255,.06)'}}>
                   <div style={{position:'relative',flexShrink:0}}>
                     <div style={{width:64,height:64,borderRadius:'50%',background:'#9E3E24',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:"'Bebas Neue',sans-serif",fontSize:28,color:'#fff',border:'3px solid rgba(196,89,58,.3)'}}>{displayInitials}</div>
                     {isVerified&&(<div style={{position:'absolute',bottom:0,right:0,width:20,height:20,borderRadius:'50%',background:'#3DAA6A',border:'3px solid #222220',display:'flex',alignItems:'center',justifyContent:'center'}}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>)}
                   </div>
-                  <div>
-                    <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                  <div style={{flex:1}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginBottom:4}}>
                       <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:28,letterSpacing:1,color:'#F5F0E8',lineHeight:1}}>{displayName.toUpperCase()}</div>
                       {isVerified&&(<span style={{display:'inline-flex',alignItems:'center',gap:4,background:'rgba(61,170,106,.12)',border:'1px solid rgba(61,170,106,.25)',borderRadius:4,padding:'3px 8px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:'#3DAA6A'}}><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Verified</span>)}
                       {profile?.tradesperson_profiles?.is_founding_member&&(
@@ -1174,23 +1218,85 @@ export default function Dashboard() {
                         </span>
                       )}
                     </div>
-                    <div style={{fontSize:13,color:'rgba(245,240,232,.5)',marginTop:4}}>{displayTrade} · {profile?.tradesperson_profiles?.years_experience||0} yrs experience</div>
+                    <div style={{fontSize:13,color:'rgba(245,240,232,.5)'}}>{displayTrade} · {profile?.tradesperson_profiles?.years_experience||0} yrs experience</div>
                     <div style={{fontSize:13,color:'#E8A020',marginTop:3}}>{displayRating} · {displayJobs} completed jobs</div>
                   </div>
+                  <button onClick={()=>setEditingProfile((e:boolean)=>!e)}
+                    style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:editingProfile?'rgba(226,75,74,.08)':'rgba(196,89,58,.08)',color:editingProfile?'#E24B4A':'#E07A5F',border:`1px solid ${editingProfile?'rgba(226,75,74,.2)':'rgba(196,89,58,.2)'}`,padding:'7px 14px',borderRadius:6,cursor:'pointer',flexShrink:0}}>
+                    {editingProfile?'✕ Cancel':'✎ Edit'}
+                  </button>
                 </div>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
-                  {[
-                    {label:'Email',val:profile?.email||'—'},
-                    {label:'Phone',val:profile?.phone||'—'},
-                    {label:'Service areas',val:profile?.tradesperson_profiles?.service_areas?.join(' · ')||profile?.area||'—'},
-                    {label:'Member since',val:profile?.created_at?new Date(profile.created_at).toLocaleDateString('en-ZA',{month:'long',year:'numeric'}):'—'},
-                  ].map(r=>(
-                    <div key={r.label}>
-                      <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.35)',marginBottom:5}}>{r.label}</div>
-                      <div style={{fontSize:13,color:'rgba(245,240,232,.75)'}}>{r.val}</div>
+
+                {editingProfile?(
+                  <div>
+                    {[
+                      {label:'Full name *',key:'full_name',type:'text',placeholder:'Your full name'},
+                      {label:'Phone number',key:'phone',type:'tel',placeholder:'e.g. 0821234567'},
+                    ].map((f:any)=>(
+                      <div key={f.key} style={{marginBottom:14}}>
+                        <label style={{display:'block',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>{f.label}</label>
+                        <input type={f.type} value={(profileForm as any)[f.key]}
+                          onChange={e=>setProfileForm((p:any)=>({...p,[f.key]:e.target.value}))}
+                          placeholder={f.placeholder}
+                          style={{width:'100%',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'11px 14px',fontFamily:"'Barlow',sans-serif",fontSize:14,color:'#F5F0E8',outline:'none'}}/>
+                      </div>
+                    ))}
+                    {/* Service areas multi-select */}
+                    <div style={{marginBottom:20}}>
+                      <label style={{display:'block',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>
+                        Service areas ({profileForm.service_areas.length} selected)
+                      </label>
+                      <div style={{display:'flex',flexWrap:'wrap',gap:6,maxHeight:200,overflowY:'auto',background:'rgba(255,255,255,.03)',border:'1px solid rgba(255,255,255,.1)',borderRadius:8,padding:10}}>
+                        {['Sandton','Fourways','Bryanston','Randburg','Roodepoort','Midrand','Soweto',
+                          'Johannesburg CBD','Rosebank','Melrose','Kempton Park','Edenvale','Germiston',
+                          'Boksburg','Benoni','Pretoria Central','Centurion','Pretoria East','Pretoria North',
+                          'Menlyn','Lynnwood','Vereeniging','Vanderbijlpark','Alberton'].map((area:string)=>{
+                          const sel = profileForm.service_areas.includes(area)
+                          return (
+                            <div key={area} onClick={()=>setProfileForm((p:any)=>({
+                              ...p,
+                              service_areas: sel
+                                ? p.service_areas.filter((a:string)=>a!==area)
+                                : [...p.service_areas, area]
+                            }))}
+                              style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:.5,padding:'5px 10px',borderRadius:4,cursor:'pointer',
+                                background:sel?'rgba(196,89,58,.2)':'rgba(255,255,255,.05)',
+                                border:`1px solid ${sel?'rgba(196,89,58,.4)':'rgba(255,255,255,.1)'}`,
+                                color:sel?'#E07A5F':'rgba(245,240,232,.5)',transition:'all .15s'}}>
+                              {area}
+                            </div>
+                          )
+                        })}
+                      </div>
                     </div>
-                  ))}
-                </div>
+                    {profileMsg&&(
+                      <div style={{padding:'10px 14px',borderRadius:6,fontSize:13,marginBottom:14,
+                        background:profileMsg.startsWith('✓')?'rgba(61,170,106,.1)':'rgba(226,75,74,.08)',
+                        color:profileMsg.startsWith('✓')?'#3DAA6A':'#f08080',
+                        border:`1px solid ${profileMsg.startsWith('✓')?'rgba(61,170,106,.2)':'rgba(226,75,74,.2)'}`}}>
+                        {profileMsg}
+                      </div>
+                    )}
+                    <button onClick={saveProfile} disabled={savingProfile}
+                      style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:13,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:savingProfile?'rgba(196,89,58,.4)':'#C4593A',color:'#fff',border:'none',padding:'13px',borderRadius:8,cursor:savingProfile?'not-allowed':'pointer',width:'100%',marginTop:4}}>
+                      {savingProfile?'Saving...':'Save changes'}
+                    </button>
+                  </div>
+                ):(
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+                    {[
+                      {label:'Email',val:profile?.email||'—'},
+                      {label:'Phone',val:profile?.phone||'—'},
+                      {label:'Service areas',val:profile?.tradesperson_profiles?.service_areas?.join(' · ')||profile?.area||'—'},
+                      {label:'Member since',val:profile?.created_at?new Date(profile.created_at).toLocaleDateString('en-ZA',{month:'long',year:'numeric'}):'—'},
+                    ].map(r=>(
+                      <div key={r.label}>
+                        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.35)',marginBottom:5}}>{r.label}</div>
+                        <div style={{fontSize:13,color:'rgba(245,240,232,.75)'}}>{r.val}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Banking details card */}
