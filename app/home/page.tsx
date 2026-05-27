@@ -3,6 +3,33 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../lib/supabase'
+
+const AREAS = [
+  'Sandton','Fourways','Bryanston','Morningside','Rivonia','Sunninghill',
+  'Paulshof','Kyalami','Halfway House','Woodmead','Kramerville',
+  'Johannesburg CBD','Parktown','Rosebank','Melrose','Illovo','Hyde Park',
+  'Northcliff','Auckland Park','Greenside','Linden','Victory Park',
+  'Mayfair','Fordsburg','Newtown','Maboneng',
+  'Randburg','Ferndale','Honeydew','Ruimsig','Florida','Krugersdorp',
+  'Roodepoort','Northgate','Weltevredenpark','Constantia Kloof',
+  'Strubensvalley','Radiokop','Wilgeheuwel',
+  'Soweto','Lenasia','Ennerdale','Orange Farm','Alberton','Germiston',
+  'Meyersdal','Glenvista','Bassonia','Kibler Park','Mulbarton',
+  'Winchester Hills','Turffontein','Booysens','Ophirton',
+  'Boksburg','Benoni','Brakpan','Springs','Edenvale','Bedfordview',
+  'Kempton Park','Tembisa','Ekurhuleni','Vosloorus','Daveyton',
+  'Katlehong','Thokoza','Nigel','Heidelberg','Duduza',
+  'Midrand','Vorna Valley','Waterfall','Jukskei Park','Grand Central','Carlswald',
+  'Pretoria Central','Centurion','Pretoria East','Pretoria North',
+  'Pretoria West','Soshanguve','Mamelodi','Atteridgeville','Hatfield',
+  'Menlyn','Lynnwood','Faerie Glen','Moreleta Park','Garsfontein',
+  'Queenswood','Arcadia','Muckleneuk','Brooklyn','Groenkloof',
+  'Montana','Gezina','Silverton','Eersterust','Watloo',
+  'Irene','Rooihuiskraal','Olievenhoutbosch',
+  'Randfontein','Westonaria','Carletonville','Fochville','Magaliesburg','Chamdor',
+  'Vereeniging','Vanderbijlpark','Meyerton','Evaton','Sebokeng',
+  'Sharpeville','Bophelong','Three Rivers',
+]
 import NotificationBell from '../components/NotificationBell'
 import Messaging from '../components/Messaging'
 
