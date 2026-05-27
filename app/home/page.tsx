@@ -77,6 +77,7 @@ type HistoryJob = {
   emoji: string
   area: string
   tradesperson: string
+  tradespersonId: string
   price: number
   rating: number
   date: string
@@ -99,7 +100,8 @@ export default function HomeDashboard() {
   const [counterAmts, setCounterAmts] = useState<Record<string,string>>({})
   const [counterResp, setCounterResp] = useState<Record<string,string>>({})
   const [paidJobs, setPaidJobs]     = useState<Record<string,boolean>>({})
-  const [reviewJob, setReviewJob]   = useState<string|null>(null)
+  const [reviewJob, setReviewJob]             = useState<string|null>(null)
+  const [reviewTradespersonId, setReviewTradespersonId] = useState<string>('')
   const [rating, setRating]         = useState(5)
   const [reviewText, setReviewText] = useState('')
   // Completion submissions from tradesperson
@@ -352,6 +354,7 @@ export default function HomeDashboard() {
           emoji:        getCatEmoji(j.category),
           area:         j.area,
           tradesperson: (bid as any)?.profiles?.full_name || 'Tradesperson',
+          tradespersonId: bid?.tradesperson_id || '',
           price:        agreed,
           rating:       review?.rating || 0,
           date:         new Date(j.updated_at).toLocaleDateString('en-ZA',{day:'numeric',month:'short',year:'numeric'}),
@@ -416,6 +419,7 @@ export default function HomeDashboard() {
       setPaidJobs(p=>({...p,[jobId]:true}))
       toast('Payment release requested! 🎉','Admin has been notified to process payment to the tradesperson','#3DAA6A')
       setReviewJob(jobId)
+      setReviewTradespersonId(acceptedBid?.tradespersonId||'')
       loadRealJobs(true)
       loadHistoryJobs()
     } catch(e){ console.log('Confirm complete error:', e) }
@@ -584,70 +588,71 @@ export default function HomeDashboard() {
   async function submitReview(){
     try {
       const { data:{ session } } = await supabase.auth.getSession()
-      if(session?.user && reviewJob) {
-        const job = jobs.find(j=>j.id===reviewJob)
-        const acceptedBid = job?.bids.find(b=>b.status==='accepted'||b.status==='completed')
+      if(!session?.user || !reviewJob) return
 
-        // ── Bug fix: use tradespersonId (user ID) not acceptedBid.id (bid ID)
-        const tradespersonId = acceptedBid?.tradespersonId
-        if(!tradespersonId) {
-          console.error('No tradespersonId found — cannot submit review')
-          setReviewJob(null)
-          return
-        }
-
-        // 1. Insert review
-        const { error: reviewErr } = await supabase.from('reviews').insert({
-          job_id:      reviewJob,
-          reviewer_id: session.user.id,
-          reviewee_id: tradespersonId,
-          rating,
-          comment:     reviewText||null,
-        })
-
-        if(reviewErr) {
-          console.error('Review error:', reviewErr)
-          toast('Could not save review','Please try again','#E24B4A')
-          setReviewJob(null)
-          return
-        }
-
-        // 2. Recalculate rating_avg and rating_count from all reviews for this tradesperson
-        const { data: allReviews } = await supabase
-          .from('reviews')
-          .select('rating')
-          .eq('reviewee_id', tradespersonId)
-
-        if(allReviews && allReviews.length > 0) {
-          const count   = allReviews.length
-          const avg     = allReviews.reduce((s:number,r:any)=>s+r.rating, 0) / count
-          const rounded = Math.round(avg * 10) / 10
-
-          await supabase
-            .from('tradesperson_profiles')
-            .update({ rating_avg: rounded, rating_count: count })
-            .eq('id', tradespersonId)
-        }
-
-        // 3. Increment jobs_completed
-        const { data: tpData } = await supabase
-          .from('tradesperson_profiles')
-          .select('jobs_completed')
-          .eq('id', tradespersonId)
-          .single()
-
-        if(tpData !== null) {
-          await supabase
-            .from('tradesperson_profiles')
-            .update({ jobs_completed: (tpData.jobs_completed||0) + 1 })
-            .eq('id', tradespersonId)
-        }
-
-        toast('Review submitted ⭐','Thank you — this helps other homeowners find great tradespeople','#C4593A')
+      // Use stored tradespersonId — no need to look up from jobs state
+      const tradespersonId = reviewTradespersonId
+      if(!tradespersonId) {
+        toast('Could not identify tradesperson','Please try again','#E24B4A')
+        setReviewJob(null)
+        return
       }
-    } catch(e){ console.error('Review error:',e) }
+
+      // Check if review already exists for this job
+      const { data: existing } = await supabase
+        .from('reviews')
+        .select('id')
+        .eq('job_id', reviewJob)
+        .eq('reviewer_id', session.user.id)
+        .single()
+
+      if(existing) {
+        toast('Already reviewed','You have already left a review for this job','#E8A020')
+        setReviewJob(null)
+        return
+      }
+
+      // Insert review
+      const { error: reviewErr } = await supabase.from('reviews').insert({
+        job_id:      reviewJob,
+        reviewer_id: session.user.id,
+        reviewee_id: tradespersonId,
+        rating,
+        comment:     reviewText||null,
+      })
+
+      if(reviewErr) {
+        console.error('Review insert error:', reviewErr)
+        toast('Could not save review','Please try again','#E24B4A')
+        return
+      }
+
+      // Recalculate rating from all reviews — trigger should handle this but do it manually too
+      const { data: allReviews } = await supabase
+        .from('reviews')
+        .select('rating')
+        .eq('reviewee_id', tradespersonId)
+
+      if(allReviews && allReviews.length > 0) {
+        const count   = allReviews.length
+        const avg     = allReviews.reduce((s:number,r:any)=>s+r.rating,0) / count
+        const rounded = Math.round(avg * 10) / 10
+        await supabase
+          .from('tradesperson_profiles')
+          .update({ rating_avg: rounded, rating_count: count, jobs_completed: count })
+          .eq('id', tradespersonId)
+      }
+
+      // Update local history so star shows immediately without reload
+      setHistoryJobs(h=>h.map(j=>j.id===reviewJob?{...j,rating}:j))
+
+      toast('Review submitted ⭐','Thank you — this helps other homeowners find great tradespeople','#C4593A')
+    } catch(e){ console.error('Review error:',e); toast('Something went wrong','Please try again','#E24B4A') }
     setReviewJob(null)
+    setReviewTradespersonId('')
     setRating(5)
+    setReviewText('')
+  }
     setReviewText('')
     loadHistoryJobs()
   }
@@ -1301,7 +1306,7 @@ export default function HomeDashboard() {
                             </span>
                           ) : (
                             <span
-                              onClick={()=>{setReviewJob(j.id);setRating(5);setReviewText('')}}
+                              onClick={()=>{setReviewJob(j.id);setReviewTradespersonId(j.tradespersonId);setRating(5);setReviewText('')}}
                               style={{fontSize:12,color:'var(--terra)',fontFamily:'var(--fc)',fontWeight:600,letterSpacing:.5,cursor:'pointer',textDecoration:'underline'}}>
                               ⭐ Leave a review
                             </span>
@@ -1417,7 +1422,7 @@ export default function HomeDashboard() {
 
       {/* REVIEW MODAL — shown after homeowner confirms job complete */}
       {reviewJob&&(
-        <div className="modal-overlay" onClick={e=>{if(e.target===e.currentTarget)setReviewJob(null)}}>
+        <div className="modal-overlay" onClick={e=>{if(e.target===e.currentTarget){setReviewJob(null);setReviewTradespersonId('')}}}>
           <div className="modal">
             <div style={{textAlign:'center',marginBottom:20}}>
               <div style={{width:56,height:56,borderRadius:'50%',background:'rgba(61,170,106,.12)',border:'2px solid rgba(61,170,106,.3)',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 12px',fontSize:24}}>✓</div>
@@ -1469,7 +1474,7 @@ export default function HomeDashboard() {
               <button className="btn btn-terra" style={{flex:1,justifyContent:'center'}} onClick={submitReview}>
                 ⭐ Submit review
               </button>
-              <button className="btn btn-ghost" onClick={()=>setReviewJob(null)}>
+              <button className="btn btn-ghost" onClick={()=>{setReviewJob(null);setReviewTradespersonId('')}}>
                 Skip
               </button>
             </div>
