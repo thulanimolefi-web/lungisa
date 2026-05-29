@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '../lib/supabase'
 import NotificationBell from '../components/NotificationBell'
@@ -42,7 +42,7 @@ function getUrgencyColor(u:string){const m:Record<string,string>={emergency:'#E2
 function getTimeAgo(d:string){const diff=Date.now()-new Date(d).getTime();const mins=Math.floor(diff/60000);if(mins<60)return`${mins} min ago`;const hrs=Math.floor(mins/60);if(hrs<24)return`${hrs} hr${hrs>1?'s':''} ago`;return`${Math.floor(hrs/24)} day${Math.floor(hrs/24)>1?'s':''} ago`}
 function getJobTags(j:any){const t=[];if(j.urgency==='emergency')t.push({label:'Urgent',color:'rgba(226,75,74,.12)',text:'#f08080'});if((j.photo_count||0)>0)t.push({label:`${j.photo_count} Photo${j.photo_count>1?'s':''}`,color:'rgba(46,127,212,.1)',text:'#6aaee8'});if((j.bid_count||0)>0)t.push({label:`${j.bid_count} bids placed`,color:'rgba(255,255,255,.06)',text:'rgba(245,240,232,.45)'});if((j.bid_count||0)===0)t.push({label:'New',color:'rgba(196,89,58,.15)',text:'#E07A5F'});return t}
 
-export default function Dashboard() {
+function DashboardInner() {
   const [view, setView]           = useState<View>('feed')
   const [jobs, setJobs]           = useState<Job[]>([])
   const [isOnline, setIsOnline]   = useState(true)
@@ -1752,5 +1752,13 @@ export default function Dashboard() {
         ))}
       </div>
     </>
+  )
+}
+
+export default function Dashboard() {
+  return (
+    <Suspense fallback={<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'#1A1A16'}}><div style={{width:20,height:20,border:'2px solid rgba(255,255,255,.1)',borderTopColor:'#C4593A',borderRadius:'50%'}}/></div>}>
+      <DashboardInner />
+    </Suspense>
   )
 }
