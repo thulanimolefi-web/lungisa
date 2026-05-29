@@ -89,6 +89,30 @@ function DashboardInner() {
   const ETAS = ['30 mins','1 hour','2 hours','Half day','Tomorrow']
 
   const searchParams = useSearchParams()
+  const [refreshing, setRefreshing] = useState(false)
+  const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date())
+
+  async function refreshAll() {
+    setRefreshing(true)
+    await Promise.all([
+      loadRealJobs(),
+      loadMyBids(),
+      loadEarnings(),
+      loadProfile(),
+    ])
+    setLastRefreshed(new Date())
+    setRefreshing(false)
+  }
+
+  // Auto-refresh every 60 seconds
+  useEffect(()=>{
+    const interval = setInterval(()=>{
+      loadRealJobs()
+      loadMyBids()
+    }, 60000)
+    return ()=>clearInterval(interval)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[])
 
   useEffect(()=>{
     // Auto-open profile tab if redirected from signup with verify=1
@@ -760,7 +784,22 @@ function DashboardInner() {
         <div className="dash-main" style={{flex:1,overflowX:'hidden'}}>
           <div style={S.topbar}>
             <span style={S.pageTitle}>{viewTitles[view]}</span>
-            <NotificationBell theme="dark" />
+            <div style={{display:'flex',alignItems:'center',gap:10}}>
+              {/* Refresh button */}
+              <button onClick={refreshAll} disabled={refreshing}
+                title={`Last updated: ${lastRefreshed.toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'})}`}
+                style={{display:'flex',alignItems:'center',gap:5,background:'rgba(255,255,255,.06)',border:'1px solid rgba(255,255,255,.1)',borderRadius:6,padding:'6px 12px',cursor:refreshing?'not-allowed':'pointer',color:'rgba(245,240,232,.6)',transition:'all .15s',opacity:refreshing?.6:1}}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
+                  style={{animation:refreshing?'spin .6s linear infinite':'none'}}>
+                  <polyline points="23 4 23 10 17 10"/>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                </svg>
+                <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1,textTransform:'uppercase'}}>
+                  {refreshing?'Syncing...':'Refresh'}
+                </span>
+              </button>
+              <NotificationBell theme="dark" />
+            </div>
           </div>
 
           {/* JOB FEED */}

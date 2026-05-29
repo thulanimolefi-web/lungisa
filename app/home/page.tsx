@@ -120,6 +120,29 @@ export default function HomeDashboard() {
   const [profileForm, setProfileForm] = useState({full_name:'', phone:'', area:''})
   const [savingProfile, setSavingProfile] = useState(false)
   const [profileMsg, setProfileMsg] = useState('')
+  const [refreshing, setRefreshing] = useState(false)
+  const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date())
+
+  async function refreshAll() {
+    setRefreshing(true)
+    await Promise.all([
+      loadRealJobs(true),
+      loadHistoryJobs(),
+      loadProfile(),
+    ])
+    setLastRefreshed(new Date())
+    setRefreshing(false)
+  }
+
+  // Auto-refresh every 60 seconds
+  useEffect(()=>{
+    const interval = setInterval(()=>{
+      loadRealJobs(true)
+      loadHistoryJobs()
+    }, 60000)
+    return ()=>clearInterval(interval)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[])
   const [loading, setLoading]       = useState(true)
 
   useEffect(()=>{
@@ -875,11 +898,23 @@ export default function HomeDashboard() {
           <div className="topbar">
             <span className="page-title">{tab==='active'?'ACTIVE JOBS':tab==='history'?'JOB HISTORY':tab==='messages'?'MESSAGES':'MY PROFILE'}</span>
             <div className="topbar-right">
+              {/* Refresh button */}
+              <button onClick={refreshAll} disabled={refreshing}
+                title={`Last updated: ${lastRefreshed.toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'})}`}
+                style={{display:'flex',alignItems:'center',gap:5,background:'transparent',border:'1px solid var(--cream-d)',borderRadius:6,padding:'6px 10px',cursor:refreshing?'not-allowed':'pointer',color:'var(--charcoal-l)',transition:'all .15s',opacity:refreshing?.6:1}}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
+                  style={{animation:refreshing?'spin .6s linear infinite':'none'}}>
+                  <polyline points="23 4 23 10 17 10"/>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                </svg>
+                <span style={{fontFamily:'var(--fc)',fontSize:10,fontWeight:600,letterSpacing:1,textTransform:'uppercase'}}>
+                  {refreshing?'Syncing...':'Refresh'}
+                </span>
+              </button>
               <button className="post-btn" onClick={()=>router.push('/post')}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 Post a Job
               </button>
-              {/* ── Live notification bell ── */}
               <NotificationBell theme="light" />
             </div>
           </div>
