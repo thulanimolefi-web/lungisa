@@ -82,7 +82,7 @@ function DashboardInner() {
   const [bankingMsg, setBankingMsg] = useState('')
   // Profile editing
   const [editingProfile, setEditingProfile] = useState(false)
-  const [profileForm, setProfileForm] = useState({full_name:'', phone:'', service_areas:[] as string[], trade_category:''})
+  const [profileForm, setProfileForm] = useState({full_name:'', phone:'', service_areas:[] as string[], trade_category:'', trade_categories:[] as string[]})
   const [savingProfile, setSavingProfile] = useState(false)
   const [profileMsg, setProfileMsg] = useState('')
 
@@ -148,16 +148,18 @@ function DashboardInner() {
       if(session?.user){
         const {data}=await supabase
           .from('profiles')
-          .select(`*, tradesperson_profiles(trade_category,service_areas,years_experience,rating_avg,rating_count,jobs_completed,id_verified,verification_status,is_founding_member)`)
+          .select(`*, tradesperson_profiles(trade_category,trade_categories,service_areas,years_experience,rating_avg,rating_count,jobs_completed,id_verified,verification_status,is_founding_member)`)
           .eq('id',session.user.id)
           .single()
         if(data){
           setProfile(data)
           setProfileForm({
-            full_name:      data.full_name||'',
-            phone:          data.phone||'',
-            service_areas:  data.tradesperson_profiles?.service_areas||[],
-            trade_category: data.tradesperson_profiles?.trade_category||'',
+            full_name:        data.full_name||'',
+            phone:            data.phone||'',
+            service_areas:    data.tradesperson_profiles?.service_areas||[],
+            trade_category:   data.tradesperson_profiles?.trade_category||'',
+            trade_categories: data.tradesperson_profiles?.trade_categories||
+              (data.tradesperson_profiles?.trade_category?[data.tradesperson_profiles.trade_category]:[]),
           })
         }
       }
@@ -180,8 +182,9 @@ function DashboardInner() {
       const {error:e2}=await supabase
         .from('tradesperson_profiles')
         .update({
-          service_areas:  profileForm.service_areas,
-          trade_category: profileForm.trade_category.toLowerCase(),
+          service_areas:    profileForm.service_areas,
+          trade_category:   (profileForm.trade_categories[0]||profileForm.trade_category).toLowerCase(),
+          trade_categories: profileForm.trade_categories.map(t=>t.toLowerCase()),
         })
         .eq('id', session.user.id)
       if(e1||e2){ setProfileMsg('Failed to save: '+(e1?.message||e2?.message)) }
@@ -211,7 +214,7 @@ function DashboardInner() {
 
       const {data:tp}=await supabase
         .from('tradesperson_profiles')
-        .select('trade_category, service_areas')
+        .select('trade_category, trade_categories, service_areas')
         .eq('id',session.user.id)
         .single()
 
@@ -235,16 +238,17 @@ function DashboardInner() {
       console.log('[feed] raw jobs:', data?.length, error?.message)
 
       if(!error&&data){
-        const category = (tp?.trade_category||'').toLowerCase().trim()
-        const areas    = (tp?.service_areas||[]).map((a:string)=>a.toLowerCase().trim()).filter(Boolean)
+      const category  = (tp?.trade_category||'').toLowerCase().trim()
+      const categories = (tp?.trade_categories||[tp?.trade_category]).filter(Boolean).map((t:string)=>t.toLowerCase().trim())
+      const areas      = (tp?.service_areas||[]).map((a:string)=>a.toLowerCase().trim()).filter(Boolean)
 
         const filtered = data.filter((j:any)=>{
           // Skip already-bid jobs
           if(bidJobIds.has(j.id)) return false
-          // Category check — lowercase both sides
+          // Category check — match any of the tradesperson's trades
           const jCat = (j.category||'').toLowerCase().trim()
-          if(category && jCat !== category) return false
-          // Area check — lowercase both sides, skip if no areas set
+          if(categories.length > 0 && !categories.includes(jCat)) return false
+          // Area check
           if(areas.length > 0){
             const jArea = (j.area||'').toLowerCase().trim()
             if(!areas.includes(jArea)) return false
@@ -640,9 +644,11 @@ function DashboardInner() {
   const countersPending=myBids.filter(b=>b.status==='countered'&&b.counterBy==='homeowner')
 
   const displayName=profile?.full_name||'—'
-  const displayTrade=profile?.tradesperson_profiles?.trade_category
-    ?profile.tradesperson_profiles.trade_category.charAt(0).toUpperCase()+profile.tradesperson_profiles.trade_category.slice(1)
-    :'Tradesperson'
+  const displayTrade = profile?.tradesperson_profiles?.trade_categories?.length > 0
+    ? profile.tradesperson_profiles.trade_categories.map((t:string)=>t.charAt(0).toUpperCase()+t.slice(1)).join(' · ')
+    : profile?.tradesperson_profiles?.trade_category
+      ? profile.tradesperson_profiles.trade_category.charAt(0).toUpperCase()+profile.tradesperson_profiles.trade_category.slice(1)
+      : 'Tradesperson'
   const displayInitials=displayName.split(' ').map((n:string)=>n[0]).join('').substring(0,2).toUpperCase()||'?'
   const displayRating=profile?.tradesperson_profiles?.rating_avg>0?`★ ${profile.tradesperson_profiles.rating_avg}`:'New'
   const displayJobs=profile?.tradesperson_profiles?.jobs_completed||0
@@ -1297,23 +1303,45 @@ function DashboardInner() {
                       </div>
                     ))}
 
-                    {/* Trade category */}
+                    {/* Trade categories — multi select up to 3 */}
                     <div style={{marginBottom:14}}>
                       <label style={{display:'block',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>
-                        Trade / Skill *
+                        Your trades <span style={{fontWeight:400,fontSize:9,textTransform:'none',letterSpacing:0,color:'rgba(245,240,232,.25)'}}>select up to 3</span>
                       </label>
-                      <select
-                        value={profileForm.trade_category}
-                        onChange={e=>setProfileForm((p:any)=>({...p,trade_category:e.target.value}))}
-                        style={{width:'100%',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'11px 14px',fontFamily:"'Barlow',sans-serif",fontSize:14,color:'#F5F0E8',outline:'none'}}>
-                        <option value="">Select your trade</option>
+                      <div style={{display:'flex',flexWrap:'wrap',gap:6,background:'rgba(255,255,255,.03)',border:'1px solid rgba(255,255,255,.1)',borderRadius:8,padding:10}}>
                         {['Plumbing','Electrical','Painting','Carpentry','Roofing','Tiling',
                           'Solar','Landscaping','Waterproofing','Welding','Cleaning','General',
                           'Moving','Pest Control','Appliance Repair','Air Conditioning',
-                          'Security','Paving','Plastering'].map(t=>(
-                          <option key={t} value={t.toLowerCase()}>{t}</option>
-                        ))}
-                      </select>
+                          'Security','Paving','Plastering'].map(t=>{
+                          const val = t.toLowerCase()
+                          const sel = profileForm.trade_categories.includes(val)
+                          const maxed = profileForm.trade_categories.length >= 3 && !sel
+                          return (
+                            <div key={t}
+                              onClick={()=>{
+                                if(maxed) return
+                                setProfileForm((p:any)=>({
+                                  ...p,
+                                  trade_categories: sel
+                                    ? p.trade_categories.filter((x:string)=>x!==val)
+                                    : [...p.trade_categories, val]
+                                }))
+                              }}
+                              style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:.5,padding:'5px 10px',borderRadius:4,cursor:maxed?'not-allowed':'pointer',
+                                background:sel?'rgba(196,89,58,.2)':'rgba(255,255,255,.05)',
+                                border:`1px solid ${sel?'rgba(196,89,58,.4)':'rgba(255,255,255,.1)'}`,
+                                color:sel?'#E07A5F':'rgba(245,240,232,.5)',
+                                opacity:maxed?.4:1,transition:'all .15s'}}>
+                              {t}
+                            </div>
+                          )
+                        })}
+                      </div>
+                      {profileForm.trade_categories.length > 0 && (
+                        <div style={{fontSize:11,color:'#E07A5F',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,marginTop:6,letterSpacing:.5}}>
+                          ✓ {profileForm.trade_categories.map(t=>t.charAt(0).toUpperCase()+t.slice(1)).join(' · ')}
+                        </div>
+                      )}
                     </div>
                     {/* Service areas multi-select */}
                     <div style={{marginBottom:20}}>
@@ -1359,10 +1387,15 @@ function DashboardInner() {
                 ):(
                   <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
                     {[
-                      {label:'Email',val:profile?.email||'—'},
-                      {label:'Phone',val:profile?.phone||'—'},
-                      {label:'Service areas',val:profile?.tradesperson_profiles?.service_areas?.join(' · ')||profile?.area||'—'},
-                      {label:'Member since',val:profile?.created_at?new Date(profile.created_at).toLocaleDateString('en-ZA',{month:'long',year:'numeric'}):'—'},
+                      {label:'Email',     val:profile?.email||'—'},
+                      {label:'Phone',     val:profile?.phone||'—'},
+                      {label:'Trades',    val:(profile?.tradesperson_profiles?.trade_categories?.length>0
+                        ? profile.tradesperson_profiles.trade_categories.map((t:string)=>t.charAt(0).toUpperCase()+t.slice(1)).join(' · ')
+                        : profile?.tradesperson_profiles?.trade_category
+                          ? profile.tradesperson_profiles.trade_category.charAt(0).toUpperCase()+profile.tradesperson_profiles.trade_category.slice(1)
+                          : '—')},
+                      {label:'Service areas', val:profile?.tradesperson_profiles?.service_areas?.join(' · ')||profile?.area||'—'},
+                      {label:'Member since',  val:profile?.created_at?new Date(profile.created_at).toLocaleDateString('en-ZA',{month:'long',year:'numeric'}):'—'},
                     ].map(r=>(
                       <div key={r.label}>
                         <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.35)',marginBottom:5}}>{r.label}</div>

@@ -173,6 +173,7 @@ export default function AuthPage() {
           await supabase.from('tradesperson_profiles').upsert({
             id:               data.user.id,
             trade_category:   (trades[0]||trade).toLowerCase() as any,
+            trade_categories: (trades.length > 0 ? trades : [trade]).map(t=>t.toLowerCase()),
             service_areas:    safeAreas,
             years_experience: 0,
             verification_status: 'unsubmitted',
