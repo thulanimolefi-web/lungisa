@@ -665,7 +665,7 @@ export default function HomeDashboard() {
         return
       }
 
-      // Recalculate rating from all reviews — trigger should handle this but do it manually too
+      // Recalculate rating from all reviews
       const { data: allReviews } = await supabase
         .from('reviews')
         .select('rating')
@@ -675,9 +675,21 @@ export default function HomeDashboard() {
         const count   = allReviews.length
         const avg     = allReviews.reduce((s:number,r:any)=>s+r.rating,0) / count
         const rounded = Math.round(avg * 10) / 10
+
+        // Count actual completed jobs separately from reviews
+        const { count: completedCount } = await supabase
+          .from('bids')
+          .select('id', { count: 'exact', head: true })
+          .eq('tradesperson_id', tradespersonId)
+          .eq('jobs.status', 'completed')
+
         await supabase
           .from('tradesperson_profiles')
-          .update({ rating_avg: rounded, rating_count: count, jobs_completed: count })
+          .update({
+            rating_avg:     rounded,
+            rating_count:   count,
+            jobs_completed: completedCount || count,
+          })
           .eq('id', tradespersonId)
       }
 

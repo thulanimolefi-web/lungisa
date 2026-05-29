@@ -82,7 +82,7 @@ function DashboardInner() {
   const [bankingMsg, setBankingMsg] = useState('')
   // Profile editing
   const [editingProfile, setEditingProfile] = useState(false)
-  const [profileForm, setProfileForm] = useState({full_name:'', phone:'', service_areas:[] as string[]})
+  const [profileForm, setProfileForm] = useState({full_name:'', phone:'', service_areas:[] as string[], trade_category:''})
   const [savingProfile, setSavingProfile] = useState(false)
   const [profileMsg, setProfileMsg] = useState('')
 
@@ -154,9 +154,10 @@ function DashboardInner() {
         if(data){
           setProfile(data)
           setProfileForm({
-            full_name:     data.full_name||'',
-            phone:         data.phone||'',
-            service_areas: data.tradesperson_profiles?.service_areas||[],
+            full_name:      data.full_name||'',
+            phone:          data.phone||'',
+            service_areas:  data.tradesperson_profiles?.service_areas||[],
+            trade_category: data.tradesperson_profiles?.trade_category||'',
           })
         }
       }
@@ -175,17 +176,24 @@ function DashboardInner() {
         .from('profiles')
         .update({ full_name: profileForm.full_name.trim(), phone: profileForm.phone.trim() })
         .eq('id', session.user.id)
-      // Update service_areas on tradesperson_profiles
+      // Update service_areas and trade_category on tradesperson_profiles
       const {error:e2}=await supabase
         .from('tradesperson_profiles')
-        .update({ service_areas: profileForm.service_areas })
+        .update({
+          service_areas:  profileForm.service_areas,
+          trade_category: profileForm.trade_category.toLowerCase(),
+        })
         .eq('id', session.user.id)
       if(e1||e2){ setProfileMsg('Failed to save: '+(e1?.message||e2?.message)) }
       else{
         setProfile((p:any)=>({...p,
           full_name: profileForm.full_name,
           phone:     profileForm.phone,
-          tradesperson_profiles:{...p.tradesperson_profiles, service_areas: profileForm.service_areas}
+          tradesperson_profiles:{
+            ...p.tradesperson_profiles,
+            service_areas:  profileForm.service_areas,
+            trade_category: profileForm.trade_category,
+          }
         }))
         setEditingProfile(false)
         setProfileMsg('✓ Profile updated')
@@ -1288,6 +1296,25 @@ function DashboardInner() {
                           style={{width:'100%',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'11px 14px',fontFamily:"'Barlow',sans-serif",fontSize:14,color:'#F5F0E8',outline:'none'}}/>
                       </div>
                     ))}
+
+                    {/* Trade category */}
+                    <div style={{marginBottom:14}}>
+                      <label style={{display:'block',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>
+                        Trade / Skill *
+                      </label>
+                      <select
+                        value={profileForm.trade_category}
+                        onChange={e=>setProfileForm((p:any)=>({...p,trade_category:e.target.value}))}
+                        style={{width:'100%',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'11px 14px',fontFamily:"'Barlow',sans-serif",fontSize:14,color:'#F5F0E8',outline:'none'}}>
+                        <option value="">Select your trade</option>
+                        {['Plumbing','Electrical','Painting','Carpentry','Roofing','Tiling',
+                          'Solar','Landscaping','Waterproofing','Welding','Cleaning','General',
+                          'Moving','Pest Control','Appliance Repair','Air Conditioning',
+                          'Security','Paving','Plastering'].map(t=>(
+                          <option key={t} value={t.toLowerCase()}>{t}</option>
+                        ))}
+                      </select>
+                    </div>
                     {/* Service areas multi-select */}
                     <div style={{marginBottom:20}}>
                       <label style={{display:'block',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>
