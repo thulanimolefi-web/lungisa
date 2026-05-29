@@ -590,10 +590,22 @@ export default function HomeDashboard() {
       const { data:{ session } } = await supabase.auth.getSession()
       if(!session?.user || !reviewJob) return
 
-      // Use stored tradespersonId — no need to look up from jobs state
-      const tradespersonId = reviewTradespersonId
+      // Use stored tradespersonId — fall back to DB lookup for older jobs
+      let tradespersonId = reviewTradespersonId
+
       if(!tradespersonId) {
-        toast('Could not identify tradesperson','Please try again','#E24B4A')
+        // Look up the accepted bid for this job
+        const { data: bid } = await supabase
+          .from('bids')
+          .select('tradesperson_id')
+          .eq('job_id', reviewJob)
+          .in('status', ['accepted','completed'])
+          .single()
+        tradespersonId = bid?.tradesperson_id || ''
+      }
+
+      if(!tradespersonId) {
+        toast('Could not identify tradesperson','Please contact support','#E24B4A')
         setReviewJob(null)
         return
       }
