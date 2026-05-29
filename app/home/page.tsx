@@ -781,7 +781,7 @@ export default function HomeDashboard() {
     .resp-ok{background:rgba(61,170,106,.1);border:1px solid rgba(61,170,106,.2);color:#1a6e35}
     .resp-no{background:rgba(196,89,58,.08);border:1px solid rgba(196,89,58,.2);color:var(--terra-d)}
     .escrow-note{background:rgba(61,170,106,.08);border:1px solid rgba(61,170,106,.2);border-radius:8px;padding:14px 16px;font-size:13px;color:var(--charcoal-l);display:flex;align-items:flex-start;gap:10px;line-height:1.6;margin:16px 0}
-    .pay-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .pay-grid{display:grid;grid-template-columns:1fr;gap:10px}
     .pay-btn{border:1.5px solid var(--cream-d);border-radius:8px;padding:14px;background:var(--white);cursor:pointer;text-align:center;transition:all .18s}
     .pay-btn:hover{border-color:var(--terra);background:rgba(196,89,58,.02)}
     .pay-lbl{font-family:var(--fc);font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--charcoal)}

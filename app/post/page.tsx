@@ -888,8 +888,7 @@ export default function PostJob() {
                       🔒 Your payment is held in escrow. <strong>Only released once you confirm the job is complete.</strong>
                     </div>
                     <div style={{display:'flex',gap:12}}>
-                      <button onClick={()=>setPaid(true)} style={{...S.btn('primary')}}>Pay by Card</button>
-                      <button onClick={()=>setPaid(true)} style={{...S.btn('primary'),background:'rgba(255,255,255,.08)',color:'var(--cream)'}}>Pay by EFT</button>
+                      <button onClick={()=>setPaid(true)} style={{...S.btn('primary'),flex:1}}>Pay by Card</button>
                     </div>
                   </div>
                 )}
