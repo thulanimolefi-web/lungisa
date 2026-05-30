@@ -8,9 +8,11 @@ export default function LandingPage() {
   const [scrolled, setScrolled] = useState(false)
   const [activeTab, setActiveTab] = useState<'homeowner'|'tradesperson'>('homeowner')
   const [counting, setCounting] = useState(false)
+  const [mounted, setMounted] = useState(false)
   const statsRef = useRef<HTMLDivElement>(null)
 
   useEffect(()=>{
+    setMounted(true)
     const onScroll = () => setScrolled(window.scrollY > 40)
     window.addEventListener('scroll', onScroll)
 
@@ -235,12 +237,15 @@ export default function LandingPage() {
     { stars:5, text:'"The negotiation feature is what sold me. I posted a painting job, got 6 bids, and negotiated to exactly what I wanted to pay. Brilliant concept."', name:'Thabo D.', role:'Homeowner · Midrand', init:'TD' },
   ]
 
+  // Prevent hydration mismatch — render nav class only after mount
+  const navClass = mounted ? `nav${scrolled?' scrolled':''}` : 'nav'
+
   return (
     <>
       <style>{css}</style>
 
       {/* NAV */}
-      <nav className={`nav${scrolled?' scrolled':''}`}>
+      <nav className={navClass}>
         <div className="nav-logo" onClick={()=>router.push('/')}>
           <div className="nav-hex">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -331,7 +336,12 @@ export default function LandingPage() {
             {n:'100%', l:'Escrow protected'},
           ].map((s,i)=>(
             <div key={i} className="stat-item">
-              <div className="stat-n" style={{animation:counting?`countUp .4s ${i*.1}s ease both`:'none'}}>{s.n}</div>
+              <div
+                className="stat-n"
+                style={mounted && counting ? {animation:`countUp .4s ${i*.1}s ease both`} : {}}
+              >
+                {s.n}
+              </div>
               <div className="stat-l">{s.l}</div>
             </div>
           ))}
@@ -465,21 +475,21 @@ export default function LandingPage() {
             </div>
             <div>
               <div className="footer-col-h">Homeowners</div>
-              <a className="footer-link" onClick={()=>router.push('/auth')}>Post a job</a>
-              <a className="footer-link" onClick={()=>router.push('/home')}>My dashboard</a>
-              <a className="footer-link" href="#how-it-works">How it works</a>
+              <a href="/auth" className="footer-link">Post a job</a>
+              <a href="/home" className="footer-link">My dashboard</a>
+              <a href="#how-it-works" className="footer-link">How it works</a>
             </div>
             <div>
               <div className="footer-col-h">Tradespeople</div>
-              <a className="footer-link" onClick={()=>router.push('/auth')}>Join free</a>
-              <a className="footer-link" onClick={()=>router.push('/dashboard')}>My dashboard</a>
-              <a className="footer-link" href="#trades">Trades covered</a>
+              <a href="/auth" className="footer-link">Join free</a>
+              <a href="/dashboard" className="footer-link">My dashboard</a>
+              <a href="#trades" className="footer-link">Trades covered</a>
             </div>
             <div>
               <div className="footer-col-h">Company</div>
-              <a className="footer-link" href="https://vaultlinkafrica.com" target="_blank" rel="noreferrer">VaultLink Africa</a>
-              <a className="footer-link" href="mailto:support@lungiza.co.za">Contact us</a>
-              <a className="footer-link" href="mailto:support@lungiza.co.za">Support</a>
+              <a href="https://vaultlinkafrica.com" className="footer-link" target="_blank" rel="noreferrer">VaultLink Africa</a>
+              <a href="mailto:support@lungiza.co.za" className="footer-link">Contact us</a>
+              <a href="mailto:support@lungiza.co.za" className="footer-link">Support</a>
             </div>
           </div>
           <div className="footer-bottom">
