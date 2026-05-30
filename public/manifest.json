@@ -2,8 +2,8 @@
     "name": "Lungisa",
     "short_name": "Lungisa",
     "description": "Post a home repair job, get competitive bids, pay safely.",
-    "start_url": "/",
-    "scope": "/",
+    "start_url": "https://lungiza.co.za/",
+    "scope": "https://lungiza.co.za/",
     "display": "standalone",
     "orientation": "portrait",
     "background_color": "#1A1A1A",
@@ -19,7 +19,7 @@
       { "src": "/icons/icon-512x512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable any" }
     ],
     "shortcuts": [
-      { "name": "Post a job",    "url": "/post-job", "icons": [{ "src": "/icons/icon-96x96.png", "sizes": "96x96" }] },
-      { "name": "My dashboard",  "url": "/home",     "icons": [{ "src": "/icons/icon-96x96.png", "sizes": "96x96" }] }
+      { "name": "Post a job",   "url": "https://lungiza.co.za/post-job", "icons": [{ "src": "/icons/icon-96x96.png", "sizes": "96x96" }] },
+      { "name": "My dashboard", "url": "https://lungiza.co.za/home",     "icons": [{ "src": "/icons/icon-96x96.png", "sizes": "96x96" }] }
     ]
   }

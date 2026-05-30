@@ -1,6 +1,13 @@
 const STATIC = 'lungisa-static-v1';
 const DYNAMIC = 'lungisa-dynamic-v1';
-const SHELL = ['/', '/auth', '/post-job', '/home', '/offline', '/icons/icon-192x192.png'];
+const SHELL = [
+  '/',
+  '/auth',
+  '/post-job',
+  '/home',
+  '/offline',
+  '/icons/icon-192x192.png',
+];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(STATIC).then(c => c.addAll(SHELL)));
@@ -20,13 +27,17 @@ self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET') return;
 
-  // Never cache Supabase
-  if (url.hostname.includes('supabase.co') || url.pathname.startsWith('/api/')) {
+  // Never cache Supabase or API calls — always fetch fresh
+  if (
+    url.hostname.includes('supabase.co') ||
+    url.pathname.startsWith('/api/') ||
+    url.hostname !== 'lungiza.co.za'
+  ) {
     e.respondWith(fetch(e.request));
     return;
   }
 
-  // Cache-first for static assets
+  // Cache-first for static assets and icons
   if (url.pathname.startsWith('/_next/static/') || e.request.destination === 'image') {
     e.respondWith(
       caches.match(e.request).then(cached => cached || fetch(e.request).then(r => {
@@ -37,11 +48,13 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // Network-first for pages, fallback to offline
+  // Network-first for pages — fallback to cache, then offline page
   e.respondWith(
     fetch(e.request).then(r => {
       caches.open(DYNAMIC).then(c => c.put(e.request, r.clone()));
       return r;
-    }).catch(() => caches.match(e.request).then(cached => cached || caches.match('/offline')))
+    }).catch(() =>
+      caches.match(e.request).then(cached => cached || caches.match('/offline'))
+    )
   );
 });
