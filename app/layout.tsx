@@ -22,6 +22,22 @@ export const metadata: Metadata = {
   creator: 'VaultLink Africa',
   publisher: 'TVM Capital Link Pty Ltd',
 
+  // ── PWA ──────────────────────────────────────────────
+  manifest: '/manifest.json',
+
+  appleWebApp: {
+    capable: true,
+    title: 'Lungisa',
+    statusBarStyle: 'black-translucent',
+  },
+
+  viewport: {
+    width: 'device-width',
+    initialScale: 1,
+    viewportFit: 'cover',
+  },
+  // ─────────────────────────────────────────────────────
+
   openGraph: {
     type:        'website',
     locale:      'en_ZA',
@@ -60,10 +76,8 @@ export const metadata: Metadata = {
   icons: {
     icon:       '/favicon.ico',
     shortcut:   '/favicon.ico',
-    apple:      '/apple-touch-icon.png',
+    apple:      '/icons/icon-192x192.png',
   },
-
-  manifest: '/manifest.json',
 
   alternates: {
     canonical: 'https://www.lungiza.co.za',
@@ -78,6 +92,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en-ZA">
       <head>
+        {/* PWA theme colour — also sets Android status bar colour */}
+        <meta name="theme-color" content="#C4622D" />
+
         {/* Structured Data — LocalBusiness */}
         <script
           type="application/ld+json"
@@ -133,6 +150,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               'query-input': 'required name=search_term_string',
             },
           })}}
+        />
+        {/* Service worker registration */}
+        <script
+          dangerouslySetInnerHTML={{ __html: `
+            if ('serviceWorker' in navigator) {
+              window.addEventListener('load', function() {
+                navigator.serviceWorker.register('/sw.js')
+                  .then(function(r) { console.log('SW registered:', r.scope); })
+                  .catch(function(e) { console.log('SW failed:', e); });
+              });
+            }
+          `}}
         />
       </head>
       <body>{children}</body>
