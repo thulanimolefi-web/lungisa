@@ -22,7 +22,6 @@ type Bid = {
   jobId: string
   jobStatus: string
 }
-// ── Added media to Job type ──────────────────────────────────────
 type JobMedia = {
   url: string
   type: 'image' | 'video'
@@ -45,7 +44,9 @@ function getJobTags(j:any){const t=[];if(j.urgency==='emergency')t.push({label:'
 function DashboardInner() {
   const [view, setView]           = useState<View>('feed')
   const [jobs, setJobs]           = useState<Job[]>([])
-  const [isOnline, setIsOnline]   = useState(true)
+  // ── CHANGE 1: real online state (was useState(true), now false + toggling flag) ──
+  const [isOnline, setIsOnline]         = useState(false)
+  const [togglingOnline, setTogglingOnline] = useState(false)
   const [modalJob, setModalJob]   = useState<Job|null>(null)
   const [modalMedia, setModalMedia] = useState<JobMedia[]>([])
   const [mediaLoading, setMediaLoading] = useState(false)
@@ -61,7 +62,6 @@ function DashboardInner() {
   const [loading, setLoading]     = useState(true)
   const [earnings, setEarnings]   = useState({thisWeek:0,totalJobs:0,avgJobValue:0,inEscrow:0})
   const [counterInputs, setCounterInputs] = useState<Record<string,string>>({})
-  // Job completion flow
   const [completionJobId, setCompletionJobId] = useState<string|null>(null)
   const [completionBidId, setCompletionBidId] = useState<string|null>(null)
   const [completionReport, setCompletionReport] = useState('')
@@ -70,7 +70,6 @@ function DashboardInner() {
   const [uploadingCompletion, setUploadingCompletion] = useState(false)
   const [submittingCompletion, setSubmittingCompletion] = useState(false)
   const [submittedCompletions, setSubmittedCompletions] = useState<Set<string>>(new Set())
-  // Banking details
   const [banking, setBanking] = useState<{
     bank_name:string, account_holder:string,
     account_number:string, account_type:string, branch_code:string
@@ -80,7 +79,6 @@ function DashboardInner() {
   })
   const [savingBanking, setSavingBanking] = useState(false)
   const [bankingMsg, setBankingMsg] = useState('')
-  // Profile editing
   const [editingProfile, setEditingProfile] = useState(false)
   const [profileForm, setProfileForm] = useState({full_name:'', phone:'', service_areas:[] as string[], trade_category:'', trade_categories:[] as string[]})
   const [savingProfile, setSavingProfile] = useState(false)
@@ -94,9 +92,7 @@ function DashboardInner() {
 
   async function refreshAll() {
     setRefreshing(true)
-    // Re-establish realtime channel in case it dropped
     supabase.removeAllChannels()
-    // Hard reload all data
     await Promise.all([
       loadRealJobs(),
       loadMyBids(),
@@ -107,7 +103,6 @@ function DashboardInner() {
     setRefreshing(false)
   }
 
-  // Auto-refresh every 60 seconds
   useEffect(()=>{
     const interval = setInterval(()=>{
       loadRealJobs()
@@ -118,7 +113,6 @@ function DashboardInner() {
   },[])
 
   useEffect(()=>{
-    // Auto-open profile tab if redirected from signup with verify=1
     if(searchParams.get('verify')==='1') setView('profile')
 
     loadProfile()
@@ -138,7 +132,22 @@ function DashboardInner() {
       })
       .subscribe()
 
-    return ()=>{ supabase.removeChannel(channel) }
+    // ── CHANGE 5: set offline on page unload ──
+    const handleUnload = () => {
+      supabase.auth.getSession().then(({data:{session}})=>{
+        if(session?.user){
+          supabase.from('tradesperson_profiles')
+            .update({is_online:false, last_seen_at:new Date().toISOString()})
+            .eq('id', session.user.id)
+        }
+      })
+    }
+    window.addEventListener('beforeunload', handleUnload)
+
+    return ()=>{
+      supabase.removeChannel(channel)
+      window.removeEventListener('beforeunload', handleUnload)
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[])
 
@@ -148,11 +157,14 @@ function DashboardInner() {
       if(session?.user){
         const {data}=await supabase
           .from('profiles')
-          .select(`*, tradesperson_profiles(trade_category,trade_categories,service_areas,years_experience,rating_avg,rating_count,jobs_completed,id_verified,verification_status,is_founding_member)`)
+          // ── CHANGE 2: added is_online to select ──
+          .select(`*, tradesperson_profiles(trade_category,trade_categories,service_areas,years_experience,rating_avg,rating_count,jobs_completed,id_verified,verification_status,is_founding_member,is_online)`)
           .eq('id',session.user.id)
           .single()
         if(data){
           setProfile(data)
+          // ── CHANGE 3: load real online status from DB ──
+          setIsOnline(data.tradesperson_profiles?.is_online ?? false)
           setProfileForm({
             full_name:        data.full_name||'',
             phone:            data.phone||'',
@@ -166,6 +178,36 @@ function DashboardInner() {
     }catch(e){console.log('Profile error:',e)}
   }
 
+  // ── CHANGE 4: real toggleOnline function ──
+  async function toggleOnline() {
+    if(togglingOnline) return
+    setTogglingOnline(true)
+    const next = !isOnline
+    try{
+      const {data:{session}}=await supabase.auth.getSession()
+      if(!session?.user){ setTogglingOnline(false); return }
+      const {error}=await supabase
+        .from('tradesperson_profiles')
+        .update({ is_online: next, last_seen_at: new Date().toISOString() })
+        .eq('id', session.user.id)
+      if(error){
+        console.error('Toggle online error:', error.message)
+        toast('Could not update status','Please try again',false)
+      } else {
+        setIsOnline(next)
+        toast(
+          next ? "You're online" : "You're offline",
+          next ? "You'll now receive new job notifications" : "You won't receive new job alerts",
+          false
+        )
+      }
+    }catch(e){
+      console.error('Toggle online error:', e)
+      toast('Could not update status','Please check your connection',false)
+    }
+    setTogglingOnline(false)
+  }
+
   async function saveProfile(){
     if(!profileForm.full_name.trim()){ setProfileMsg('Name is required'); return }
     setSavingProfile(true)
@@ -173,12 +215,10 @@ function DashboardInner() {
     try{
       const {data:{session}}=await supabase.auth.getSession()
       if(!session?.user) return
-      // Update profiles table
       const {error:e1}=await supabase
         .from('profiles')
         .update({ full_name: profileForm.full_name.trim(), phone: profileForm.phone.trim() })
         .eq('id', session.user.id)
-      // Update service_areas and trade_category on tradesperson_profiles
       const {error:e2}=await supabase
         .from('tradesperson_profiles')
         .update({
@@ -220,14 +260,12 @@ function DashboardInner() {
 
       console.log('[feed] profile:', tp?.trade_category, tp?.service_areas)
 
-      // Get already-bid job IDs first
       const {data:myBids}=await supabase
         .from('bids')
         .select('job_id')
         .eq('tradesperson_id', session.user.id)
       const bidJobIds = new Set((myBids||[]).map((b:any)=>b.job_id))
 
-      // Fetch ALL open/bidding jobs — exclude expired
       const {data,error}=await supabase
         .from('jobs')
         .select('id,title,category,area,urgency,budget_max,description,created_at,status,bid_count,homeowner_id,preferred_time,expires_at')
@@ -238,17 +276,14 @@ function DashboardInner() {
       console.log('[feed] raw jobs:', data?.length, error?.message)
 
       if(!error&&data){
-      const category  = (tp?.trade_category||'').toLowerCase().trim()
-      const categories = (tp?.trade_categories||[tp?.trade_category]).filter(Boolean).map((t:string)=>t.toLowerCase().trim())
-      const areas      = (tp?.service_areas||[]).map((a:string)=>a.toLowerCase().trim()).filter(Boolean)
+        const category  = (tp?.trade_category||'').toLowerCase().trim()
+        const categories = (tp?.trade_categories||[tp?.trade_category]).filter(Boolean).map((t:string)=>t.toLowerCase().trim())
+        const areas      = (tp?.service_areas||[]).map((a:string)=>a.toLowerCase().trim()).filter(Boolean)
 
         const filtered = data.filter((j:any)=>{
-          // Skip already-bid jobs
           if(bidJobIds.has(j.id)) return false
-          // Category check — match any of the tradesperson's trades
           const jCat = (j.category||'').toLowerCase().trim()
           if(categories.length > 0 && !categories.includes(jCat)) return false
-          // Area check
           if(areas.length > 0){
             const jArea = (j.area||'').toLowerCase().trim()
             if(!areas.includes(jArea)) return false
@@ -258,7 +293,6 @@ function DashboardInner() {
 
         console.log('[feed] filtered:', filtered.length)
 
-        // Get photo counts
         const jobIds = filtered.map((j:any)=>j.id)
         const {data:photoCounts} = jobIds.length > 0 ? await supabase
           .from('job_photos').select('job_id').in('job_id', jobIds) : {data:[]}
@@ -391,15 +425,12 @@ function DashboardInner() {
     setSavingBanking(false)
   }
 
-  // ── Load job media when opening bid modal ────────────────────────
   async function openModal(job:Job){
     setModalJob(job)
     setBidPrice('')
     setBidNote('')
     setBidEta('30 mins')
     setModalMedia([])
-
-    // Always fetch photos/videos for this job
     setMediaLoading(true)
     try{
       const {data, error} = await supabase
@@ -426,7 +457,6 @@ function DashboardInner() {
   async function withdrawBid(bidId:string, jobId:string){
     try{
       await supabase.from('bids').delete().eq('id', bidId)
-      // Reset job to open if no bids remain
       const {data:remaining} = await supabase
         .from('bids').select('id').eq('job_id', jobId)
       if(!remaining || remaining.length === 0){
@@ -498,7 +528,6 @@ function DashboardInner() {
     if(!file) return
     const isVideo = file.type.startsWith('video/')
     const isImage = file.type.startsWith('image/')
-    // Max 4 images + 1 video
     const currentVideos = completionPhotos.filter(p=>p.type==='video').length
     const currentImages = completionPhotos.filter(p=>p.type==='image').length
     if(isVideo && currentVideos >= 1) { toast('Max 1 video','Remove the existing video to add a new one',false); return }
@@ -530,8 +559,6 @@ function DashboardInner() {
     try {
       const { data:{ session } } = await supabase.auth.getSession()
       if(!session?.user) return
-
-      // 1. Insert completion record
       const { data: completion, error } = await supabase
         .from('job_completions')
         .insert({
@@ -542,10 +569,7 @@ function DashboardInner() {
         })
         .select('id')
         .single()
-
       if(error) { toast('Failed to submit','Please try again',false); setSubmittingCompletion(false); return }
-
-      // 2. Insert completion photos
       if(completionPhotos.length > 0 && completion) {
         await supabase.from('job_completion_photos').insert(
           completionPhotos.map((p, i) => ({
@@ -556,17 +580,12 @@ function DashboardInner() {
           }))
         )
       }
-
-      // 3. Update job status to completion_submitted
       await supabase.from('jobs').update({ status:'completion_submitted' }).eq('id', completionJobId)
-
-      // 4. Notify homeowner
       const { data: jobData } = await supabase
         .from('jobs')
         .select('homeowner_id, title')
         .eq('id', completionJobId)
         .single()
-
       if(jobData) {
         fetch('/api/send-email', {
           method:'POST', headers:{'Content-Type':'application/json'},
@@ -581,12 +600,8 @@ function DashboardInner() {
           })
         }).catch(e => console.log('Email error:',e))
       }
-
-      // 5. Mark locally as submitted
       setSubmittedCompletions(prev => new Set(Array.from(prev).concat(completionJobId!)))
       toast('Job marked complete! ✓','Homeowner has been notified to confirm and release payment',false)
-
-      // Reset
       setCompletionJobId(null)
       setCompletionBidId(null)
       setCompletionReport('')
@@ -667,8 +682,6 @@ function DashboardInner() {
     snRating:{fontSize:11,color:'#E8A020',marginTop:2},
     snItem:(active:boolean)=>({display:'flex',alignItems:'center',gap:10,padding:'10px 20px',cursor:'pointer',fontFamily:"'Barlow Condensed',sans-serif",fontSize:13,fontWeight:600,letterSpacing:.5,color:active?'#F5F0E8':'rgba(245,240,232,.45)',borderLeft:`3px solid ${active?'#C4593A':'transparent'}`,background:active?'rgba(196,89,58,.08)':'transparent',transition:'all .15s'}),
     snSection:{fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:600,letterSpacing:2.5,textTransform:'uppercase' as const,color:'rgba(245,240,232,.2)',padding:'12px 20px 4px'},
-    onlineToggle:(on:boolean)=>({display:'flex',alignItems:'center',justifyContent:'space-between',background:on?'rgba(61,170,106,.08)':'rgba(255,255,255,.04)',border:`1px solid ${on?'rgba(61,170,106,.2)':'rgba(255,255,255,.1)'}`,borderRadius:8,padding:'10px 12px',cursor:'pointer'}),
-    onlineLabel:(on:boolean)=>({fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:600,letterSpacing:.5,color:on?'rgba(61,170,106,.9)':'rgba(245,240,232,.3)'}),
     topbar:{background:'#111110',borderBottom:'1px solid rgba(255,255,255,.05)',padding:'0 28px',height:58,display:'flex',alignItems:'center',justifyContent:'space-between',position:'sticky' as const,top:0,zIndex:40},
     pageTitle:{fontFamily:"'Bebas Neue',sans-serif",fontSize:24,letterSpacing:1.5,color:'#F5F0E8'},
     content:{padding:'24px 28px'},
@@ -789,10 +802,36 @@ function DashboardInner() {
               </div>
             ))}
           </div>
+
+          {/* ── CHANGE 6: real online/offline toggle ── */}
           <div style={{padding:'14px 18px',borderTop:'1px solid rgba(255,255,255,.05)'}}>
-            <div style={S.onlineToggle(isOnline)} onClick={()=>setIsOnline(o=>!o)}>
-              <span style={S.onlineLabel(isOnline)}>{isOnline?'Online — receiving jobs':'Offline'}</span>
-              <div className={isOnline?'online-dot':''} style={{width:8,height:8,borderRadius:'50%',background:isOnline?'#3DAA6A':'rgba(255,255,255,.2)'}}/>
+            <div
+              onClick={toggleOnline}
+              style={{
+                display:'flex',alignItems:'center',justifyContent:'space-between',
+                background:isOnline?'rgba(61,170,106,.08)':'rgba(255,255,255,.04)',
+                border:`1px solid ${isOnline?'rgba(61,170,106,.2)':'rgba(255,255,255,.1)'}`,
+                borderRadius:8,padding:'10px 12px',
+                cursor:togglingOnline?'not-allowed':'pointer',
+                opacity:togglingOnline?.7:1,
+                transition:'all .2s',
+              }}
+            >
+              <div style={{display:'flex',flexDirection:'column',gap:2}}>
+                <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:600,letterSpacing:.5,color:isOnline?'rgba(61,170,106,.9)':'rgba(245,240,232,.3)'}}>
+                  {togglingOnline?'Updating...':isOnline?'Online — receiving jobs':'Offline'}
+                </span>
+                {!togglingOnline&&(
+                  <span style={{fontSize:9,color:isOnline?'rgba(61,170,106,.45)':'rgba(245,240,232,.25)',fontFamily:"'Barlow Condensed',sans-serif",letterSpacing:.5}}>
+                    {isOnline?'Tap to go offline':'Tap to receive jobs'}
+                  </span>
+                )}
+              </div>
+              {togglingOnline?(
+                <div style={{width:14,height:14,border:'2px solid rgba(255,255,255,.15)',borderTopColor:isOnline?'#3DAA6A':'rgba(255,255,255,.4)',borderRadius:'50%',animation:'spin .6s linear infinite',flexShrink:0}}/>
+              ):(
+                <div className={isOnline?'online-dot':''} style={{width:8,height:8,borderRadius:'50%',background:isOnline?'#3DAA6A':'rgba(255,255,255,.2)',transition:'background .3s',flexShrink:0}}/>
+              )}
             </div>
           </div>
         </nav>
@@ -802,7 +841,6 @@ function DashboardInner() {
           <div style={S.topbar}>
             <span style={S.pageTitle}>{viewTitles[view]}</span>
             <div style={{display:'flex',alignItems:'center',gap:10}}>
-              {/* Refresh button — single click reloads data, double click hard reloads page */}
               <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
                 <button onClick={refreshAll} onDoubleClick={()=>window.location.reload()} disabled={refreshing}
                   title={`Last updated: ${lastRefreshed.toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'})} · Double-click for full page reload`}
@@ -827,24 +865,16 @@ function DashboardInner() {
           {/* JOB FEED */}
           {view==='feed'&&(
             <div style={S.content}>
-
-              {/* ── FOUNDING MEMBER BANNER ─────────────────────── */}
               {profile?.tradesperson_profiles?.is_founding_member&&(
                 <div style={{background:'linear-gradient(135deg,#2C1810 0%,#1A1A16 100%)',border:'1px solid rgba(196,89,58,.4)',borderRadius:14,padding:'20px 24px',marginBottom:20,position:'relative',overflow:'hidden'}}>
-                  {/* Background texture */}
                   <div style={{position:'absolute',top:-20,right:-20,fontSize:80,opacity:.06,transform:'rotate(15deg)'}}>🔨</div>
                   <div style={{position:'absolute',bottom:-20,right:60,fontSize:60,opacity:.04,transform:'rotate(-10deg)'}}>🔨</div>
-
                   <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:16,flexWrap:'wrap'}}>
                     <div style={{flex:1}}>
                       <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:8}}>
                         <span style={{fontSize:22}}>🔨</span>
-                        <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:18,letterSpacing:2,color:'#E07A5F'}}>
-                          FOUNDING MEMBER
-                        </div>
-                        <div style={{background:'rgba(196,89,58,.2)',border:'1px solid rgba(196,89,58,.4)',borderRadius:100,padding:'2px 10px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:700,letterSpacing:2,textTransform:'uppercase',color:'#E07A5F'}}>
-                          Pre-launch
-                        </div>
+                        <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:18,letterSpacing:2,color:'#E07A5F'}}>FOUNDING MEMBER</div>
+                        <div style={{background:'rgba(196,89,58,.2)',border:'1px solid rgba(196,89,58,.4)',borderRadius:100,padding:'2px 10px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:700,letterSpacing:2,textTransform:'uppercase',color:'#E07A5F'}}>Pre-launch</div>
                       </div>
                       <p style={{fontSize:13,color:'rgba(245,240,232,.65)',lineHeight:1.6,marginBottom:12,maxWidth:480}}>
                         You&apos;re one of the <strong style={{color:'#E07A5F'}}>first 100 tradespeople</strong> on Lungisa. This badge is permanently yours — only 100 will ever exist. It appears on every bid you place, giving homeowners confidence to choose you over tradespeople who joined later.
@@ -865,54 +895,36 @@ function DashboardInner() {
                       </div>
                     </div>
                   </div>
-
-                  {/* Referral teaser */}
                   <div style={{marginTop:16,paddingTop:14,borderTop:'1px solid rgba(196,89,58,.15)',display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}>
                     <div>
-                      <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(232,160,32,.8)',marginBottom:4}}>
-                        🎁 Coming soon — Founding Member Referral Rewards
-                      </div>
-                      <div style={{fontSize:12,color:'rgba(245,240,232,.4)',lineHeight:1.5}}>
-                        Refer fellow tradespeople to Lungisa and earn rewards when they complete their first job. Exclusive to founding members. Details dropping at launch.
-                      </div>
+                      <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(232,160,32,.8)',marginBottom:4}}>🎁 Coming soon — Founding Member Referral Rewards</div>
+                      <div style={{fontSize:12,color:'rgba(245,240,232,.4)',lineHeight:1.5}}>Refer fellow tradespeople to Lungisa and earn rewards when they complete their first job. Exclusive to founding members. Details dropping at launch.</div>
                     </div>
-                    <div style={{background:'rgba(232,160,32,.08)',border:'1px solid rgba(232,160,32,.2)',borderRadius:6,padding:'6px 14px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',color:'#E8A020',whiteSpace:'nowrap',flexShrink:0}}>
-                      Coming 10 June
-                    </div>
+                    <div style={{background:'rgba(232,160,32,.08)',border:'1px solid rgba(232,160,32,.2)',borderRadius:6,padding:'6px 14px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',color:'#E8A020',whiteSpace:'nowrap',flexShrink:0}}>Coming 10 June</div>
                   </div>
                 </div>
               )}
 
-              {/* ── VERIFICATION PUSH ──────────────────────────── */}
               {profile?.tradesperson_profiles?.verification_status!=='verified'&&profile?.tradesperson_profiles?.verification_status!=='pending'&&(
                 <div style={{background:'rgba(196,89,58,.06)',border:'1px solid rgba(196,89,58,.25)',borderRadius:10,padding:'16px 20px',marginBottom:20,display:'flex',alignItems:'center',justifyContent:'space-between',gap:16,flexWrap:'wrap'}}>
                   <div style={{display:'flex',alignItems:'center',gap:12}}>
                     <span style={{fontSize:20,flexShrink:0}}>🪪</span>
                     <div>
-                      <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:13,fontWeight:700,letterSpacing:.5,color:'#F5F0E8',marginBottom:3}}>
-                        Verify your ID to unlock more jobs
-                      </div>
-                      <div style={{fontSize:12,color:'rgba(245,240,232,.5)',lineHeight:1.5}}>
-                        Verified tradespeople win bids at <strong style={{color:'#E07A5F'}}>2x the rate</strong> of unverified ones. Takes less than 2 minutes.
-                      </div>
+                      <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:13,fontWeight:700,letterSpacing:.5,color:'#F5F0E8',marginBottom:3}}>Verify your ID to unlock more jobs</div>
+                      <div style={{fontSize:12,color:'rgba(245,240,232,.5)',lineHeight:1.5}}>Verified tradespeople win bids at <strong style={{color:'#E07A5F'}}>2x the rate</strong> of unverified ones. Takes less than 2 minutes.</div>
                     </div>
                   </div>
-                  <button onClick={()=>setView('profile')}
-                    style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:'#C4593A',color:'#fff',border:'none',padding:'10px 20px',borderRadius:6,cursor:'pointer',flexShrink:0,whiteSpace:'nowrap'}}>
-                    Verify now →
-                  </button>
+                  <button onClick={()=>setView('profile')} style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:'#C4593A',color:'#fff',border:'none',padding:'10px 20px',borderRadius:6,cursor:'pointer',flexShrink:0,whiteSpace:'nowrap'}}>Verify now →</button>
                 </div>
               )}
 
-              {/* Pending verification — show different message */}
               {profile?.tradesperson_profiles?.verification_status==='pending'&&(
                 <div style={{background:'rgba(232,160,32,.06)',border:'1px solid rgba(232,160,32,.2)',borderRadius:10,padding:'14px 20px',marginBottom:20,display:'flex',alignItems:'center',gap:12}}>
                   <span style={{fontSize:18}}>⏳</span>
-                  <div style={{fontSize:12,color:'rgba(232,160,32,.8)',lineHeight:1.5}}>
-                    <strong>ID verification in progress</strong> — the Lungisa team is reviewing your documents. Usually under 24 hours. You&apos;ll get a notification when it&apos;s done.
-                  </div>
+                  <div style={{fontSize:12,color:'rgba(232,160,32,.8)',lineHeight:1.5}}><strong>ID verification in progress</strong> — the Lungisa team is reviewing your documents. Usually under 24 hours. You&apos;ll get a notification when it&apos;s done.</div>
                 </div>
               )}
+
               <div style={{...S.statStrip}} className="stat-strip">
                 {[
                   {label:'This week',   val:earnings.thisWeek>0?`R${earnings.thisWeek.toLocaleString()}`:'R0',          color:'#52C47F',delta:earnings.thisWeek>0?'Earned this week':'Complete your first job'},
@@ -990,7 +1002,6 @@ function DashboardInner() {
                   <strong>{countersPending.length} counter-offer{countersPending.length>1?'s':''} waiting for your response</strong>
                 </div>
               )}
-
               {myBids.length===0?(
                 <div style={{textAlign:'center',padding:'80px 20px',color:'rgba(245,240,232,.3)'}}>
                   <div style={{fontSize:40,marginBottom:16}}>💸</div>
@@ -1006,18 +1017,12 @@ function DashboardInner() {
                 const isCompleted       =b.status==='completed'||b.jobStatus==='completed'
                 const isInEscrow        =['in_progress','completion_submitted'].includes(b.jobStatus)
                 const isCompletionSubmitted = b.jobStatus==='completion_submitted'
-                // Check if counter is expired (48h)
                 const counterAge = b.counterUpdatedAt
                   ? (Date.now() - new Date(b.counterUpdatedAt).getTime()) / (1000*60*60)
                   : 0
                 const isCounterExpired = (homeownerCountered||iSentCounter) && counterAge > 48
-
                 return (
-                  <div key={b.id} style={{
-                    background:'#222220',borderRadius:10,
-                    border:`1px solid ${homeownerCountered?'rgba(232,160,32,.4)':isAccepted?'rgba(61,170,106,.25)':isDeclined?'rgba(226,75,74,.2)':'rgba(255,255,255,.06)'}`,
-                    padding:'16px 20px',marginBottom:12,
-                  }}>
+                  <div key={b.id} style={{background:'#222220',borderRadius:10,border:`1px solid ${homeownerCountered?'rgba(232,160,32,.4)':isAccepted?'rgba(61,170,106,.25)':isDeclined?'rgba(226,75,74,.2)':'rgba(255,255,255,.06)'}`,padding:'16px 20px',marginBottom:12}}>
                     <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:homeownerCountered||iSentCounter||isAccepted||isDeclined||isCompleted?12:0}}>
                       <div style={{flex:1}}>
                         <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:15,fontWeight:700,color:'#F5F0E8',marginBottom:2}}>{b.job}</div>
@@ -1025,27 +1030,18 @@ function DashboardInner() {
                       </div>
                       <div style={{textAlign:'right'}}>
                         <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:'#E07A5F'}}>R{b.price}</div>
-                        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1,textTransform:'uppercase',
-                          color:isCompleted?'#3DAA6A':isAccepted||isInEscrow?'#3DAA6A':isDeclined?'#f08080':isCounterExpired?'#E24B4A':homeownerCountered?'#E8A020':iSentCounter?'rgba(232,160,32,.6)':'rgba(245,240,232,.4)'}}>
+                        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1,textTransform:'uppercase',color:isCompleted?'#3DAA6A':isAccepted||isInEscrow?'#3DAA6A':isDeclined?'#f08080':isCounterExpired?'#E24B4A':homeownerCountered?'#E8A020':iSentCounter?'rgba(232,160,32,.6)':'rgba(245,240,232,.4)'}}>
                           {isCompleted?'✓ Completed & paid':isCompletionSubmitted?'⏳ Awaiting homeowner confirmation':isInEscrow?'🔒 In escrow — complete the job':isAccepted&&!isInEscrow?'✓ Accepted — awaiting payment':isCounterExpired?'⚠ Counter expired — bid again':homeownerCountered?'⚡ Counter received':iSentCounter?'⏳ Counter sent':isDeclined?'Declined':'Pending'}
                         </div>
                       </div>
                     </div>
-
                     {homeownerCountered&&(
                       <div style={{background:'rgba(232,160,32,.06)',border:'1px solid rgba(232,160,32,.2)',borderRadius:8,padding:'14px 16px'}}>
-                        {/* Round indicator */}
                         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
-                          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'#E8A020'}}>
-                            Homeowner counter-offered
-                          </div>
+                          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'#E8A020'}}>Homeowner counter-offered</div>
                           <div style={{display:'flex',gap:4,alignItems:'center'}}>
-                            {[1,2,3].map(n=>(
-                              <div key={n} style={{width:18,height:5,borderRadius:3,background:n<=b.counterRound?'#E8A020':'rgba(232,160,32,.2)'}}/>
-                            ))}
-                            <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:700,color:'rgba(232,160,32,.6)',letterSpacing:1,marginLeft:3}}>
-                              ROUND {b.counterRound}/3
-                            </span>
+                            {[1,2,3].map(n=>(<div key={n} style={{width:18,height:5,borderRadius:3,background:n<=b.counterRound?'#E8A020':'rgba(232,160,32,.2)'}}/>))}
+                            <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:700,color:'rgba(232,160,32,.6)',letterSpacing:1,marginLeft:3}}>ROUND {b.counterRound}/3</span>
                           </div>
                         </div>
                         <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:12}}>
@@ -1053,105 +1049,53 @@ function DashboardInner() {
                           <div style={{fontSize:12,color:'rgba(245,240,232,.4)'}}>vs your bid of R{b.price}</div>
                         </div>
                         <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:12}}>
-                          <button onClick={()=>acceptCounter(b)}
-                            style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:'#3DAA6A',color:'#fff',border:'none',padding:'10px 18px',borderRadius:6,cursor:'pointer',flex:1}}>
-                            ✓ Accept R{b.counterAmount}
-                          </button>
-                          <button onClick={()=>declineCounter(b)}
-                            style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:'rgba(226,75,74,.1)',color:'#f08080',border:'1px solid rgba(226,75,74,.2)',padding:'10px 18px',borderRadius:6,cursor:'pointer'}}>
-                            ✗ Decline
-                          </button>
+                          <button onClick={()=>acceptCounter(b)} style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:'#3DAA6A',color:'#fff',border:'none',padding:'10px 18px',borderRadius:6,cursor:'pointer',flex:1}}>✓ Accept R{b.counterAmount}</button>
+                          <button onClick={()=>declineCounter(b)} style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:'rgba(226,75,74,.1)',color:'#f08080',border:'1px solid rgba(226,75,74,.2)',padding:'10px 18px',borderRadius:6,cursor:'pointer'}}>✗ Decline</button>
                         </div>
-                        {/* Counter back only if under 3 rounds */}
                         {b.counterRound < 3 ? (
                           <div style={{borderTop:'1px solid rgba(255,255,255,.06)',paddingTop:12}}>
-                            <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(245,240,232,.35)',marginBottom:8}}>
-                              Or counter back ({3-b.counterRound} round{3-b.counterRound!==1?'s':''} left):
-                            </div>
+                            <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(245,240,232,.35)',marginBottom:8}}>Or counter back ({3-b.counterRound} round{3-b.counterRound!==1?'s':''} left):</div>
                             <div style={{display:'flex',alignItems:'stretch'}}>
                               <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:'rgba(245,240,232,.3)',background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',borderRadius:'6px 0 0 6px',padding:'10px 14px',flexShrink:0,borderRight:'none',display:'flex',alignItems:'center'}}>R</div>
-                              <input type="number"
-                                placeholder={b.counterAmount?String(Math.round((b.price+b.counterAmount)/2)):String(Math.round(b.price*0.95))}
-                                value={counterInputs[b.id]||''}
-                                onChange={e=>setCounterInputs(c=>({...c,[b.id]:e.target.value}))}
-                                style={{flex:1,background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',borderRadius:0,padding:'10px 12px',fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:'#F5F0E8',outline:'none',borderLeft:'none',borderRight:'none'}}/>
-                              <button onClick={()=>sendBackCounter(b)}
-                                style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:'#C4593A',color:'#fff',border:'none',padding:'10px 16px',borderRadius:'0 6px 6px 0',cursor:'pointer',flexShrink:0}}>
-                                Counter
-                              </button>
+                              <input type="number" placeholder={b.counterAmount?String(Math.round((b.price+b.counterAmount)/2)):String(Math.round(b.price*0.95))} value={counterInputs[b.id]||''} onChange={e=>setCounterInputs(c=>({...c,[b.id]:e.target.value}))} style={{flex:1,background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',borderRadius:0,padding:'10px 12px',fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:'#F5F0E8',outline:'none',borderLeft:'none',borderRight:'none'}}/>
+                              <button onClick={()=>sendBackCounter(b)} style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:'#C4593A',color:'#fff',border:'none',padding:'10px 16px',borderRadius:'0 6px 6px 0',cursor:'pointer',flexShrink:0}}>Counter</button>
                             </div>
                           </div>
                         ) : (
-                          <div style={{borderTop:'1px solid rgba(255,255,255,.06)',paddingTop:12,fontSize:12,color:'#f08080',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,letterSpacing:.5}}>
-                            ⚠ Maximum 3 rounds reached — you must accept or decline.
-                          </div>
+                          <div style={{borderTop:'1px solid rgba(255,255,255,.06)',paddingTop:12,fontSize:12,color:'#f08080',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,letterSpacing:.5}}>⚠ Maximum 3 rounds reached — you must accept or decline.</div>
                         )}
                       </div>
                     )}
                     {iSentCounter&&(
                       <div style={{background:'rgba(196,89,58,.06)',border:'1px solid rgba(196,89,58,.15)',borderRadius:8,padding:'12px 14px',lineHeight:1.5}}>
                         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4}}>
-                          <div style={{fontSize:13,color:'rgba(245,240,232,.6)'}}>
-                            ⏳ Counter of <strong style={{color:'#F5F0E8'}}>R{b.counterAmount}</strong> sent. Waiting for homeowner...
-                          </div>
+                          <div style={{fontSize:13,color:'rgba(245,240,232,.6)'}}>⏳ Counter of <strong style={{color:'#F5F0E8'}}>R{b.counterAmount}</strong> sent. Waiting for homeowner...</div>
                           <div style={{display:'flex',gap:3,alignItems:'center'}}>
-                            {[1,2,3].map(n=>(
-                              <div key={n} style={{width:14,height:4,borderRadius:2,background:n<=b.counterRound?'#C4593A':'rgba(196,89,58,.2)'}}/>
-                            ))}
-                            <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:700,color:'rgba(196,89,58,.6)',letterSpacing:1,marginLeft:3}}>
-                              {b.counterRound}/3
-                            </span>
+                            {[1,2,3].map(n=>(<div key={n} style={{width:14,height:4,borderRadius:2,background:n<=b.counterRound?'#C4593A':'rgba(196,89,58,.2)'}}/>))}
+                            <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:700,color:'rgba(196,89,58,.6)',letterSpacing:1,marginLeft:3}}>{b.counterRound}/3</span>
                           </div>
                         </div>
-                        {b.counterRound===3&&(
-                          <div style={{fontSize:11,color:'rgba(245,240,232,.4)',marginTop:4}}>
-                            This is the final round — homeowner must accept or decline.
-                          </div>
-                        )}
+                        {b.counterRound===3&&(<div style={{fontSize:11,color:'rgba(245,240,232,.4)',marginTop:4}}>This is the final round — homeowner must accept or decline.</div>)}
                       </div>
                     )}
-                    {/* ACCEPTED — waiting for homeowner to pay */}
                     {isAccepted&&!isInEscrow&&!isCompleted&&(
-                      <div style={{background:'rgba(61,170,106,.06)',border:'1px solid rgba(61,170,106,.15)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(61,170,106,.8)',lineHeight:1.5}}>
-                        ✓ Bid accepted — waiting for homeowner to make payment into escrow.
-                      </div>
+                      <div style={{background:'rgba(61,170,106,.06)',border:'1px solid rgba(61,170,106,.15)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(61,170,106,.8)',lineHeight:1.5}}>✓ Bid accepted — waiting for homeowner to make payment into escrow.</div>
                     )}
-
-                    {/* IN ESCROW — show mark complete button */}
                     {isInEscrow&&!isCompletionSubmitted&&!submittedCompletions.has(b.jobId)&&(
                       <div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.25)',borderRadius:8,padding:'14px 16px'}}>
-                        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'#3DAA6A',marginBottom:8}}>
-                          🔒 R{Math.round(b.price*0.95).toLocaleString()} in escrow — complete the job to get paid
-                        </div>
-                        <p style={{fontSize:13,color:'rgba(245,240,232,.6)',lineHeight:1.6,marginBottom:12}}>
-                          Once done, submit your completion report with photos. The homeowner confirms and your payment is released.
-                        </p>
-                        <button
-                          onClick={()=>{setCompletionJobId(b.jobId);setCompletionBidId(b.id)}}
-                          style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:13,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:'#3DAA6A',color:'#fff',border:'none',padding:'11px 20px',borderRadius:6,cursor:'pointer',width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
-                          📋 Mark job as complete
-                        </button>
+                        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'#3DAA6A',marginBottom:8}}>🔒 R{Math.round(b.price*0.95).toLocaleString()} in escrow — complete the job to get paid</div>
+                        <p style={{fontSize:13,color:'rgba(245,240,232,.6)',lineHeight:1.6,marginBottom:12}}>Once done, submit your completion report with photos. The homeowner confirms and your payment is released.</p>
+                        <button onClick={()=>{setCompletionJobId(b.jobId);setCompletionBidId(b.id)}} style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:13,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:'#3DAA6A',color:'#fff',border:'none',padding:'11px 20px',borderRadius:6,cursor:'pointer',width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>📋 Mark job as complete</button>
                       </div>
                     )}
-
-                    {/* COMPLETION SUBMITTED — awaiting homeowner */}
                     {(isCompletionSubmitted||submittedCompletions.has(b.jobId))&&!isCompleted&&(
-                      <div style={{background:'rgba(232,160,32,.08)',border:'1px solid rgba(232,160,32,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'#E8A020',lineHeight:1.5}}>
-                        ⏳ Completion report submitted — waiting for homeowner to confirm and release R{Math.round(b.price*0.95).toLocaleString()} to you.
-                      </div>
+                      <div style={{background:'rgba(232,160,32,.08)',border:'1px solid rgba(232,160,32,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'#E8A020',lineHeight:1.5}}>⏳ Completion report submitted — waiting for homeowner to confirm and release R{Math.round(b.price*0.95).toLocaleString()} to you.</div>
                     )}
-
-                    {/* DECLINED */}
                     {isDeclined&&(<div style={{background:'rgba(226,75,74,.06)',border:'1px solid rgba(226,75,74,.15)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(226,75,74,.7)',lineHeight:1.5}}>✗ Not accepted this time. Keep bidding on new jobs.</div>)}
-
-                    {/* PENDING — show withdraw option */}
                     {!homeownerCountered&&!iSentCounter&&!isAccepted&&!isDeclined&&!isCompleted&&!isInEscrow&&(
                       <div style={{display:'flex',justifyContent:'flex-end',marginTop:4,gap:8,alignItems:'center'}}>
-                        <span style={{fontSize:11,color:'rgba(245,240,232,.25)',fontFamily:"'Barlow Condensed',sans-serif"}}>
-                          Changed your mind?
-                        </span>
-                        <button
-                          onClick={()=>{ if(window.confirm('Withdraw this bid? This cannot be undone.')) withdrawBid(b.id, b.jobId) }}
+                        <span style={{fontSize:11,color:'rgba(245,240,232,.25)',fontFamily:"'Barlow Condensed',sans-serif"}}>Changed your mind?</span>
+                        <button onClick={()=>{ if(window.confirm('Withdraw this bid? This cannot be undone.')) withdrawBid(b.id, b.jobId) }}
                           style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1,textTransform:'uppercase',background:'transparent',border:'1px solid rgba(226,75,74,.2)',color:'rgba(226,75,74,.5)',padding:'5px 12px',borderRadius:4,cursor:'pointer',transition:'all .15s'}}
                           onMouseEnter={e=>{e.currentTarget.style.borderColor='rgba(226,75,74,.5)';e.currentTarget.style.color='#E24B4A'}}
                           onMouseLeave={e=>{e.currentTarget.style.borderColor='rgba(226,75,74,.2)';e.currentTarget.style.color='rgba(226,75,74,.5)'}}>
@@ -1159,12 +1103,8 @@ function DashboardInner() {
                         </button>
                       </div>
                     )}
-
-                    {/* COMPLETED — payment released */}
                     {isCompleted&&(
-                      <div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(61,170,106,.9)',lineHeight:1.5}}>
-                        ✓ Job complete · R{Math.round(b.price*0.95).toLocaleString()} payment released to your account · Check Earnings tab
-                      </div>
+                      <div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(61,170,106,.9)',lineHeight:1.5}}>✓ Job complete · R{Math.round(b.price*0.95).toLocaleString()} payment released to your account · Check Earnings tab</div>
                     )}
                   </div>
                 )
@@ -1184,38 +1124,25 @@ function DashboardInner() {
                 </div>
               ):(
                 <>
-                  {/* Summary stats */}
                   <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:12,marginBottom:20}}>
                     <div style={{background:'#222220',borderRadius:10,border:'1px solid rgba(255,255,255,.06)',padding:'18px 20px'}}>
                       <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.3)',marginBottom:6}}>Total earned</div>
-                      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:40,color:'#52C47F',letterSpacing:1,lineHeight:1}}>
-                        R{myBids.filter(b=>b.jobStatus==='completed').reduce((s,b)=>s+Math.round(b.price*0.95),0).toLocaleString()}
-                      </div>
+                      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:40,color:'#52C47F',letterSpacing:1,lineHeight:1}}>R{myBids.filter(b=>b.jobStatus==='completed').reduce((s,b)=>s+Math.round(b.price*0.95),0).toLocaleString()}</div>
                     </div>
                     <div style={{background:'#222220',borderRadius:10,border:'1px solid rgba(255,255,255,.06)',padding:'18px 20px'}}>
                       <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.3)',marginBottom:6}}>Jobs completed</div>
-                      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:40,color:'#E07A5F',letterSpacing:1,lineHeight:1}}>
-                        {myBids.filter(b=>b.jobStatus==='completed').length}
-                      </div>
+                      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:40,color:'#E07A5F',letterSpacing:1,lineHeight:1}}>{myBids.filter(b=>b.jobStatus==='completed').length}</div>
                     </div>
                     <div style={{background:'#222220',borderRadius:10,border:'1px solid rgba(255,255,255,.06)',padding:'18px 20px'}}>
                       <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.3)',marginBottom:6}}>In escrow</div>
-                      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:40,color:'#E8A020',letterSpacing:1,lineHeight:1}}>
-                        R{myBids.filter(b=>['in_progress','completion_submitted'].includes(b.jobStatus)).reduce((s,b)=>s+Math.round(b.price*0.95),0).toLocaleString()}
-                      </div>
+                      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:40,color:'#E8A020',letterSpacing:1,lineHeight:1}}>R{myBids.filter(b=>['in_progress','completion_submitted'].includes(b.jobStatus)).reduce((s,b)=>s+Math.round(b.price*0.95),0).toLocaleString()}</div>
                     </div>
                     <div style={{background:'#222220',borderRadius:10,border:'1px solid rgba(255,255,255,.06)',padding:'18px 20px'}}>
                       <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.3)',marginBottom:6}}>Rating</div>
-                      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:40,color:'#F5F0E8',letterSpacing:1,lineHeight:1}}>
-                        {profile?.tradesperson_profiles?.rating_avg>0?`★${profile.tradesperson_profiles.rating_avg}`:'New'}
-                      </div>
+                      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:40,color:'#F5F0E8',letterSpacing:1,lineHeight:1}}>{profile?.tradesperson_profiles?.rating_avg>0?`★${profile.tradesperson_profiles.rating_avg}`:'New'}</div>
                     </div>
                   </div>
-
-                  {/* Completed jobs list */}
-                  <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.3)',marginBottom:12}}>
-                    Completed jobs
-                  </div>
+                  <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.3)',marginBottom:12}}>Completed jobs</div>
                   {myBids.filter(b=>['completed','in_progress','completion_submitted'].includes(b.jobStatus)).length===0?(
                     <div style={{fontSize:13,color:'rgba(245,240,232,.3)',padding:'20px 0'}}>No completed jobs yet.</div>
                   ):myBids.filter(b=>['completed','in_progress','completion_submitted'].includes(b.jobStatus)).map(b=>(
@@ -1224,24 +1151,14 @@ function DashboardInner() {
                         <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:15,fontWeight:700,color:'#F5F0E8',marginBottom:3}}>{b.job}</div>
                         <div style={{fontSize:12,color:'rgba(245,240,232,.4)'}}>📍 {b.loc} · {b.time}</div>
                         <div style={{marginTop:6}}>
-                          {b.jobStatus==='completed'&&(
-                            <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:1,textTransform:'uppercase',background:'rgba(61,170,106,.12)',border:'1px solid rgba(61,170,106,.2)',color:'#3DAA6A',padding:'2px 8px',borderRadius:3}}>✓ Paid</span>
-                          )}
-                          {b.jobStatus==='completion_submitted'&&(
-                            <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:1,textTransform:'uppercase',background:'rgba(232,160,32,.1)',border:'1px solid rgba(232,160,32,.2)',color:'#E8A020',padding:'2px 8px',borderRadius:3}}>⏳ Awaiting confirmation</span>
-                          )}
-                          {b.jobStatus==='in_progress'&&(
-                            <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:1,textTransform:'uppercase',background:'rgba(46,127,212,.1)',border:'1px solid rgba(46,127,212,.2)',color:'#5B9BD5',padding:'2px 8px',borderRadius:3}}>🔒 In escrow</span>
-                          )}
+                          {b.jobStatus==='completed'&&(<span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:1,textTransform:'uppercase',background:'rgba(61,170,106,.12)',border:'1px solid rgba(61,170,106,.2)',color:'#3DAA6A',padding:'2px 8px',borderRadius:3}}>✓ Paid</span>)}
+                          {b.jobStatus==='completion_submitted'&&(<span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:1,textTransform:'uppercase',background:'rgba(232,160,32,.1)',border:'1px solid rgba(232,160,32,.2)',color:'#E8A020',padding:'2px 8px',borderRadius:3}}>⏳ Awaiting confirmation</span>)}
+                          {b.jobStatus==='in_progress'&&(<span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:1,textTransform:'uppercase',background:'rgba(46,127,212,.1)',border:'1px solid rgba(46,127,212,.2)',color:'#5B9BD5',padding:'2px 8px',borderRadius:3}}>🔒 In escrow</span>)}
                         </div>
                       </div>
                       <div style={{textAlign:'right',flexShrink:0}}>
-                        <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:26,color:b.jobStatus==='completed'?'#52C47F':'#E8A020',letterSpacing:1}}>
-                          R{Math.round(b.price*0.95).toLocaleString()}
-                        </div>
-                        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,color:'rgba(245,240,232,.3)',letterSpacing:.5}}>
-                          after 5% commission
-                        </div>
+                        <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:26,color:b.jobStatus==='completed'?'#52C47F':'#E8A020',letterSpacing:1}}>R{Math.round(b.price*0.95).toLocaleString()}</div>
+                        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,color:'rgba(245,240,232,.3)',letterSpacing:.5}}>after 5% commission</div>
                       </div>
                     </div>
                   ))}
@@ -1261,8 +1178,6 @@ function DashboardInner() {
           {view==='profile'&&(
             <div style={S.content}>
               <VerificationBadge variant="full" />
-
-              {/* Profile card */}
               <div style={{background:'#222220',borderRadius:12,border:'1px solid rgba(255,255,255,.06)',padding:28,marginBottom:16}}>
                 <div style={{display:'flex',alignItems:'flex-start',gap:16,marginBottom:24,paddingBottom:20,borderBottom:'1px solid rgba(255,255,255,.06)'}}>
                   <div style={{position:'relative',flexShrink:0}}>
@@ -1273,280 +1188,110 @@ function DashboardInner() {
                     <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginBottom:4}}>
                       <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:28,letterSpacing:1,color:'#F5F0E8',lineHeight:1}}>{displayName.toUpperCase()}</div>
                       {isVerified&&(<span style={{display:'inline-flex',alignItems:'center',gap:4,background:'rgba(61,170,106,.12)',border:'1px solid rgba(61,170,106,.25)',borderRadius:4,padding:'3px 8px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:'#3DAA6A'}}><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Verified</span>)}
-                      {profile?.tradesperson_profiles?.is_founding_member&&(
-                        <span style={{display:'inline-flex',alignItems:'center',gap:4,background:'rgba(196,89,58,.12)',border:'1px solid rgba(196,89,58,.3)',borderRadius:4,padding:'3px 8px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:'#E07A5F'}}>
-                          🔨 Founding Member
-                        </span>
-                      )}
+                      {profile?.tradesperson_profiles?.is_founding_member&&(<span style={{display:'inline-flex',alignItems:'center',gap:4,background:'rgba(196,89,58,.12)',border:'1px solid rgba(196,89,58,.3)',borderRadius:4,padding:'3px 8px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:'#E07A5F'}}>🔨 Founding Member</span>)}
                     </div>
                     <div style={{fontSize:13,color:'rgba(245,240,232,.5)'}}>{displayTrade} · {profile?.tradesperson_profiles?.years_experience||0} yrs experience</div>
                     <div style={{fontSize:13,color:'#E8A020',marginTop:3}}>{displayRating} · {displayJobs} completed jobs</div>
                   </div>
-                  <button onClick={()=>setEditingProfile((e:boolean)=>!e)}
-                    style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:editingProfile?'rgba(226,75,74,.08)':'rgba(196,89,58,.08)',color:editingProfile?'#E24B4A':'#E07A5F',border:`1px solid ${editingProfile?'rgba(226,75,74,.2)':'rgba(196,89,58,.2)'}`,padding:'7px 14px',borderRadius:6,cursor:'pointer',flexShrink:0}}>
+                  <button onClick={()=>setEditingProfile((e:boolean)=>!e)} style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:editingProfile?'rgba(226,75,74,.08)':'rgba(196,89,58,.08)',color:editingProfile?'#E24B4A':'#E07A5F',border:`1px solid ${editingProfile?'rgba(226,75,74,.2)':'rgba(196,89,58,.2)'}`,padding:'7px 14px',borderRadius:6,cursor:'pointer',flexShrink:0}}>
                     {editingProfile?'✕ Cancel':'✎ Edit'}
                   </button>
                 </div>
-
                 {editingProfile?(
                   <div>
-                    {[
-                      {label:'Full name *',key:'full_name',type:'text',placeholder:'Your full name'},
-                      {label:'Phone number',key:'phone',type:'tel',placeholder:'e.g. 0821234567'},
-                    ].map((f:any)=>(
+                    {[{label:'Full name *',key:'full_name',type:'text',placeholder:'Your full name'},{label:'Phone number',key:'phone',type:'tel',placeholder:'e.g. 0821234567'}].map((f:any)=>(
                       <div key={f.key} style={{marginBottom:14}}>
                         <label style={{display:'block',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>{f.label}</label>
-                        <input type={f.type} value={(profileForm as any)[f.key]}
-                          onChange={e=>setProfileForm((p:any)=>({...p,[f.key]:e.target.value}))}
-                          placeholder={f.placeholder}
-                          style={{width:'100%',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'11px 14px',fontFamily:"'Barlow',sans-serif",fontSize:14,color:'#F5F0E8',outline:'none'}}/>
+                        <input type={f.type} value={(profileForm as any)[f.key]} onChange={e=>setProfileForm((p:any)=>({...p,[f.key]:e.target.value}))} placeholder={f.placeholder} style={{width:'100%',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'11px 14px',fontFamily:"'Barlow',sans-serif",fontSize:14,color:'#F5F0E8',outline:'none'}}/>
                       </div>
                     ))}
-
-                    {/* Trade categories — multi select up to 3 */}
                     <div style={{marginBottom:14}}>
-                      <label style={{display:'block',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>
-                        Your trades <span style={{fontWeight:400,fontSize:9,textTransform:'none',letterSpacing:0,color:'rgba(245,240,232,.25)'}}>select up to 3</span>
-                      </label>
+                      <label style={{display:'block',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>Your trades <span style={{fontWeight:400,fontSize:9,textTransform:'none',letterSpacing:0,color:'rgba(245,240,232,.25)'}}>select up to 3</span></label>
                       <div style={{display:'flex',flexWrap:'wrap',gap:6,background:'rgba(255,255,255,.03)',border:'1px solid rgba(255,255,255,.1)',borderRadius:8,padding:10}}>
-                        {['Plumbing','Electrical','Painting','Carpentry','Roofing','Tiling',
-                          'Solar','Landscaping','Waterproofing','Welding','Cleaning','General',
-                          'Moving','Pest Control','Appliance Repair','Air Conditioning',
-                          'Security','Paving','Plastering'].map(t=>{
-                          const val = t.toLowerCase()
-                          const sel = profileForm.trade_categories.includes(val)
-                          const maxed = profileForm.trade_categories.length >= 3 && !sel
-                          return (
-                            <div key={t}
-                              onClick={()=>{
-                                if(maxed) return
-                                setProfileForm((p:any)=>({
-                                  ...p,
-                                  trade_categories: sel
-                                    ? p.trade_categories.filter((x:string)=>x!==val)
-                                    : [...p.trade_categories, val]
-                                }))
-                              }}
-                              style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:.5,padding:'5px 10px',borderRadius:4,cursor:maxed?'not-allowed':'pointer',
-                                background:sel?'rgba(196,89,58,.2)':'rgba(255,255,255,.05)',
-                                border:`1px solid ${sel?'rgba(196,89,58,.4)':'rgba(255,255,255,.1)'}`,
-                                color:sel?'#E07A5F':'rgba(245,240,232,.5)',
-                                opacity:maxed?.4:1,transition:'all .15s'}}>
-                              {t}
-                            </div>
-                          )
+                        {['Plumbing','Electrical','Painting','Carpentry','Roofing','Tiling','Solar','Landscaping','Waterproofing','Welding','Cleaning','General','Moving','Pest Control','Appliance Repair','Air Conditioning','Security','Paving','Plastering'].map(t=>{
+                          const val=t.toLowerCase(); const sel=profileForm.trade_categories.includes(val); const maxed=profileForm.trade_categories.length>=3&&!sel
+                          return(<div key={t} onClick={()=>{if(maxed)return;setProfileForm((p:any)=>({...p,trade_categories:sel?p.trade_categories.filter((x:string)=>x!==val):[...p.trade_categories,val]}))}} style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:.5,padding:'5px 10px',borderRadius:4,cursor:maxed?'not-allowed':'pointer',background:sel?'rgba(196,89,58,.2)':'rgba(255,255,255,.05)',border:`1px solid ${sel?'rgba(196,89,58,.4)':'rgba(255,255,255,.1)'}`,color:sel?'#E07A5F':'rgba(245,240,232,.5)',opacity:maxed?.4:1,transition:'all .15s'}}>{t}</div>)
                         })}
                       </div>
-                      {profileForm.trade_categories.length > 0 && (
-                        <div style={{fontSize:11,color:'#E07A5F',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,marginTop:6,letterSpacing:.5}}>
-                          ✓ {profileForm.trade_categories.map(t=>t.charAt(0).toUpperCase()+t.slice(1)).join(' · ')}
-                        </div>
-                      )}
+                      {profileForm.trade_categories.length>0&&(<div style={{fontSize:11,color:'#E07A5F',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,marginTop:6,letterSpacing:.5}}>✓ {profileForm.trade_categories.map(t=>t.charAt(0).toUpperCase()+t.slice(1)).join(' · ')}</div>)}
                     </div>
-                    {/* Service areas multi-select */}
                     <div style={{marginBottom:20}}>
-                      <label style={{display:'block',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>
-                        Service areas ({profileForm.service_areas.length} selected)
-                      </label>
+                      <label style={{display:'block',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>Service areas ({profileForm.service_areas.length} selected)</label>
                       <div style={{display:'flex',flexWrap:'wrap',gap:6,maxHeight:200,overflowY:'auto',background:'rgba(255,255,255,.03)',border:'1px solid rgba(255,255,255,.1)',borderRadius:8,padding:10}}>
-                        {['Sandton','Fourways','Bryanston','Randburg','Roodepoort','Midrand','Soweto',
-                          'Johannesburg CBD','Rosebank','Melrose','Kempton Park','Edenvale','Germiston',
-                          'Boksburg','Benoni','Pretoria Central','Centurion','Pretoria East','Pretoria North',
-                          'Menlyn','Lynnwood','Vereeniging','Vanderbijlpark','Alberton'].map((area:string)=>{
-                          const sel = profileForm.service_areas.includes(area)
-                          return (
-                            <div key={area} onClick={()=>setProfileForm((p:any)=>({
-                              ...p,
-                              service_areas: sel
-                                ? p.service_areas.filter((a:string)=>a!==area)
-                                : [...p.service_areas, area]
-                            }))}
-                              style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:.5,padding:'5px 10px',borderRadius:4,cursor:'pointer',
-                                background:sel?'rgba(196,89,58,.2)':'rgba(255,255,255,.05)',
-                                border:`1px solid ${sel?'rgba(196,89,58,.4)':'rgba(255,255,255,.1)'}`,
-                                color:sel?'#E07A5F':'rgba(245,240,232,.5)',transition:'all .15s'}}>
-                              {area}
-                            </div>
-                          )
+                        {['Sandton','Fourways','Bryanston','Randburg','Roodepoort','Midrand','Soweto','Johannesburg CBD','Rosebank','Melrose','Kempton Park','Edenvale','Germiston','Boksburg','Benoni','Pretoria Central','Centurion','Pretoria East','Pretoria North','Menlyn','Lynnwood','Vereeniging','Vanderbijlpark','Alberton'].map((area:string)=>{
+                          const sel=profileForm.service_areas.includes(area)
+                          return(<div key={area} onClick={()=>setProfileForm((p:any)=>({...p,service_areas:sel?p.service_areas.filter((a:string)=>a!==area):[...p.service_areas,area]}))} style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:.5,padding:'5px 10px',borderRadius:4,cursor:'pointer',background:sel?'rgba(196,89,58,.2)':'rgba(255,255,255,.05)',border:`1px solid ${sel?'rgba(196,89,58,.4)':'rgba(255,255,255,.1)'}`,color:sel?'#E07A5F':'rgba(245,240,232,.5)',transition:'all .15s'}}>{area}</div>)
                         })}
                       </div>
                     </div>
-                    {profileMsg&&(
-                      <div style={{padding:'10px 14px',borderRadius:6,fontSize:13,marginBottom:14,
-                        background:profileMsg.startsWith('✓')?'rgba(61,170,106,.1)':'rgba(226,75,74,.08)',
-                        color:profileMsg.startsWith('✓')?'#3DAA6A':'#f08080',
-                        border:`1px solid ${profileMsg.startsWith('✓')?'rgba(61,170,106,.2)':'rgba(226,75,74,.2)'}`}}>
-                        {profileMsg}
-                      </div>
-                    )}
-                    <button onClick={saveProfile} disabled={savingProfile}
-                      style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:13,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:savingProfile?'rgba(196,89,58,.4)':'#C4593A',color:'#fff',border:'none',padding:'13px',borderRadius:8,cursor:savingProfile?'not-allowed':'pointer',width:'100%',marginTop:4}}>
-                      {savingProfile?'Saving...':'Save changes'}
-                    </button>
+                    {profileMsg&&(<div style={{padding:'10px 14px',borderRadius:6,fontSize:13,marginBottom:14,background:profileMsg.startsWith('✓')?'rgba(61,170,106,.1)':'rgba(226,75,74,.08)',color:profileMsg.startsWith('✓')?'#3DAA6A':'#f08080',border:`1px solid ${profileMsg.startsWith('✓')?'rgba(61,170,106,.2)':'rgba(226,75,74,.2)'}`}}>{profileMsg}</div>)}
+                    <button onClick={saveProfile} disabled={savingProfile} style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:13,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:savingProfile?'rgba(196,89,58,.4)':'#C4593A',color:'#fff',border:'none',padding:'13px',borderRadius:8,cursor:savingProfile?'not-allowed':'pointer',width:'100%',marginTop:4}}>{savingProfile?'Saving...':'Save changes'}</button>
                   </div>
                 ):(
                   <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
                     {[
-                      {label:'Email',     val:profile?.email||'—'},
-                      {label:'Phone',     val:profile?.phone||'—'},
-                      {label:'Trades',    val:(profile?.tradesperson_profiles?.trade_categories?.length>0
-                        ? profile.tradesperson_profiles.trade_categories.map((t:string)=>t.charAt(0).toUpperCase()+t.slice(1)).join(' · ')
-                        : profile?.tradesperson_profiles?.trade_category
-                          ? profile.tradesperson_profiles.trade_category.charAt(0).toUpperCase()+profile.tradesperson_profiles.trade_category.slice(1)
-                          : '—')},
-                      {label:'Service areas', val:profile?.tradesperson_profiles?.service_areas?.join(' · ')||profile?.area||'—'},
-                      {label:'Member since',  val:profile?.created_at?new Date(profile.created_at).toLocaleDateString('en-ZA',{month:'long',year:'numeric'}):'—'},
-                    ].map(r=>(
-                      <div key={r.label}>
-                        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.35)',marginBottom:5}}>{r.label}</div>
-                        <div style={{fontSize:13,color:'rgba(245,240,232,.75)'}}>{r.val}</div>
-                      </div>
-                    ))}
+                      {label:'Email',val:profile?.email||'—'},
+                      {label:'Phone',val:profile?.phone||'—'},
+                      {label:'Trades',val:(profile?.tradesperson_profiles?.trade_categories?.length>0?profile.tradesperson_profiles.trade_categories.map((t:string)=>t.charAt(0).toUpperCase()+t.slice(1)).join(' · '):profile?.tradesperson_profiles?.trade_category?profile.tradesperson_profiles.trade_category.charAt(0).toUpperCase()+profile.tradesperson_profiles.trade_category.slice(1):'—')},
+                      {label:'Service areas',val:profile?.tradesperson_profiles?.service_areas?.join(' · ')||profile?.area||'—'},
+                      {label:'Member since',val:profile?.created_at?new Date(profile.created_at).toLocaleDateString('en-ZA',{month:'long',year:'numeric'}):'—'},
+                    ].map(r=>(<div key={r.label}><div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.35)',marginBottom:5}}>{r.label}</div><div style={{fontSize:13,color:'rgba(245,240,232,.75)'}}>{r.val}</div></div>))}
                   </div>
                 )}
               </div>
 
-              {/* Banking details card */}
               <div style={{background:'#222220',borderRadius:12,border:`1px solid ${banking?'rgba(61,170,106,.25)':'rgba(255,255,255,.06)'}`,padding:28}}>
                 <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20,paddingBottom:16,borderBottom:'1px solid rgba(255,255,255,.06)'}}>
                   <div>
-                    <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,letterSpacing:1,color:'#F5F0E8',marginBottom:4}}>
-                      Banking Details
-                    </div>
-                    <div style={{fontSize:12,color:'rgba(245,240,232,.4)',lineHeight:1.5}}>
-                      Required for payment release. Your details are encrypted and only used to process your earnings.
-                    </div>
+                    <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,letterSpacing:1,color:'#F5F0E8',marginBottom:4}}>Banking Details</div>
+                    <div style={{fontSize:12,color:'rgba(245,240,232,.4)',lineHeight:1.5}}>Required for payment release. Your details are encrypted and only used to process your earnings.</div>
                   </div>
-                  {banking&&(
-                    <span style={{display:'inline-flex',alignItems:'center',gap:5,background:'rgba(61,170,106,.12)',border:'1px solid rgba(61,170,106,.25)',borderRadius:6,padding:'5px 10px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:'#3DAA6A',flexShrink:0}}>
-                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                      Saved
-                    </span>
-                  )}
+                  {banking&&(<span style={{display:'inline-flex',alignItems:'center',gap:5,background:'rgba(61,170,106,.12)',border:'1px solid rgba(61,170,106,.25)',borderRadius:6,padding:'5px 10px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:'#3DAA6A',flexShrink:0}}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Saved</span>)}
                 </div>
-
-                {/* Warning if not saved */}
-                {!banking&&(
-                  <div style={{background:'rgba(232,160,32,.08)',border:'1px solid rgba(232,160,32,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'#E8A020',lineHeight:1.6,marginBottom:20,display:'flex',gap:10}}>
-                    <span style={{flexShrink:0}}>⚠</span>
-                    <span>You haven&apos;t added banking details yet. You must add them before you can receive payment for completed jobs.</span>
-                  </div>
-                )}
-
+                {!banking&&(<div style={{background:'rgba(232,160,32,.08)',border:'1px solid rgba(232,160,32,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'#E8A020',lineHeight:1.6,marginBottom:20,display:'flex',gap:10}}><span style={{flexShrink:0}}>⚠</span><span>You haven&apos;t added banking details yet. You must add them before you can receive payment for completed jobs.</span></div>)}
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
-                  {/* Bank name */}
                   <div style={{gridColumn:'1/-1'}}>
-                    <label style={{display:'block',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>
-                      Bank name *
-                    </label>
-                    <select
-                      value={bankingForm.bank_name}
-                      onChange={e=>setBankingForm(f=>({...f,bank_name:e.target.value}))}
-                      style={{width:'100%',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'11px 14px',fontFamily:"'Barlow',sans-serif",fontSize:14,color:'#F5F0E8',outline:'none'}}>
+                    <label style={{display:'block',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>Bank name *</label>
+                    <select value={bankingForm.bank_name} onChange={e=>setBankingForm(f=>({...f,bank_name:e.target.value}))} style={{width:'100%',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'11px 14px',fontFamily:"'Barlow',sans-serif",fontSize:14,color:'#F5F0E8',outline:'none'}}>
                       <option value="">Select your bank</option>
-                      {['Absa','African Bank','Capitec Bank','Discovery Bank','FNB','Investec','Nedbank','Old Mutual','Sasfin','Standard Bank','TymeBank','Ubank'].map(b=>(
-                        <option key={b} value={b}>{b}</option>
-                      ))}
+                      {['Absa','African Bank','Capitec Bank','Discovery Bank','FNB','Investec','Nedbank','Old Mutual','Sasfin','Standard Bank','TymeBank','Ubank'].map(b=>(<option key={b} value={b}>{b}</option>))}
                     </select>
                   </div>
-
-                  {/* Account holder */}
                   <div style={{gridColumn:'1/-1'}}>
-                    <label style={{display:'block',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>
-                      Account holder name *
-                    </label>
-                    <input
-                      type="text"
-                      value={bankingForm.account_holder}
-                      onChange={e=>setBankingForm(f=>({...f,account_holder:e.target.value}))}
-                      placeholder="Full name as it appears on your bank account"
-                      style={{width:'100%',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'11px 14px',fontFamily:"'Barlow',sans-serif",fontSize:14,color:'#F5F0E8',outline:'none'}}
-                    />
+                    <label style={{display:'block',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>Account holder name *</label>
+                    <input type="text" value={bankingForm.account_holder} onChange={e=>setBankingForm(f=>({...f,account_holder:e.target.value}))} placeholder="Full name as it appears on your bank account" style={{width:'100%',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'11px 14px',fontFamily:"'Barlow',sans-serif",fontSize:14,color:'#F5F0E8',outline:'none'}}/>
                   </div>
-
-                  {/* Account number */}
                   <div>
-                    <label style={{display:'block',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>
-                      Account number *
-                    </label>
-                    <input
-                      type="text"
-                      value={bankingForm.account_number}
-                      onChange={e=>setBankingForm(f=>({...f,account_number:e.target.value.replace(/\D/g,'')}))}
-                      placeholder="e.g. 1234567890"
-                      maxLength={16}
-                      style={{width:'100%',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'11px 14px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:16,color:'#F5F0E8',outline:'none',letterSpacing:2}}
-                    />
+                    <label style={{display:'block',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>Account number *</label>
+                    <input type="text" value={bankingForm.account_number} onChange={e=>setBankingForm(f=>({...f,account_number:e.target.value.replace(/\D/g,'')}))} placeholder="e.g. 1234567890" maxLength={16} style={{width:'100%',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'11px 14px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:16,color:'#F5F0E8',outline:'none',letterSpacing:2}}/>
                   </div>
-
-                  {/* Account type */}
                   <div>
-                    <label style={{display:'block',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>
-                      Account type *
-                    </label>
-                    <select
-                      value={bankingForm.account_type}
-                      onChange={e=>setBankingForm(f=>({...f,account_type:e.target.value}))}
-                      style={{width:'100%',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'11px 14px',fontFamily:"'Barlow',sans-serif",fontSize:14,color:'#F5F0E8',outline:'none'}}>
+                    <label style={{display:'block',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>Account type *</label>
+                    <select value={bankingForm.account_type} onChange={e=>setBankingForm(f=>({...f,account_type:e.target.value}))} style={{width:'100%',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'11px 14px',fontFamily:"'Barlow',sans-serif",fontSize:14,color:'#F5F0E8',outline:'none'}}>
                       <option value="current">Current account</option>
                       <option value="savings">Savings account</option>
                       <option value="transmission">Transmission account</option>
                     </select>
                   </div>
-
-                  {/* Branch code */}
                   <div>
-                    <label style={{display:'block',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>
-                      Branch code *
-                    </label>
-                    <input
-                      type="text"
-                      value={bankingForm.branch_code}
-                      onChange={e=>setBankingForm(f=>({...f,branch_code:e.target.value.replace(/\D/g,'')}))}
-                      placeholder="e.g. 632005"
-                      maxLength={9}
-                      style={{width:'100%',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'11px 14px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:16,color:'#F5F0E8',outline:'none',letterSpacing:2}}
-                    />
+                    <label style={{display:'block',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>Branch code *</label>
+                    <input type="text" value={bankingForm.branch_code} onChange={e=>setBankingForm(f=>({...f,branch_code:e.target.value.replace(/\D/g,'')}))} placeholder="e.g. 632005" maxLength={9} style={{width:'100%',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'11px 14px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:16,color:'#F5F0E8',outline:'none',letterSpacing:2}}/>
                   </div>
-
-                  {/* Universal branch code helper */}
-                  <div style={{gridColumn:'1/-1',fontSize:11,color:'rgba(245,240,232,.25)',lineHeight:1.6}}>
-                    💡 Universal branch codes: Absa 632005 · Capitec 470010 · FNB 250655 · Nedbank 198765 · Standard Bank 051001 · TymeBank 678910
-                  </div>
+                  <div style={{gridColumn:'1/-1',fontSize:11,color:'rgba(245,240,232,.25)',lineHeight:1.6}}>💡 Universal branch codes: Absa 632005 · Capitec 470010 · FNB 250655 · Nedbank 198765 · Standard Bank 051001 · TymeBank 678910</div>
                 </div>
-
-                {/* Message */}
-                {bankingMsg&&(
-                  <div style={{marginTop:14,padding:'10px 14px',borderRadius:6,fontSize:13,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,
-                    background:bankingMsg.startsWith('✓')?'rgba(61,170,106,.1)':'rgba(226,75,74,.08)',
-                    border:bankingMsg.startsWith('✓')?'1px solid rgba(61,170,106,.2)':'1px solid rgba(226,75,74,.2)',
-                    color:bankingMsg.startsWith('✓')?'#3DAA6A':'#f08080',
-                  }}>
-                    {bankingMsg}
-                  </div>
-                )}
-
-                <button
-                  onClick={saveBanking}
-                  disabled={savingBanking}
-                  style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:13,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:savingBanking?'rgba(196,89,58,.4)':'#C4593A',color:'#fff',border:'none',padding:'13px',borderRadius:8,cursor:savingBanking?'not-allowed':'pointer',width:'100%',marginTop:16,display:'flex',alignItems:'center',justifyContent:'center',gap:8,transition:'background .15s'}}>
-                  {savingBanking?'Saving...':'Save banking details'}
-                </button>
-
-                <div style={{marginTop:12,fontSize:11,color:'rgba(245,240,232,.2)',textAlign:'center',lineHeight:1.6}}>
-                  🔒 Your banking details are encrypted and stored securely. They are only used to process your Lungisa earnings.
-                </div>
+                {bankingMsg&&(<div style={{marginTop:14,padding:'10px 14px',borderRadius:6,fontSize:13,fontFamily:"'Barlow Condensed',sans-serif",fontWeight:600,background:bankingMsg.startsWith('✓')?'rgba(61,170,106,.1)':'rgba(226,75,74,.08)',border:bankingMsg.startsWith('✓')?'1px solid rgba(61,170,106,.2)':'1px solid rgba(226,75,74,.2)',color:bankingMsg.startsWith('✓')?'#3DAA6A':'#f08080'}}>{bankingMsg}</div>)}
+                <button onClick={saveBanking} disabled={savingBanking} style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:13,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:savingBanking?'rgba(196,89,58,.4)':'#C4593A',color:'#fff',border:'none',padding:'13px',borderRadius:8,cursor:savingBanking?'not-allowed':'pointer',width:'100%',marginTop:16,display:'flex',alignItems:'center',justifyContent:'center',gap:8,transition:'background .15s'}}>{savingBanking?'Saving...':'Save banking details'}</button>
+                <div style={{marginTop:12,fontSize:11,color:'rgba(245,240,232,.2)',textAlign:'center',lineHeight:1.6}}>🔒 Your banking details are encrypted and stored securely. They are only used to process your Lungisa earnings.</div>
               </div>
             </div>
           )}
         </div>
       </div>
 
-      {/* ── BID MODAL ─────────────────────────────────────────────── */}
+      {/* BID MODAL */}
       {modalJob&&(
         <div style={S.overlay} onClick={e=>{if(e.target===e.currentTarget){setModalJob(null);setModalMedia([])}}}>
           <div style={S.modal}>
-            {/* Header */}
             <div style={S.mHeader}>
               <div>
                 <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2.5,textTransform:'uppercase',color:'#E07A5F',marginBottom:6}}>{modalJob.emoji} {modalJob.cat} · {modalJob.loc}</div>
@@ -1555,15 +1300,11 @@ function DashboardInner() {
               </div>
               <div onClick={()=>{setModalJob(null);setModalMedia([])}} style={{width:32,height:32,borderRadius:6,background:'rgba(255,255,255,.06)',border:'1px solid rgba(255,255,255,.08)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:16,color:'rgba(245,240,232,.5)',flexShrink:0}}>✕</div>
             </div>
-
             <div style={S.mBody}>
-              {/* Job details */}
               {[['Budget',modalJob.budget],['Urgency',modalJob.urgencyLabel],['Location',modalJob.loc],['Timing',modalJob.timing]].map(([l,v])=>(
                 <div key={l} style={S.detailRow}><span style={S.drLabel}>{l}</span><span style={{color:'rgba(245,240,232,.8)',fontSize:13}}>{v}</span></div>
               ))}
               <div style={S.descBox}>{modalJob.desc}</div>
-
-              {/* ── MEDIA SECTION ─────────────────────────────────── */}
               {modalJob.photos > 0 && (
                 <div style={{marginBottom:18}}>
                   <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:10,display:'flex',alignItems:'center',gap:8}}>
@@ -1571,36 +1312,22 @@ function DashboardInner() {
                     Job Photos &amp; Video
                     <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,color:'rgba(245,240,232,.3)',fontWeight:400,textTransform:'none',letterSpacing:0}}>— review before bidding</span>
                   </div>
-
                   {mediaLoading ? (
                     <div style={{display:'flex',alignItems:'center',gap:8,padding:'16px 0',color:'rgba(245,240,232,.4)',fontFamily:"'Barlow Condensed',sans-serif",fontSize:12}}>
                       <div className="spin" style={{width:14,height:14}}/>Loading media...
                     </div>
                   ) : modalMedia.length === 0 ? (
-                    <div style={{fontSize:12,color:'rgba(245,240,232,.25)',padding:'8px 0',fontStyle:'italic'}}>
-                      Media unavailable
-                    </div>
+                    <div style={{fontSize:12,color:'rgba(245,240,232,.25)',padding:'8px 0',fontStyle:'italic'}}>Media unavailable</div>
                   ) : (
                     <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
                       {modalMedia.map((m,i)=>(
-                        <div key={i} className="media-thumb"
-                          onClick={()=>{setLightboxUrl(m.url);setLightboxType(m.type)}}
-                          style={{width:86,height:86,borderRadius:8,overflow:'hidden',position:'relative',border:'2px solid rgba(255,255,255,.1)',background:'#111',flexShrink:0}}>
+                        <div key={i} className="media-thumb" onClick={()=>{setLightboxUrl(m.url);setLightboxType(m.type)}} style={{width:86,height:86,borderRadius:8,overflow:'hidden',position:'relative',border:'2px solid rgba(255,255,255,.1)',background:'#111',flexShrink:0}}>
                           {m.type==='video' ? (
-                            <>
-                              <video src={m.url} style={{width:'100%',height:'100%',objectFit:'cover'}} muted playsInline/>
-                              <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,.4)',display:'flex',alignItems:'center',justifyContent:'center'}}>
-                                <div style={{width:26,height:26,borderRadius:'50%',background:'rgba(255,255,255,.9)',display:'flex',alignItems:'center',justifyContent:'center'}}>
-                                  <span style={{fontSize:10,marginLeft:2}}>▶</span>
-                                </div>
-                              </div>
-                              <div style={{position:'absolute',bottom:3,left:3,background:'rgba(0,0,0,.7)',borderRadius:3,padding:'1px 5px',fontSize:8,color:'rgba(255,255,255,.8)',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700}}>VIDEO</div>
-                            </>
+                            <><video src={m.url} style={{width:'100%',height:'100%',objectFit:'cover'}} muted playsInline/><div style={{position:'absolute',inset:0,background:'rgba(0,0,0,.4)',display:'flex',alignItems:'center',justifyContent:'center'}}><div style={{width:26,height:26,borderRadius:'50%',background:'rgba(255,255,255,.9)',display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{fontSize:10,marginLeft:2}}>▶</span></div></div><div style={{position:'absolute',bottom:3,left:3,background:'rgba(0,0,0,.7)',borderRadius:3,padding:'1px 5px',fontSize:8,color:'rgba(255,255,255,.8)',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700}}>VIDEO</div></>
                           ) : (
                             /* eslint-disable-next-line @next/next/no-img-element */
                             <img src={m.url} alt={`Job photo ${i+1}`} style={{width:'100%',height:'100%',objectFit:'cover'}}/>
                           )}
-                          {/* Expand icon */}
                           <div style={{position:'absolute',top:3,right:3,background:'rgba(0,0,0,.6)',borderRadius:3,padding:2,opacity:0.7}}>
                             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
                           </div>
@@ -1608,13 +1335,9 @@ function DashboardInner() {
                       ))}
                     </div>
                   )}
-                  <div style={{fontSize:11,color:'rgba(245,240,232,.25)',marginTop:8,fontStyle:'italic'}}>
-                    Tap any photo to view full size
-                  </div>
+                  <div style={{fontSize:11,color:'rgba(245,240,232,.25)',marginTop:8,fontStyle:'italic'}}>Tap any photo to view full size</div>
                 </div>
               )}
-
-              {/* Bid form */}
               {!modalJob.submitted?(
                 <>
                   <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',margin:'18px 0 10px',display:'flex',alignItems:'center',gap:8}}>
@@ -1625,9 +1348,7 @@ function DashboardInner() {
                     <input style={S.priceInput} type="number" placeholder="750" value={bidPrice} onChange={e=>setBidPrice(e.target.value)}/>
                   </div>
                   <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:10}}>Estimated arrival</div>
-                  <div style={S.etaChips}>
-                    {ETAS.map(e=><div key={e} style={S.etaChip(bidEta===e)} onClick={()=>setBidEta(e)}>{e}</div>)}
-                  </div>
+                  <div style={S.etaChips}>{ETAS.map(e=><div key={e} style={S.etaChip(bidEta===e)} onClick={()=>setBidEta(e)}>{e}</div>)}</div>
                   <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:8}}>Message (optional)</div>
                   <textarea style={S.bidNoteInput} placeholder="E.g. I carry all replacement parts and can be there in 30 mins..." value={bidNote} onChange={e=>setBidNote(e.target.value)}/>
                   <div style={S.earningsPreview}>
@@ -1635,21 +1356,16 @@ function DashboardInner() {
                       <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:600,color:'rgba(61,170,106,.7)'}}>You&apos;ll earn</div>
                       <div style={{fontSize:10,color:'rgba(61,170,106,.5)',marginTop:1}}>after 5% Lungisa commission</div>
                     </div>
-                    <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:24,color:'#52C47F',letterSpacing:.5}}>
-                      {bidPrice?`R ${Math.round(parseInt(bidPrice)*0.95).toLocaleString()}`:'—'}
-                    </div>
+                    <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:24,color:'#52C47F',letterSpacing:.5}}>{bidPrice?`R ${Math.round(parseInt(bidPrice)*0.95).toLocaleString()}`:'—'}</div>
                   </div>
                 </>
               ):(
                 <div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'14px 16px',display:'flex',alignItems:'center',gap:10,marginTop:12}}>
                   <div style={{width:28,height:28,borderRadius:'50%',background:'rgba(61,170,106,.2)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>✓</div>
-                  <div style={{fontSize:13,color:'rgba(245,240,232,.75)',lineHeight:1.4}}>
-                    Bid submitted — <strong style={{color:'#52C47F'}}>R{modalJob.submitPrice}</strong>. Homeowner notified.
-                  </div>
+                  <div style={{fontSize:13,color:'rgba(245,240,232,.75)',lineHeight:1.4}}>Bid submitted — <strong style={{color:'#52C47F'}}>R{modalJob.submitPrice}</strong>. Homeowner notified.</div>
                 </div>
               )}
             </div>
-
             {!modalJob.submitted&&(
               <div style={S.mFooter}>
                 <button style={S.btn('ghost')} onClick={()=>{setModalJob(null);setModalMedia([])}}>Cancel</button>
@@ -1660,168 +1376,72 @@ function DashboardInner() {
         </div>
       )}
 
-      {/* ── LIGHTBOX — full size photo/video viewer ──────────────── */}
+      {/* LIGHTBOX */}
       {lightboxUrl&&(
-        <div
-          onClick={()=>setLightboxUrl(null)}
-          style={{position:'fixed',inset:0,background:'rgba(0,0,0,.92)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',padding:20,animation:'fadeIn .2s ease'}}>
+        <div onClick={()=>setLightboxUrl(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,.92)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center',padding:20,animation:'fadeIn .2s ease'}}>
           <div onClick={e=>e.stopPropagation()} style={{position:'relative',maxWidth:'90vw',maxHeight:'85vh'}}>
             {lightboxType==='video' ? (
-              <video src={lightboxUrl} controls autoPlay
-                style={{maxWidth:'90vw',maxHeight:'85vh',borderRadius:10,boxShadow:'0 20px 60px rgba(0,0,0,.5)'}}/>
+              <video src={lightboxUrl} controls autoPlay style={{maxWidth:'90vw',maxHeight:'85vh',borderRadius:10,boxShadow:'0 20px 60px rgba(0,0,0,.5)'}}/>
             ) : (
               /* eslint-disable-next-line @next/next/no-img-element */
               <img src={lightboxUrl} alt="Job photo" style={{maxWidth:'90vw',maxHeight:'85vh',borderRadius:10,objectFit:'contain',boxShadow:'0 20px 60px rgba(0,0,0,.5)'}}/>
             )}
-            <button onClick={()=>setLightboxUrl(null)}
-              style={{position:'absolute',top:-14,right:-14,width:32,height:32,borderRadius:'50%',background:'rgba(255,255,255,.12)',border:'1px solid rgba(255,255,255,.2)',color:'#fff',fontSize:16,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700}}>
-              ✕
-            </button>
+            <button onClick={()=>setLightboxUrl(null)} style={{position:'absolute',top:-14,right:-14,width:32,height:32,borderRadius:'50%',background:'rgba(255,255,255,.12)',border:'1px solid rgba(255,255,255,.2)',color:'#fff',fontSize:16,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700}}>✕</button>
           </div>
-          <div style={{position:'absolute',bottom:20,left:0,right:0,textAlign:'center',fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,color:'rgba(255,255,255,.3)',letterSpacing:1}}>
-            Click anywhere to close
-          </div>
+          <div style={{position:'absolute',bottom:20,left:0,right:0,textAlign:'center',fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,color:'rgba(255,255,255,.3)',letterSpacing:1}}>Click anywhere to close</div>
         </div>
       )}
 
-      {/* ── JOB COMPLETION MODAL ──────────────────────────────────── */}
+      {/* JOB COMPLETION MODAL */}
       {completionJobId&&(
-        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.8)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:20}}
-          onClick={e=>{if(e.target===e.currentTarget){setCompletionJobId(null);setCompletionPhotos([])}}}>
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.8)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:20}} onClick={e=>{if(e.target===e.currentTarget){setCompletionJobId(null);setCompletionPhotos([])}}}>
           <div style={{background:'#222220',borderRadius:16,border:'1px solid rgba(255,255,255,.1)',width:'100%',maxWidth:520,maxHeight:'90vh',overflowY:'auto'}}>
-            {/* Header */}
             <div style={{padding:'22px 26px 18px',borderBottom:'1px solid rgba(255,255,255,.06)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
               <div>
-                <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'#3DAA6A',marginBottom:4}}>
-                  ✓ Mark job complete
-                </div>
-                <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:24,letterSpacing:1,color:'#F5F0E8',lineHeight:1}}>
-                  Submit completion report
-                </div>
+                <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'#3DAA6A',marginBottom:4}}>✓ Mark job complete</div>
+                <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:24,letterSpacing:1,color:'#F5F0E8',lineHeight:1}}>Submit completion report</div>
               </div>
-              <div onClick={()=>{setCompletionJobId(null);setCompletionPhotos([])}}
-                style={{width:32,height:32,borderRadius:6,background:'rgba(255,255,255,.06)',border:'1px solid rgba(255,255,255,.08)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:16,color:'rgba(245,240,232,.5)'}}>✕</div>
+              <div onClick={()=>{setCompletionJobId(null);setCompletionPhotos([])}} style={{width:32,height:32,borderRadius:6,background:'rgba(255,255,255,.06)',border:'1px solid rgba(255,255,255,.08)',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:16,color:'rgba(245,240,232,.5)'}}>✕</div>
             </div>
-
             <div style={{padding:'22px 26px'}}>
-              {/* Info note */}
-              <div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(61,170,106,.85)',lineHeight:1.6,marginBottom:20}}>
-                🔒 Once the homeowner confirms your report, payment will be released from escrow to you.
-              </div>
-
-              {/* Date completed */}
-              <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:8}}>
-                Date completed *
-              </div>
-              <input
-                type="date"
-                value={completionDate}
-                onChange={e=>setCompletionDate(e.target.value)}
-                max={new Date().toISOString().split('T')[0]}
-                style={{width:'100%',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'11px 14px',fontFamily:"'Barlow',sans-serif",fontSize:14,color:'#F5F0E8',outline:'none',marginBottom:16,colorScheme:'dark'}}
-              />
-
-              {/* Report */}
-              <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:8}}>
-                What was repaired / done * <span style={{fontWeight:400,fontSize:9,textTransform:'none',letterSpacing:0,color:'rgba(245,240,232,.25)'}}>be specific</span>
-              </div>
-              <textarea
-                value={completionReport}
-                onChange={e=>setCompletionReport(e.target.value)}
-                placeholder="E.g. Replaced the burst 22mm copper pipe under the kitchen sink. Fitted new isolation valve. Tested for leaks — all clear. Cleared work area."
-                maxLength={500}
-                style={{width:'100%',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'12px 14px',fontFamily:"'Barlow',sans-serif",fontSize:14,color:'#F5F0E8',outline:'none',resize:'none',height:110,lineHeight:1.6,marginBottom:4}}
-              />
+              <div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(61,170,106,.85)',lineHeight:1.6,marginBottom:20}}>🔒 Once the homeowner confirms your report, payment will be released from escrow to you.</div>
+              <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:8}}>Date completed *</div>
+              <input type="date" value={completionDate} onChange={e=>setCompletionDate(e.target.value)} max={new Date().toISOString().split('T')[0]} style={{width:'100%',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'11px 14px',fontFamily:"'Barlow',sans-serif",fontSize:14,color:'#F5F0E8',outline:'none',marginBottom:16,colorScheme:'dark'}}/>
+              <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:8}}>What was repaired / done * <span style={{fontWeight:400,fontSize:9,textTransform:'none',letterSpacing:0,color:'rgba(245,240,232,.25)'}}>be specific</span></div>
+              <textarea value={completionReport} onChange={e=>setCompletionReport(e.target.value)} placeholder="E.g. Replaced the burst 22mm copper pipe under the kitchen sink. Fitted new isolation valve. Tested for leaks — all clear. Cleared work area." maxLength={500} style={{width:'100%',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'12px 14px',fontFamily:"'Barlow',sans-serif",fontSize:14,color:'#F5F0E8',outline:'none',resize:'none',height:110,lineHeight:1.6,marginBottom:4}}/>
               <div style={{fontSize:10,color:'rgba(245,240,232,.25)',textAlign:'right',marginBottom:16}}>{500-completionReport.length} chars left</div>
-
-              {/* Photo/Video upload */}
-              <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:8}}>
-                Photos & video <span style={{fontWeight:400,fontSize:9,textTransform:'none',letterSpacing:0,color:'rgba(245,240,232,.25)'}}>up to 4 photos + 1 video · strongly recommended</span>
-              </div>
-
-              {/* Media grid */}
+              <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:8}}>Photos & video <span style={{fontWeight:400,fontSize:9,textTransform:'none',letterSpacing:0,color:'rgba(245,240,232,.25)'}}>up to 4 photos + 1 video · strongly recommended</span></div>
               <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:10}}>
                 {completionPhotos.map((p,i)=>(
                   <div key={i} style={{width:80,height:80,borderRadius:8,overflow:'hidden',position:'relative',border:`2px solid ${p.type==='video'?'rgba(46,127,212,.4)':'rgba(61,170,106,.3)'}`,flexShrink:0,background:'#111'}}>
                     {p.type==='video'?(
-                      <>
-                        <video src={p.url} style={{width:'100%',height:'100%',objectFit:'cover'}} muted playsInline/>
-                        <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,.35)',display:'flex',alignItems:'center',justifyContent:'center'}}>
-                          <div style={{width:24,height:24,borderRadius:'50%',background:'rgba(255,255,255,.9)',display:'flex',alignItems:'center',justifyContent:'center'}}>
-                            <span style={{fontSize:9,marginLeft:2}}>▶</span>
-                          </div>
-                        </div>
-                        <div style={{position:'absolute',bottom:2,left:2,background:'rgba(46,127,212,.85)',borderRadius:3,padding:'1px 5px',fontSize:8,color:'#fff',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700}}>
-                          VIDEO
-                        </div>
-                      </>
+                      <><video src={p.url} style={{width:'100%',height:'100%',objectFit:'cover'}} muted playsInline/><div style={{position:'absolute',inset:0,background:'rgba(0,0,0,.35)',display:'flex',alignItems:'center',justifyContent:'center'}}><div style={{width:24,height:24,borderRadius:'50%',background:'rgba(255,255,255,.9)',display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{fontSize:9,marginLeft:2}}>▶</span></div></div><div style={{position:'absolute',bottom:2,left:2,background:'rgba(46,127,212,.85)',borderRadius:3,padding:'1px 5px',fontSize:8,color:'#fff',fontFamily:"'Barlow Condensed',sans-serif",fontWeight:700}}>VIDEO</div></>
                     ):(
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={p.url} alt={`Completion ${i+1}`} style={{width:'100%',height:'100%',objectFit:'cover'}}/>
                     )}
-                    <button
-                      onClick={()=>setCompletionPhotos(prev=>prev.filter((_,j)=>j!==i))}
-                      style={{position:'absolute',top:3,right:3,background:'rgba(0,0,0,.8)',border:'none',borderRadius:'50%',width:20,height:20,cursor:'pointer',color:'#fff',fontSize:11,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700}}>
-                      ✕
-                    </button>
+                    <button onClick={()=>setCompletionPhotos(prev=>prev.filter((_,j)=>j!==i))} style={{position:'absolute',top:3,right:3,background:'rgba(0,0,0,.8)',border:'none',borderRadius:'50%',width:20,height:20,cursor:'pointer',color:'#fff',fontSize:11,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700}}>✕</button>
                   </div>
                 ))}
               </div>
-
-              {/* Upload buttons */}
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:12}}>
-                {/* Photo upload */}
                 {completionPhotos.filter(p=>p.type==='image').length < 4 && (
-                  <label style={{borderRadius:8,border:'2px dashed rgba(61,170,106,.3)',display:'flex',alignItems:'center',justifyContent:'center',gap:8,cursor:'pointer',position:'relative',padding:'10px',transition:'border-color .2s',background:'rgba(61,170,106,.04)'}}
-                    onMouseEnter={e=>(e.currentTarget.style.borderColor='rgba(61,170,106,.5)')}
-                    onMouseLeave={e=>(e.currentTarget.style.borderColor='rgba(61,170,106,.3)')}>
-                    <input type="file" accept="image/jpeg,image/png,image/webp"
-                      onChange={uploadCompletionPhoto}
-                      style={{position:'absolute',inset:0,opacity:0,cursor:'pointer',width:'100%',height:'100%'}}/>
+                  <label style={{borderRadius:8,border:'2px dashed rgba(61,170,106,.3)',display:'flex',alignItems:'center',justifyContent:'center',gap:8,cursor:'pointer',position:'relative',padding:'10px',transition:'border-color .2s',background:'rgba(61,170,106,.04)'}} onMouseEnter={e=>(e.currentTarget.style.borderColor='rgba(61,170,106,.5)')} onMouseLeave={e=>(e.currentTarget.style.borderColor='rgba(61,170,106,.3)')}>
+                    <input type="file" accept="image/jpeg,image/png,image/webp" onChange={uploadCompletionPhoto} style={{position:'absolute',inset:0,opacity:0,cursor:'pointer',width:'100%',height:'100%'}}/>
                     <span style={{fontSize:16}}>📷</span>
-                    <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,color:'rgba(61,170,106,.7)',letterSpacing:.5}}>
-                      Add photo ({completionPhotos.filter(p=>p.type==='image').length}/4)
-                    </span>
+                    <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,color:'rgba(61,170,106,.7)',letterSpacing:.5}}>Add photo ({completionPhotos.filter(p=>p.type==='image').length}/4)</span>
                   </label>
                 )}
-                {/* Video upload */}
                 {completionPhotos.filter(p=>p.type==='video').length < 1 && (
-                  <label style={{borderRadius:8,border:'2px dashed rgba(46,127,212,.3)',display:'flex',alignItems:'center',justifyContent:'center',gap:8,cursor:'pointer',position:'relative',padding:'10px',transition:'border-color .2s',background:'rgba(46,127,212,.04)'}}
-                    onMouseEnter={e=>(e.currentTarget.style.borderColor='rgba(46,127,212,.5)')}
-                    onMouseLeave={e=>(e.currentTarget.style.borderColor='rgba(46,127,212,.3)')}>
-                    <input type="file" accept="video/mp4,video/mov,video/quicktime,video/*"
-                      onChange={uploadCompletionPhoto}
-                      style={{position:'absolute',inset:0,opacity:0,cursor:'pointer',width:'100%',height:'100%'}}/>
-                    {uploadingCompletion?(
-                      <div style={{width:14,height:14,border:'2px solid rgba(255,255,255,.2)',borderTopColor:'#fff',borderRadius:'50%',animation:'spin .6s linear infinite'}}/>
-                    ):(
-                      <>
-                        <span style={{fontSize:16}}>🎥</span>
-                        <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,color:'rgba(46,127,212,.7)',letterSpacing:.5}}>
-                          Add video (1 max)
-                        </span>
-                      </>
-                    )}
+                  <label style={{borderRadius:8,border:'2px dashed rgba(46,127,212,.3)',display:'flex',alignItems:'center',justifyContent:'center',gap:8,cursor:'pointer',position:'relative',padding:'10px',transition:'border-color .2s',background:'rgba(46,127,212,.04)'}} onMouseEnter={e=>(e.currentTarget.style.borderColor='rgba(46,127,212,.5)')} onMouseLeave={e=>(e.currentTarget.style.borderColor='rgba(46,127,212,.3)')}>
+                    <input type="file" accept="video/mp4,video/mov,video/quicktime,video/*" onChange={uploadCompletionPhoto} style={{position:'absolute',inset:0,opacity:0,cursor:'pointer',width:'100%',height:'100%'}}/>
+                    {uploadingCompletion?(<div style={{width:14,height:14,border:'2px solid rgba(255,255,255,.2)',borderTopColor:'#fff',borderRadius:'50%',animation:'spin .6s linear infinite'}}/>):(<><span style={{fontSize:16}}>🎥</span><span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,color:'rgba(46,127,212,.7)',letterSpacing:.5}}>Add video (1 max)</span></>)}
                   </label>
                 )}
               </div>
-
-              {completionPhotos.length === 0 && (
-                <div style={{fontSize:11,color:'rgba(245,240,232,.25)',fontStyle:'italic',marginBottom:12}}>
-                  Photos and video help the homeowner verify the work was done. Jobs with media are confirmed faster.
-                </div>
-              )}
-
-              {/* Submit */}
-              <button
-                onClick={submitCompletion}
-                disabled={submittingCompletion||!completionReport.trim()}
-                style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:14,fontWeight:700,letterSpacing:2,textTransform:'uppercase',background:submittingCompletion||!completionReport.trim()?'rgba(61,170,106,.3)':'#3DAA6A',color:'#fff',border:'none',padding:'14px',borderRadius:8,cursor:submittingCompletion||!completionReport.trim()?'not-allowed':'pointer',width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:8,transition:'background .15s'}}>
-                {submittingCompletion?(
-                  <><div style={{width:14,height:14,border:'2px solid rgba(255,255,255,.3)',borderTopColor:'#fff',borderRadius:'50%',animation:'spin .6s linear infinite'}}/>Submitting...</>
-                ):(
-                  '✓ Submit completion report →'
-                )}
+              {completionPhotos.length === 0 && (<div style={{fontSize:11,color:'rgba(245,240,232,.25)',fontStyle:'italic',marginBottom:12}}>Photos and video help the homeowner verify the work was done. Jobs with media are confirmed faster.</div>)}
+              <button onClick={submitCompletion} disabled={submittingCompletion||!completionReport.trim()} style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:14,fontWeight:700,letterSpacing:2,textTransform:'uppercase',background:submittingCompletion||!completionReport.trim()?'rgba(61,170,106,.3)':'#3DAA6A',color:'#fff',border:'none',padding:'14px',borderRadius:8,cursor:submittingCompletion||!completionReport.trim()?'not-allowed':'pointer',width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:8,transition:'background .15s'}}>
+                {submittingCompletion?(<><div style={{width:14,height:14,border:'2px solid rgba(255,255,255,.3)',borderTopColor:'#fff',borderRadius:'50%',animation:'spin .6s linear infinite'}}/>Submitting...</>):'✓ Submit completion report →'}
               </button>
             </div>
           </div>
@@ -1831,9 +1451,7 @@ function DashboardInner() {
       {/* MOBILE BOTTOM NAV */}
       <nav className="mobile-dash-nav">
         {navItems.map(item=>(
-          <div key={item.view} onClick={()=>setView(item.view)}
-            style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,cursor:'pointer',position:'relative',
-              color:view===item.view?'#E07A5F':'rgba(245,240,232,.4)',transition:'color .15s'}}>
+          <div key={item.view} onClick={()=>setView(item.view)} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:3,cursor:'pointer',position:'relative',color:view===item.view?'#E07A5F':'rgba(245,240,232,.4)',transition:'color .15s'}}>
             {item.badge!==undefined&&item.badge>0&&(
               <div style={{position:'absolute',top:6,right:'22%',width:16,height:16,borderRadius:'50%',background:countersPending.length>0&&item.view==='bids'?'#E8A020':'#C4593A',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:700,color:'#fff'}}>
                 {item.badge > 9 ? '9+' : item.badge}
