@@ -678,10 +678,10 @@ export default function HomeDashboard() {
 
         // Count actual completed jobs separately from reviews
         const { count: completedCount } = await supabase
-          .from('bids')
-          .select('id', { count: 'exact', head: true })
-          .eq('tradesperson_id', tradespersonId)
-          .eq('jobs.status', 'completed')
+        .from('bids')
+        .select('id', { count: 'exact', head: true })
+        .eq('tradesperson_id', tradespersonId)
+        .eq('status', 'completed')
 
         await supabase
           .from('tradesperson_profiles')
