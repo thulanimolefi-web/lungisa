@@ -390,7 +390,11 @@ export default function HomeDashboard() {
   async function acceptQuote(jobId:string, bidId:string, tradespersonId:string) {
     try {
       await supabase.from('quotes').update({status:'accepted'}).eq('job_id',jobId).eq('tradesperson_id',tradespersonId)
-      await supabase.from('bids').update({status:'accepted',final_amount:quotes[jobId]?.labourAmount}).eq('id',bidId)
+      await supabase.from('bids').update({
+        status:'accepted',
+        amount:      quotes[jobId]?.labourAmount,
+        final_amount:quotes[jobId]?.labourAmount,
+      }).eq('id',bidId)
       await supabase.from('bids').update({status:'declined'}).eq('job_id',jobId).neq('id',bidId)
       await supabase.from('jobs').update({status:'accepted'}).eq('id',jobId)
       const {data:{session}} = await supabase.auth.getSession()
