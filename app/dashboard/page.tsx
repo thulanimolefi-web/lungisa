@@ -21,6 +21,7 @@ type Bid = {
   counterUpdatedAt: string|null
   jobId: string
   jobStatus: string
+  quoteRequested: boolean
 }
 type JobMedia = {
   url: string
@@ -40,6 +41,125 @@ function getUrgencyLabel(u:string){const m:Record<string,string>={emergency:'Tod
 function getUrgencyColor(u:string){const m:Record<string,string>={emergency:'#E24B4A',within_3_days:'#E8A020',this_week:'#3DAA6A',flexible:'#D4C9B4'};return m[u]||'#D4C9B4'}
 function getTimeAgo(d:string){const diff=Date.now()-new Date(d).getTime();const mins=Math.floor(diff/60000);if(mins<60)return`${mins} min ago`;const hrs=Math.floor(mins/60);if(hrs<24)return`${hrs} hr${hrs>1?'s':''} ago`;return`${Math.floor(hrs/24)} day${Math.floor(hrs/24)>1?'s':''} ago`}
 function getJobTags(j:any){const t=[];if(j.urgency==='emergency')t.push({label:'Urgent',color:'rgba(226,75,74,.12)',text:'#f08080'});if((j.photo_count||0)>0)t.push({label:`${j.photo_count} Photo${j.photo_count>1?'s':''}`,color:'rgba(46,127,212,.1)',text:'#6aaee8'});if((j.bid_count||0)>0)t.push({label:`${j.bid_count} bids placed`,color:'rgba(255,255,255,.06)',text:'rgba(245,240,232,.45)'});if((j.bid_count||0)===0)t.push({label:'New',color:'rgba(196,89,58,.15)',text:'#E07A5F'});return t}
+
+// ── QuoteSubmitCard — rendered inside tradesperson dashboard ────────
+// Place this ABOVE the DashboardInner function declaration
+
+function QuoteSubmitCard({ bid, onSubmitted }: { bid: any; onSubmitted: () => void }) {
+  const [labour,    setLabour]    = useState('')
+  const [materials, setMaterials] = useState('')
+  const [notes,     setNotes]     = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [submitted,  setSubmitted]  = useState(false)
+
+  async function submitQuote() {
+    if(!labour || parseInt(labour) < 1) return
+    setSubmitting(true)
+    try {
+      const { data:{ session } } = await supabase.auth.getSession()
+      if(!session?.user) return
+      const { error } = await supabase.from('quotes').upsert({
+        job_id:            bid.jobId,
+        tradesperson_id:   session.user.id,
+        labour_amount:     parseInt(labour),
+        materials_estimate: parseInt(materials) || 0,
+        notes:             notes || null,
+        status:            'submitted',
+        updated_at:        new Date().toISOString(),
+      }, { onConflict: 'job_id,tradesperson_id' })
+
+      if(error) { console.error('Submit quote error:', error.message); setSubmitting(false); return }
+
+      // Email homeowner
+      fetch('/api/send-email', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type:              'quote_submitted',
+          jobId:             bid.jobId,
+          jobTitle:          bid.job,
+          labourAmount:      parseInt(labour),
+          materialsEstimate: parseInt(materials) || 0,
+          tradespersonId:    session.user.id,
+        })
+      }).catch(e => console.log('Email error:', e))
+
+      setSubmitted(true)
+      onSubmitted()
+    } catch(e) { console.log('Submit quote error:', e) }
+    setSubmitting(false)
+  }
+
+  if(submitted) return (
+    <div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(61,170,106,.9)',marginBottom:10}}>
+      ✓ Quote submitted — homeowner has been notified.
+    </div>
+  )
+
+  return (
+    <div style={{background:'rgba(255,255,255,.04)',borderRadius:10,border:'1px solid rgba(255,255,255,.1)',padding:'16px 18px',marginBottom:12}}>
+      <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:15,fontWeight:700,color:'#F5F0E8',marginBottom:4}}>{bid.job}</div>
+      <div style={{fontSize:12,color:'rgba(245,240,232,.4)',marginBottom:14}}>{bid.loc}</div>
+
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
+        {/* Labour */}
+        <div>
+          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>
+            Your labour charge *
+          </div>
+          <div style={{display:'flex',alignItems:'center',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,overflow:'hidden'}}>
+            <span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20,color:'rgba(245,240,232,.4)',padding:'10px 12px',borderRight:'1px solid rgba(255,255,255,.08)',flexShrink:0}}>R</span>
+            <input type="number" value={labour} onChange={e=>setLabour(e.target.value)} placeholder="e.g. 800"
+              style={{flex:1,background:'transparent',border:'none',outline:'none',fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:'#F5F0E8',padding:'10px 12px'}}/>
+          </div>
+          <div style={{fontSize:10,color:'rgba(245,240,232,.3)',marginTop:4}}>Fixed · goes into escrow</div>
+        </div>
+        {/* Materials */}
+        <div>
+          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>
+            Materials estimate
+          </div>
+          <div style={{display:'flex',alignItems:'center',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,overflow:'hidden'}}>
+            <span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20,color:'rgba(245,240,232,.4)',padding:'10px 12px',borderRight:'1px solid rgba(255,255,255,.08)',flexShrink:0}}>R</span>
+            <input type="number" value={materials} onChange={e=>setMaterials(e.target.value)} placeholder="e.g. 350"
+              style={{flex:1,background:'transparent',border:'none',outline:'none',fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:'#F5F0E8',padding:'10px 12px'}}/>
+          </div>
+          <div style={{fontSize:10,color:'rgba(245,240,232,.3)',marginTop:4}}>Homeowner pays separately</div>
+        </div>
+      </div>
+
+      {/* Notes */}
+      <div style={{marginBottom:12}}>
+        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>
+          Scope notes <span style={{fontWeight:400,fontSize:9,textTransform:'none',letterSpacing:0,color:'rgba(245,240,232,.2)'}}>optional</span>
+        </div>
+        <textarea value={notes} onChange={e=>setNotes(e.target.value)}
+          placeholder="E.g. Labour includes call-out, diagnosis and repair. Materials estimate based on description — may vary slightly after site inspection."
+          style={{width:'100%',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'10px 12px',fontFamily:"'Barlow',sans-serif",fontSize:13,color:'#F5F0E8',outline:'none',resize:'none',height:72,lineHeight:1.55}}/>
+      </div>
+
+      {/* You'll earn preview */}
+      {labour && parseInt(labour) > 0 && (
+        <div style={{background:'rgba(61,170,106,.07)',border:'1px solid rgba(61,170,106,.18)',borderRadius:8,padding:'10px 14px',marginBottom:12,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div>
+            <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,color:'rgba(61,170,106,.7)'}}>You&apos;ll earn</div>
+            <div style={{fontSize:10,color:'rgba(61,170,106,.5)',marginTop:1}}>after 5% Lungisa commission</div>
+          </div>
+          <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:24,color:'#52C47F',letterSpacing:.5}}>
+            R{Math.round(parseInt(labour)*0.95).toLocaleString()}
+          </div>
+        </div>
+      )}
+
+      <button onClick={submitQuote} disabled={submitting || !labour || parseInt(labour) < 1}
+        style={{width:'100%',fontFamily:"'Barlow Condensed',sans-serif",fontSize:13,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:submitting||!labour||parseInt(labour)<1?'rgba(196,89,58,.4)':'#C4593A',color:'#fff',border:'none',padding:'12px',borderRadius:8,cursor:submitting||!labour||parseInt(labour)<1?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8,transition:'background .15s'}}>
+        {submitting ? (
+          <><div style={{width:14,height:14,border:'2px solid rgba(255,255,255,.3)',borderTopColor:'#fff',borderRadius:'50%',animation:'spin .6s linear infinite'}}/>Submitting...</>
+        ) : '📋 Submit formal quote →'}
+      </button>
+    </div>
+  )
+}
+
 
 function DashboardInner() {
   const [view, setView]           = useState<View>('feed')
@@ -332,7 +452,7 @@ function DashboardInner() {
       if(!session?.user) return
       const {data,error}=await supabase
         .from('bids')
-        .select('*, jobs(id, title, area, status), updated_at')
+        .select('*, jobs(id, title, area, status), updated_at, quote_requested')
         .eq('tradesperson_id',session.user.id)
         .order('created_at',{ascending:false})
       if(!error&&data){
@@ -348,6 +468,7 @@ function DashboardInner() {
           counterBy:     b.counter_by||null,
           counterRound:  b.counter_round||0,
           counterUpdatedAt: b.updated_at||null,
+          quoteRequested:   b.quote_requested||false,
           jobId:         b.jobs?.id||b.job_id,
         })))
       }
@@ -996,6 +1117,25 @@ function DashboardInner() {
           {/* MY BIDS */}
           {view==='bids'&&(
             <div style={S.content}>
+              {/* ── Quote requests pending submission ── */}
+              {myBids.filter(b=>(b as any).quoteRequested && b.status==='pending').length>0&&(
+                <div style={{background:'rgba(196,89,58,.08)',border:'1px solid rgba(196,89,58,.3)',borderRadius:10,padding:'16px 20px',marginBottom:16}}>
+                  <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:700,letterSpacing:2,textTransform:'uppercase',color:'#E07A5F',marginBottom:4,display:'flex',alignItems:'center',gap:6}}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    Formal quote requested — submit your breakdown
+                  </div>
+                  <div style={{fontSize:12,color:'rgba(245,240,232,.5)',marginBottom:14,lineHeight:1.5}}>
+                    The homeowner wants to see your labour charge vs materials estimate before accepting.
+                  </div>
+                  {myBids.filter(b=>(b as any).quoteRequested && b.status==='pending').map(b=>(
+                    <QuoteSubmitCard key={b.id} bid={b} onSubmitted={()=>{
+                      loadMyBids()
+                      toast('Quote submitted! ✓','Homeowner has been notified',false)
+                    }}/>
+                  ))}
+                </div>
+              )}
+
               {countersPending.length>0&&(
                 <div style={{background:'rgba(232,160,32,.1)',border:'1px solid rgba(232,160,32,.3)',borderRadius:8,padding:'12px 16px',marginBottom:16,display:'flex',alignItems:'center',gap:10,fontSize:13,color:'#E8A020'}}>
                   <span style={{fontSize:18}}>⚡</span>
