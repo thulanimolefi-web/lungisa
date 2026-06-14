@@ -1011,7 +1011,7 @@ function DashboardInner() {
                         </div>
                         <div style={{display:'flex',alignItems:'center',gap:6}}>
                           <div style={{width:6,height:6,borderRadius:'50%',background:'#E8A020'}}/>
-                          <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,color:'rgba(232,160,32,.7)',letterSpacing:.5}}>🚀 Launch: 10 June 2026</span>
+                          <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,color:'rgba(232,160,32,.7)',letterSpacing:.5}}>🚀 Going live: August 2026</span>
                         </div>
                       </div>
                     </div>
