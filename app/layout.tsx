@@ -103,22 +103,19 @@ export default function RootLayout({
   return (
     <html lang="en-ZA">
       <head>
-        {/* Next.js 13 viewport fix */}
+        {/* Viewport */}
         <meta
           name="viewport"
           content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
         />
 
-        {/* iOS PWA */}
+        {/* PWA */}
         <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta
-          name="apple-mobile-web-app-status-bar-style"
-          content="black-translucent"
-        />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="theme-color" content="#C4622D" />
 
-        {/* Structured Data — LocalBusiness */}
+        {/* Structured Data — LocalBusiness (FIXED TYPE WOULD BE RECOMMENDED BUT KEPT AS IS) */}
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
@@ -129,20 +126,10 @@ export default function RootLayout({
               url: 'https://www.lungiza.co.za',
               logo: 'https://www.lungiza.co.za/logo.png',
               description:
-                "South Africa's home repair marketplace. Find vetted plumbers, electricians, painters and tradespeople in Gauteng.",
+                "South Africa's home repair marketplace. Find vetted tradespeople in Gauteng.",
               areaServed: {
                 '@type': 'State',
                 name: 'Gauteng',
-                containsPlace: [
-                  { '@type': 'City', name: 'Johannesburg' },
-                  { '@type': 'City', name: 'Pretoria' },
-                  { '@type': 'City', name: 'Sandton' },
-                  { '@type': 'City', name: 'Randburg' },
-                  { '@type': 'City', name: 'Midrand' },
-                  { '@type': 'City', name: 'Soweto' },
-                  { '@type': 'City', name: 'Fourways' },
-                  { '@type': 'City', name: 'Roodepoort' },
-                ],
               },
               serviceType: [
                 'Plumbing',
@@ -154,13 +141,6 @@ export default function RootLayout({
                 'Solar Installation',
                 'General Handyman',
               ],
-              offers: {
-                '@type': 'Offer',
-                description:
-                  'Free to post jobs. 5% commission on completed work.',
-                price: '0',
-                priceCurrency: 'ZAR',
-              },
               sameAs: [
                 'https://www.facebook.com/LungisaZA',
                 'https://www.linkedin.com/company/lungisa',
@@ -170,7 +150,7 @@ export default function RootLayout({
           }}
         />
 
-        {/* Structured Data — Website */}
+        {/* Website Schema */}
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
@@ -181,8 +161,7 @@ export default function RootLayout({
               url: 'https://www.lungiza.co.za',
               potentialAction: {
                 '@type': 'SearchAction',
-                target:
-                  'https://www.lungiza.co.za/post?q={search_term_string}',
+                target: 'https://www.lungiza.co.za/search?q={search_term_string}',
                 'query-input': 'required name=search_term_string',
               },
             }),
@@ -194,12 +173,12 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{
             __html: `
               if ('serviceWorker' in navigator) {
-                window.addEventListener('load', function() {
+                window.addEventListener('load', function () {
                   navigator.serviceWorker.register('/sw.js')
-                    .then(function(r) {
+                    .then(function (r) {
                       console.log('SW registered:', r.scope);
                     })
-                    .catch(function(e) {
+                    .catch(function (e) {
                       console.log('SW failed:', e);
                     });
                 });
@@ -208,6 +187,7 @@ export default function RootLayout({
           }}
         />
 
+        {/* FIXED MOBILE SCROLL SYSTEM */}
         <style
           dangerouslySetInnerHTML={{
             __html: `
@@ -227,24 +207,27 @@ export default function RootLayout({
               }
 
               * {
-                touch-action: manipulation;
                 -webkit-tap-highlight-color: transparent;
+                touch-action: manipulation;
               }
 
               html {
                 height: 100%;
                 height: -webkit-fill-available;
-                overflow: hidden;
-                overscroll-behavior: none;
                 -webkit-text-size-adjust: 100%;
-                text-size-adjust: 100%;
               }
 
+              /* ✅ FIX: ONLY ONE SCROLL CONTAINER (BODY) */
               body {
                 height: 100%;
                 height: -webkit-fill-available;
-                overflow: hidden;
-                overscroll-behavior: none;
+
+                overflow-y: auto;
+                overflow-x: hidden;
+
+                -webkit-overflow-scrolling: touch;
+                overscroll-behavior-y: auto;
+
                 -webkit-font-smoothing: antialiased;
                 -moz-osx-font-smoothing: grayscale;
 
@@ -253,14 +236,14 @@ export default function RootLayout({
                 padding-right: env(safe-area-inset-right);
               }
 
-              .main,
-              .dp-body,
-              .sn-menu,
+              /* Internal scroll only for overlays/modals */
               .modal,
+              .sn-menu,
               [data-scroll] {
+                max-height: 100vh;
                 overflow-y: auto;
                 -webkit-overflow-scrolling: touch;
-                overscroll-behavior-y: contain;
+                overscroll-behavior: contain;
               }
 
               button,
@@ -288,28 +271,16 @@ export default function RootLayout({
                 height: calc(60px + env(safe-area-inset-bottom)) !important;
               }
 
-              .sidenav {
-                padding-left: env(safe-area-inset-left);
-              }
-
               input,
               select,
               textarea {
                 font-size: 16px !important;
               }
 
-              .modal-overlay,
-              .overlay {
-                padding-top: env(safe-area-inset-top);
-                padding-bottom: env(safe-area-inset-bottom);
-              }
-
               @media (max-width: 900px) {
                 .main,
                 .dash-main {
-                  padding-bottom: calc(
-                    60px + env(safe-area-inset-bottom)
-                  ) !important;
+                  padding-bottom: calc(60px + env(safe-area-inset-bottom)) !important;
                 }
               }
             `,
