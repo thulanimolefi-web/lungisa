@@ -8,13 +8,18 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
+// ── Updated to info@lungiza.co.za via HMailPlus SMTP ─────────────────
 const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 587,
-  secure: false,
+  host:       'smtp.hmailplus.com',
+  port:       587,
+  secure:     false,   // STARTTLS — not SSL
+  requireTLS: true,
   auth: {
-    user: 'stockstvm@gmail.com',
-    pass: process.env.GMAIL_APP_PASSWORD,
+    user: 'info@lungiza.co.za',
+    pass: process.env.LUNGISA_EMAIL_PASSWORD,
+  },
+  tls: {
+    rejectUnauthorized: false, // prevents cert errors on HOSTAFRICA
   },
 })
 
@@ -42,7 +47,7 @@ function brandedEmail(content: string): string {
 
 async function sendEmail(to: string, subject: string, content: string) {
   await transporter.sendMail({
-    from: '"Lungisa" <stockstvm@gmail.com>',
+    from: '"Lungisa" <info@lungiza.co.za>',
     to,
     subject,
     html: brandedEmail(content),
@@ -401,162 +406,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true })
     }
 
-    // ─── 8. PAYMENT RELEASE REQUEST — admin payout notification ────
-    if(type === 'payment_release_request') {
-      const { jobId, jobTitle, amount, homeownerId, tradespersonId, tradespersonName } = body
-
-      const { data: homeowner }  = await supabase.from('profiles').select('full_name, email').eq('id', homeownerId).single()
-      const { data: trade }      = await supabase.from('profiles').select('full_name, email, phone').eq('id', tradespersonId).single()
-      const { data: bankDetails } = await supabase.from('banking_details').select('*').eq('tradesperson_id', tradespersonId).single()
-      const { data: completion }  = await supabase.from('job_completions').select('completed_at, report').eq('job_id', jobId).single()
-
-      const netAmount    = Math.round(Number(amount) * 0.95)
-      const lungisaFee   = Number(amount) - netAmount
-      const tradeName    = trade?.full_name || tradespersonName || 'Tradesperson'
-      const homeName     = homeowner?.full_name || 'Homeowner'
-
-      // Notify tradesperson — payment coming
-      await notify(tradespersonId,
-        'Payment being processed',
-        `R${netAmount.toLocaleString()} is being processed to your ${bankDetails?.bank_name || 'bank account'}.`,
-        'payment_processing', '/dashboard', { jobId, amount: netAmount }
-      )
-
-      // Notify homeowner — confirmation
-      await notify(homeownerId,
-        `Job complete — payment released`,
-        `R${Number(amount).toLocaleString()} released for ${jobTitle}. Thank you for using Lungisa!`,
-        'payment_released', '/home', { jobId }
-      )
-
-      // Email homeowner
-      if(homeowner?.email) {
-        await sendEmail(homeowner.email,
-          `Payment confirmed — ${jobTitle}`,
-          `
-            <h2 style="color:#2C2C28;font-size:22px;margin:0 0 8px">Job complete ✓</h2>
-            <p style="color:#5A5952;font-size:15px;line-height:1.6;margin:0 0 20px">
-              You&apos;ve confirmed <strong>${jobTitle}</strong> as complete. Payment of <strong>R${Number(amount).toLocaleString()}</strong> is being processed to ${tradeName}.
-            </p>
-            <div style="background:rgba(61,170,106,.06);border:1px solid rgba(61,170,106,.15);border-radius:8px;padding:14px 16px;margin-bottom:20px;font-size:13px;color:#2C2C28;line-height:1.6">
-              Thank you for using Lungisa. Your review helps other homeowners find great tradespeople.
-            </div>
-            <a href="https://lungiza.co.za/home" style="display:block;background:#C4593A;color:#fff;text-align:center;padding:14px;border-radius:6px;text-decoration:none;font-size:15px;font-weight:600;">
-              View job history →
-            </a>
-          `
-        )
-      }
-
-      // Email tradesperson — payment notification
-      if(trade?.email) {
-        await sendEmail(trade.email,
-          `Payment incoming — ${jobTitle}`,
-          `
-            <h2 style="color:#2C2C28;font-size:22px;margin:0 0 8px">Payment is on its way! 💸</h2>
-            <p style="color:#5A5952;font-size:15px;line-height:1.6;margin:0 0 20px">
-              The homeowner has confirmed <strong>${jobTitle}</strong> is complete. Your payment is being processed.
-            </p>
-            <div style="background:#fff;border-radius:8px;padding:18px 20px;border-left:4px solid #3DAA6A;margin-bottom:20px">
-              <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-                <span style="font-size:13px;color:#5A5952">Job amount</span>
-                <span style="font-size:13px;color:#2C2C28;font-weight:600">R${Number(amount).toLocaleString()}</span>
-              </div>
-              <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-                <span style="font-size:13px;color:#5A5952">Lungisa commission (5%)</span>
-                <span style="font-size:13px;color:#E24B4A">- R${lungisaFee.toLocaleString()}</span>
-              </div>
-              <div style="display:flex;justify-content:space-between;padding-top:8px;border-top:1px solid #EAE3D6">
-                <span style="font-size:15px;color:#2C2C28;font-weight:700">You receive</span>
-                <span style="font-size:20px;color:#3DAA6A;font-weight:700">R${netAmount.toLocaleString()}</span>
-              </div>
-            </div>
-            ${bankDetails ? `
-            <div style="background:#f8f8f8;border:1px solid #eee;border-radius:8px;padding:14px 16px;margin-bottom:20px;font-size:13px;color:#5A5952">
-              Payment will be sent to:<br/>
-              <strong style="color:#2C2C28">${bankDetails.bank_name}</strong> · ${bankDetails.account_type} · 
-              ****${bankDetails.account_number.slice(-4)}
-            </div>
-            ` : `
-            <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:12px 14px;margin-bottom:20px;font-size:13px;color:#856404">
-              ⚠ You haven&apos;t added banking details yet. Please add them in your dashboard so we can process your payment.
-            </div>
-            `}
-            <p style="color:#5A5952;font-size:12px;line-height:1.6;margin:0">Payments are typically processed within 1-2 business days.</p>
-          `
-        )
-      }
-
-      // ── ADMIN payout email — the one that matters most ──────────
-      await sendEmail('stockstvm@gmail.com',
-        `💸 PAYOUT REQUIRED — ${tradeName} · R${netAmount.toLocaleString()}`,
-        `
-          <div style="font-family:Arial,sans-serif">
-            <h2 style="color:#2C2C28;border-bottom:3px solid #C4593A;padding-bottom:10px">
-              Action required: Process payout
-            </h2>
-
-            <table style="width:100%;border-collapse:collapse;margin:16px 0">
-              <tr style="background:#f8f8f8"><td colspan="2" style="padding:10px 14px;font-weight:700;color:#2C2C28;font-size:14px">JOB DETAILS</td></tr>
-              <tr><td style="padding:8px 14px;color:#666;font-size:13px;width:160px">Job</td><td style="padding:8px 14px;font-size:13px;color:#222;font-weight:600">${jobTitle}</td></tr>
-              <tr style="background:#f8f8f8"><td style="padding:8px 14px;color:#666;font-size:13px">Job ID</td><td style="padding:8px 14px;font-size:12px;color:#555;font-family:monospace">${jobId}</td></tr>
-              ${completion ? `<tr><td style="padding:8px 14px;color:#666;font-size:13px">Completed on</td><td style="padding:8px 14px;font-size:13px;color:#222">${new Date(completion.completed_at).toLocaleDateString('en-ZA',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</td></tr>` : ''}
-              ${completion ? `<tr style="background:#f8f8f8"><td style="padding:8px 14px;color:#666;font-size:13px">Work done</td><td style="padding:8px 14px;font-size:13px;color:#222">${completion.report}</td></tr>` : ''}
-            </table>
-
-            <table style="width:100%;border-collapse:collapse;margin:16px 0">
-              <tr style="background:#f8f8f8"><td colspan="2" style="padding:10px 14px;font-weight:700;color:#2C2C28;font-size:14px">HOMEOWNER</td></tr>
-              <tr><td style="padding:8px 14px;color:#666;font-size:13px;width:160px">Name</td><td style="padding:8px 14px;font-size:13px;color:#222">${homeName}</td></tr>
-              <tr style="background:#f8f8f8"><td style="padding:8px 14px;color:#666;font-size:13px">Email</td><td style="padding:8px 14px;font-size:13px;color:#222">${homeowner?.email||'—'}</td></tr>
-            </table>
-
-            <table style="width:100%;border-collapse:collapse;margin:16px 0">
-              <tr style="background:#3DAA6A"><td colspan="2" style="padding:10px 14px;font-weight:700;color:#fff;font-size:14px">TRADESPERSON — WHO TO PAY</td></tr>
-              <tr><td style="padding:8px 14px;color:#666;font-size:13px;width:160px">Name</td><td style="padding:8px 14px;font-size:13px;color:#222;font-weight:600">${tradeName}</td></tr>
-              <tr style="background:#f8f8f8"><td style="padding:8px 14px;color:#666;font-size:13px">Email</td><td style="padding:8px 14px;font-size:13px;color:#222">${trade?.email||'—'}</td></tr>
-              <tr><td style="padding:8px 14px;color:#666;font-size:13px">Phone</td><td style="padding:8px 14px;font-size:13px;color:#222">${trade?.phone||'—'}</td></tr>
-            </table>
-
-            ${bankDetails ? `
-            <table style="width:100%;border-collapse:collapse;margin:16px 0;border:2px solid #3DAA6A;border-radius:8px;overflow:hidden">
-              <tr style="background:#3DAA6A"><td colspan="2" style="padding:10px 14px;font-weight:700;color:#fff;font-size:14px">🏦 BANKING DETAILS — USE THESE TO PAY</td></tr>
-              <tr><td style="padding:10px 14px;color:#666;font-size:13px;width:160px;background:#f8f8f8">Bank</td><td style="padding:10px 14px;font-size:15px;color:#222;font-weight:700">${bankDetails.bank_name}</td></tr>
-              <tr><td style="padding:10px 14px;color:#666;font-size:13px;background:#f8f8f8">Account holder</td><td style="padding:10px 14px;font-size:15px;color:#222;font-weight:700">${bankDetails.account_holder}</td></tr>
-              <tr><td style="padding:10px 14px;color:#666;font-size:13px;background:#f8f8f8">Account number</td><td style="padding:10px 14px;font-size:18px;color:#2C2C28;font-weight:700;font-family:monospace;letter-spacing:2px">${bankDetails.account_number}</td></tr>
-              <tr><td style="padding:10px 14px;color:#666;font-size:13px;background:#f8f8f8">Account type</td><td style="padding:10px 14px;font-size:15px;color:#222;font-weight:700;text-transform:capitalize">${bankDetails.account_type}</td></tr>
-              <tr><td style="padding:10px 14px;color:#666;font-size:13px;background:#f8f8f8">Branch code</td><td style="padding:10px 14px;font-size:18px;color:#2C2C28;font-weight:700;font-family:monospace;letter-spacing:2px">${bankDetails.branch_code}</td></tr>
-            </table>
-            ` : `
-            <div style="background:#fff3cd;border:2px solid #ffc107;border-radius:8px;padding:16px;margin:16px 0">
-              <strong>⚠ NO BANKING DETAILS ON FILE</strong><br/>
-              ${tradeName} has not added their banking details yet. Contact them before processing payment.
-            </div>
-            `}
-
-            <table style="width:100%;border-collapse:collapse;margin:16px 0;border:2px solid #C4593A;border-radius:8px;overflow:hidden">
-              <tr style="background:#C4593A"><td colspan="2" style="padding:10px 14px;font-weight:700;color:#fff;font-size:14px">💰 AMOUNTS</td></tr>
-              <tr><td style="padding:10px 14px;color:#666;font-size:13px;width:160px;background:#f8f8f8">Total paid by homeowner</td><td style="padding:10px 14px;font-size:15px;color:#222;font-weight:700">R${Number(amount).toLocaleString()}</td></tr>
-              <tr><td style="padding:10px 14px;color:#666;font-size:13px;background:#f8f8f8">Lungisa commission (5%)</td><td style="padding:10px 14px;font-size:15px;color:#E24B4A;font-weight:700">R${lungisaFee.toLocaleString()}</td></tr>
-              <tr style="background:#fff"><td style="padding:12px 14px;color:#2C2C28;font-size:14px;font-weight:700">TRANSFER TO TRADESPERSON</td><td style="padding:12px 14px;font-size:22px;color:#3DAA6A;font-weight:700">R${netAmount.toLocaleString()}</td></tr>
-            </table>
-
-            <div style="background:#f8f8f8;border-radius:8px;padding:14px;font-size:13px;color:#5A5952;line-height:1.8">
-              <strong>Steps to process:</strong><br/>
-              1. Log into your bank / internet banking<br/>
-              2. Make an EFT to the banking details above<br/>
-              3. Reference: LUNGISA-${jobId.substring(0,8).toUpperCase()}<br/>
-              4. Update job status in Supabase if needed:<br/>
-              <code style="background:#2C2C28;color:#52C47F;padding:4px 8px;border-radius:4px;display:inline-block;margin-top:6px;font-size:12px">
-                UPDATE public.jobs SET status='completed' WHERE id='${jobId}';
-              </code>
-            </div>
-          </div>
-        `
-      )
-
-      return NextResponse.json({ success: true })
-    }
-
     // ─── 6. JOB COMPLETION SUBMITTED — notify homeowner ────────────
     if(type === 'job_completion_submitted') {
       const { jobId, jobTitle, homeownerId, tradespersonId, report, completedAt } = body
@@ -613,7 +462,7 @@ export async function POST(req: NextRequest) {
         'dispute_raised', '/home', { jobId }
       )
 
-      await sendEmail('stockstvm@gmail.com',
+      await sendEmail('info@lungiza.co.za',
         `⚠ Dispute raised — ${job?.title || 'Job'}`,
         `
           <h2 style="color:#2C2C28">Dispute raised by homeowner</h2>
@@ -628,9 +477,236 @@ export async function POST(req: NextRequest) {
           </div>
           <div style="font-size:13px;color:#5A5952;line-height:1.6">
             Payment remains in escrow. Review the job completion photos in Supabase and contact both parties to resolve.
-            <br/><br/>
-            <strong>To resolve:</strong> UPDATE public.jobs SET status='completed' WHERE id='${jobId}'; (approve) or SET status='disputed_resolved' (reject completion).
           </div>
+        `
+      )
+      return NextResponse.json({ success: true })
+    }
+
+    // ─── 8. PAYMENT RELEASE REQUEST — admin payout notification ─────
+    if(type === 'payment_release_request') {
+      const { jobId, jobTitle, amount, homeownerId, tradespersonId, tradespersonName } = body
+
+      const { data: homeowner }   = await supabase.from('profiles').select('full_name, email').eq('id', homeownerId).single()
+      const { data: trade }       = await supabase.from('profiles').select('full_name, email, phone').eq('id', tradespersonId).single()
+      const { data: bankDetails } = await supabase.from('banking_details').select('*').eq('tradesperson_id', tradespersonId).single()
+      const { data: completion }  = await supabase.from('job_completions').select('completed_at, report').eq('job_id', jobId).single()
+
+      const netAmount  = Math.round(Number(amount) * 0.95)
+      const lungisaFee = Number(amount) - netAmount
+      const tradeName  = trade?.full_name || tradespersonName || 'Tradesperson'
+      const homeName   = homeowner?.full_name || 'Homeowner'
+
+      await notify(tradespersonId,
+        'Payment being processed',
+        `R${netAmount.toLocaleString()} is being processed to your ${bankDetails?.bank_name || 'bank account'}.`,
+        'payment_processing', '/dashboard', { jobId, amount: netAmount }
+      )
+
+      await notify(homeownerId,
+        `Job complete — payment released`,
+        `R${Number(amount).toLocaleString()} released for ${jobTitle}. Thank you for using Lungisa!`,
+        'payment_released', '/home', { jobId }
+      )
+
+      if(homeowner?.email) {
+        await sendEmail(homeowner.email,
+          `Payment confirmed — ${jobTitle}`,
+          `
+            <h2 style="color:#2C2C28;font-size:22px;margin:0 0 8px">Job complete ✓</h2>
+            <p style="color:#5A5952;font-size:15px;line-height:1.6;margin:0 0 20px">
+              You&apos;ve confirmed <strong>${jobTitle}</strong> as complete. Payment of <strong>R${Number(amount).toLocaleString()}</strong> is being processed to ${tradeName}.
+            </p>
+            <div style="background:rgba(61,170,106,.06);border:1px solid rgba(61,170,106,.15);border-radius:8px;padding:14px 16px;margin-bottom:20px;font-size:13px;color:#2C2C28;line-height:1.6">
+              Thank you for using Lungisa. Your review helps other homeowners find great tradespeople.
+            </div>
+            <a href="https://lungiza.co.za/home" style="display:block;background:#C4593A;color:#fff;text-align:center;padding:14px;border-radius:6px;text-decoration:none;font-size:15px;font-weight:600;">
+              View job history →
+            </a>
+          `
+        )
+      }
+
+      if(trade?.email) {
+        await sendEmail(trade.email,
+          `Payment incoming — ${jobTitle}`,
+          `
+            <h2 style="color:#2C2C28;font-size:22px;margin:0 0 8px">Payment is on its way! 💸</h2>
+            <p style="color:#5A5952;font-size:15px;line-height:1.6;margin:0 0 20px">
+              The homeowner has confirmed <strong>${jobTitle}</strong> is complete. Your payment is being processed.
+            </p>
+            <div style="background:#fff;border-radius:8px;padding:18px 20px;border-left:4px solid #3DAA6A;margin-bottom:20px">
+              <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+                <span style="font-size:13px;color:#5A5952">Job amount</span>
+                <span style="font-size:13px;color:#2C2C28;font-weight:600">R${Number(amount).toLocaleString()}</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+                <span style="font-size:13px;color:#5A5952">Lungisa commission (5%)</span>
+                <span style="font-size:13px;color:#E24B4A">- R${lungisaFee.toLocaleString()}</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;padding-top:8px;border-top:1px solid #EAE3D6">
+                <span style="font-size:15px;color:#2C2C28;font-weight:700">You receive</span>
+                <span style="font-size:20px;color:#3DAA6A;font-weight:700">R${netAmount.toLocaleString()}</span>
+              </div>
+            </div>
+            ${bankDetails ? `
+            <div style="background:#f8f8f8;border:1px solid #eee;border-radius:8px;padding:14px 16px;margin-bottom:20px;font-size:13px;color:#5A5952">
+              Payment will be sent to:<br/>
+              <strong style="color:#2C2C28">${bankDetails.bank_name}</strong> · ${bankDetails.account_type} ·
+              ****${bankDetails.account_number.slice(-4)}
+            </div>
+            ` : `
+            <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:12px 14px;margin-bottom:20px;font-size:13px;color:#856404">
+              ⚠ You haven&apos;t added banking details yet. Please add them in your dashboard.
+            </div>
+            `}
+            <p style="color:#5A5952;font-size:12px;line-height:1.6;margin:0">Payments are typically processed within 1-2 business days.</p>
+          `
+        )
+      }
+
+      // ── ADMIN payout email ───────────────────────────────────────
+      await sendEmail('info@lungiza.co.za',
+        `💸 PAYOUT REQUIRED — ${tradeName} · R${netAmount.toLocaleString()}`,
+        `
+          <div style="font-family:Arial,sans-serif">
+            <h2 style="color:#2C2C28;border-bottom:3px solid #C4593A;padding-bottom:10px">
+              Action required: Process payout
+            </h2>
+            <table style="width:100%;border-collapse:collapse;margin:16px 0">
+              <tr style="background:#f8f8f8"><td colspan="2" style="padding:10px 14px;font-weight:700;color:#2C2C28;font-size:14px">JOB DETAILS</td></tr>
+              <tr><td style="padding:8px 14px;color:#666;font-size:13px;width:160px">Job</td><td style="padding:8px 14px;font-size:13px;color:#222;font-weight:600">${jobTitle}</td></tr>
+              <tr style="background:#f8f8f8"><td style="padding:8px 14px;color:#666;font-size:13px">Job ID</td><td style="padding:8px 14px;font-size:12px;color:#555;font-family:monospace">${jobId}</td></tr>
+              ${completion ? `<tr><td style="padding:8px 14px;color:#666;font-size:13px">Completed on</td><td style="padding:8px 14px;font-size:13px;color:#222">${new Date(completion.completed_at).toLocaleDateString('en-ZA',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</td></tr>` : ''}
+              ${completion ? `<tr style="background:#f8f8f8"><td style="padding:8px 14px;color:#666;font-size:13px">Work done</td><td style="padding:8px 14px;font-size:13px;color:#222">${completion.report}</td></tr>` : ''}
+            </table>
+            <table style="width:100%;border-collapse:collapse;margin:16px 0">
+              <tr style="background:#f8f8f8"><td colspan="2" style="padding:10px 14px;font-weight:700;color:#2C2C28;font-size:14px">HOMEOWNER</td></tr>
+              <tr><td style="padding:8px 14px;color:#666;font-size:13px;width:160px">Name</td><td style="padding:8px 14px;font-size:13px;color:#222">${homeName}</td></tr>
+              <tr style="background:#f8f8f8"><td style="padding:8px 14px;color:#666;font-size:13px">Email</td><td style="padding:8px 14px;font-size:13px;color:#222">${homeowner?.email||'—'}</td></tr>
+            </table>
+            <table style="width:100%;border-collapse:collapse;margin:16px 0">
+              <tr style="background:#3DAA6A"><td colspan="2" style="padding:10px 14px;font-weight:700;color:#fff;font-size:14px">TRADESPERSON — WHO TO PAY</td></tr>
+              <tr><td style="padding:8px 14px;color:#666;font-size:13px;width:160px">Name</td><td style="padding:8px 14px;font-size:13px;color:#222;font-weight:600">${tradeName}</td></tr>
+              <tr style="background:#f8f8f8"><td style="padding:8px 14px;color:#666;font-size:13px">Email</td><td style="padding:8px 14px;font-size:13px;color:#222">${trade?.email||'—'}</td></tr>
+              <tr><td style="padding:8px 14px;color:#666;font-size:13px">Phone</td><td style="padding:8px 14px;font-size:13px;color:#222">${trade?.phone||'—'}</td></tr>
+            </table>
+            ${bankDetails ? `
+            <table style="width:100%;border-collapse:collapse;margin:16px 0;border:2px solid #3DAA6A;border-radius:8px;overflow:hidden">
+              <tr style="background:#3DAA6A"><td colspan="2" style="padding:10px 14px;font-weight:700;color:#fff;font-size:14px">🏦 BANKING DETAILS</td></tr>
+              <tr><td style="padding:10px 14px;color:#666;font-size:13px;width:160px;background:#f8f8f8">Bank</td><td style="padding:10px 14px;font-size:15px;color:#222;font-weight:700">${bankDetails.bank_name}</td></tr>
+              <tr><td style="padding:10px 14px;color:#666;font-size:13px;background:#f8f8f8">Account holder</td><td style="padding:10px 14px;font-size:15px;color:#222;font-weight:700">${bankDetails.account_holder}</td></tr>
+              <tr><td style="padding:10px 14px;color:#666;font-size:13px;background:#f8f8f8">Account number</td><td style="padding:10px 14px;font-size:18px;color:#2C2C28;font-weight:700;font-family:monospace;letter-spacing:2px">${bankDetails.account_number}</td></tr>
+              <tr><td style="padding:10px 14px;color:#666;font-size:13px;background:#f8f8f8">Account type</td><td style="padding:10px 14px;font-size:15px;color:#222;font-weight:700;text-transform:capitalize">${bankDetails.account_type}</td></tr>
+              <tr><td style="padding:10px 14px;color:#666;font-size:13px;background:#f8f8f8">Branch code</td><td style="padding:10px 14px;font-size:18px;color:#2C2C28;font-weight:700;font-family:monospace;letter-spacing:2px">${bankDetails.branch_code}</td></tr>
+            </table>
+            ` : `
+            <div style="background:#fff3cd;border:2px solid #ffc107;border-radius:8px;padding:16px;margin:16px 0">
+              <strong>⚠ NO BANKING DETAILS ON FILE</strong><br/>
+              ${tradeName} has not added their banking details yet. Contact them before processing payment.
+            </div>
+            `}
+            <table style="width:100%;border-collapse:collapse;margin:16px 0;border:2px solid #C4593A;border-radius:8px;overflow:hidden">
+              <tr style="background:#C4593A"><td colspan="2" style="padding:10px 14px;font-weight:700;color:#fff;font-size:14px">💰 AMOUNTS</td></tr>
+              <tr><td style="padding:10px 14px;color:#666;font-size:13px;width:160px;background:#f8f8f8">Total paid by homeowner</td><td style="padding:10px 14px;font-size:15px;color:#222;font-weight:700">R${Number(amount).toLocaleString()}</td></tr>
+              <tr><td style="padding:10px 14px;color:#666;font-size:13px;background:#f8f8f8">Lungisa commission (5%)</td><td style="padding:10px 14px;font-size:15px;color:#E24B4A;font-weight:700">R${lungisaFee.toLocaleString()}</td></tr>
+              <tr style="background:#fff"><td style="padding:12px 14px;color:#2C2C28;font-size:14px;font-weight:700">TRANSFER TO TRADESPERSON</td><td style="padding:12px 14px;font-size:22px;color:#3DAA6A;font-weight:700">R${netAmount.toLocaleString()}</td></tr>
+            </table>
+            <div style="background:#f8f8f8;border-radius:8px;padding:14px;font-size:13px;color:#5A5952;line-height:1.8">
+              <strong>Steps to process:</strong><br/>
+              1. Log into your bank / internet banking<br/>
+              2. Make an EFT to the banking details above<br/>
+              3. Reference: LUNGISA-${jobId.substring(0,8).toUpperCase()}<br/>
+            </div>
+          </div>
+        `
+      )
+      return NextResponse.json({ success: true })
+    }
+
+    // ─── 9. QUOTE REQUESTED — notify tradesperson ───────────────────
+    if(type === 'quote_requested') {
+      const { jobId, jobTitle, tradespersonId, homeownerId } = body
+
+      const { data: trade } = await supabase.from('profiles').select('full_name, email').eq('id', tradespersonId).single()
+      if(!trade?.email) return NextResponse.json({ error: 'No tradesperson email' })
+
+      await notify(tradespersonId,
+        `Formal quote requested — ${jobTitle}`,
+        'The homeowner wants a labour + materials breakdown before accepting.',
+        'quote_requested', '/dashboard', { jobId }
+      )
+
+      await sendEmail(trade.email,
+        `Formal quote requested — ${jobTitle}`,
+        `
+          <h2 style="color:#2C2C28;font-size:22px;margin:0 0 8px">Quote requested 📋</h2>
+          <p style="color:#5A5952;font-size:15px;line-height:1.6;margin:0 0 20px">
+            Hey ${trade.full_name.split(' ')[0]}, the homeowner is interested in your bid on <strong>${jobTitle}</strong> and wants a formal quote before accepting.
+          </p>
+          <div style="background:rgba(196,89,58,.06);border:1px solid rgba(196,89,58,.2);border-radius:8px;padding:14px 16px;margin-bottom:20px;font-size:13px;color:#2C2C28;line-height:1.7">
+            They need two numbers from you:<br/>
+            <strong>1. Your labour charge</strong> — the fixed amount you will charge for the job.<br/>
+            <strong>2. Materials estimate</strong> — what the homeowner will need to buy separately.
+          </div>
+          <a href="https://lungiza.co.za/dashboard" style="display:block;background:#C4593A;color:#fff;text-align:center;padding:14px;border-radius:6px;text-decoration:none;font-size:15px;font-weight:600;margin-bottom:14px">
+            Submit your quote →
+          </a>
+          <p style="color:#5A5952;font-size:12px;line-height:1.6;margin:0">
+            Go to My Bids in your dashboard. The quote form will be waiting at the top.
+          </p>
+        `
+      )
+      return NextResponse.json({ success: true })
+    }
+
+    // ─── 10. QUOTE SUBMITTED — notify homeowner ─────────────────────
+    if(type === 'quote_submitted') {
+      const { jobId, jobTitle, labourAmount, materialsEstimate, tradespersonId } = body
+
+      const { data: job }   = await supabase.from('jobs').select('homeowner_id, profiles!homeowner_id(full_name, email)').eq('id', jobId).single()
+      const { data: trade } = await supabase.from('profiles').select('full_name').eq('id', tradespersonId).single()
+
+      const homeownerEmail = (job?.profiles as any)?.email
+      const homeownerId    = (job as any)?.homeowner_id
+      const homeownerName  = (job?.profiles as any)?.full_name?.split(' ')[0] || 'there'
+      const tradeName      = trade?.full_name || 'Tradesperson'
+
+      if(!homeownerEmail) return NextResponse.json({ error: 'No homeowner email' })
+
+      await notify(homeownerId,
+        `Formal quote from ${tradeName.split(' ')[0]} — ${jobTitle}`,
+        `Labour: R${Number(labourAmount).toLocaleString()} · Materials est: R${Number(materialsEstimate).toLocaleString()}`,
+        'quote_submitted', '/home', { jobId, labourAmount, materialsEstimate }
+      )
+
+      await sendEmail(homeownerEmail,
+        `Formal quote received — ${jobTitle}`,
+        `
+          <h2 style="color:#2C2C28;font-size:22px;margin:0 0 8px">Formal quote received 📋</h2>
+          <p style="color:#5A5952;font-size:15px;line-height:1.6;margin:0 0 20px">
+            Hey ${homeownerName}, <strong>${tradeName}</strong> has submitted a formal quote for <strong>${jobTitle}</strong>.
+          </p>
+          <div style="background:#fff;border-radius:8px;padding:18px 20px;border:1px solid #EAE3D6;margin-bottom:20px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+              <div style="border-left:4px solid #C4593A;padding-left:14px">
+                <div style="font-size:11px;color:#5A5952;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Labour charge</div>
+                <div style="font-size:28px;font-weight:700;color:#C4593A">R${Number(labourAmount).toLocaleString()}</div>
+                <div style="font-size:11px;color:#5A5952;margin-top:3px">Fixed · into escrow</div>
+              </div>
+              <div style="border-left:4px solid #5A5952;padding-left:14px">
+                <div style="font-size:11px;color:#5A5952;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Materials est.</div>
+                <div style="font-size:28px;font-weight:700;color:#2C2C28">R${Number(materialsEstimate).toLocaleString()}</div>
+                <div style="font-size:11px;color:#5A5952;margin-top:3px">You pay separately</div>
+              </div>
+            </div>
+          </div>
+          <div style="background:rgba(61,170,106,.06);border:1px solid rgba(61,170,106,.15);border-radius:8px;padding:12px 14px;margin-bottom:20px;font-size:13px;color:#2C2C28;line-height:1.6">
+            💡 Labour is the differentiator. Materials cost is the same regardless of which tradesperson you choose.
+          </div>
+          <a href="https://lungiza.co.za/home" style="display:block;background:#3DAA6A;color:#fff;text-align:center;padding:14px;border-radius:6px;text-decoration:none;font-size:15px;font-weight:600;margin-bottom:10px">
+            Review quote &amp; accept →
+          </a>
         `
       )
       return NextResponse.json({ success: true })
