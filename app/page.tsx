@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import QRCode from 'qrcode'
 
 export default function LandingPage() {
   const router = useRouter()
@@ -9,6 +10,8 @@ export default function LandingPage() {
   const [activeTab, setActiveTab] = useState<'homeowner'|'tradesperson'>('homeowner')
   const [counting, setCounting] = useState(false)
   const [mounted, setMounted] = useState(false)
+  const [homeownerQR, setHomeownerQR] = useState('')
+  const [tradespersonQR, setTradespersonQR] = useState('')
   const statsRef = useRef<HTMLDivElement>(null)
 
   useEffect(()=>{
@@ -20,6 +23,19 @@ export default function LandingPage() {
       if(entries[0].isIntersecting) setCounting(true)
     }, { threshold: 0.3 })
     if(statsRef.current) observer.observe(statsRef.current)
+
+    // Generate QR codes
+    QRCode.toDataURL('https://lungiza.co.za?utm_source=qr&utm_campaign=homeowner', {
+      width: 160, margin: 1,
+      color: { dark: '#2C2C28', light: '#FFFFFF' },
+      errorCorrectionLevel: 'M',
+    }).then(setHomeownerQR).catch(console.error)
+
+    QRCode.toDataURL('https://lungiza.co.za?utm_source=qr&utm_campaign=tradesperson', {
+      width: 160, margin: 1,
+      color: { dark: '#2C2C28', light: '#FFFFFF' },
+      errorCorrectionLevel: 'M',
+    }).then(setTradespersonQR).catch(console.error)
 
     return () => { window.removeEventListener('scroll', onScroll); observer.disconnect() }
   }, [])
@@ -40,7 +56,6 @@ export default function LandingPage() {
     @keyframes fadeIn{from{opacity:0}to{opacity:1}}
     @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
-    @keyframes slideRight{from{transform:translateX(-100%)}to{transform:translateX(0)}}
     @keyframes countUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 
     /* NAV */
@@ -141,6 +156,34 @@ export default function LandingPage() {
     .testi-name{font-family:var(--fc);font-size:14px;font-weight:700;color:var(--charcoal)}
     .testi-role{font-size:12px;color:var(--charcoal-l)}
 
+    /* QR INSTALL SECTION */
+    .qr-section{background:var(--charcoal);padding:100px 40px;position:relative;overflow:hidden}
+    .qr-section::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 30% 50%,rgba(196,89,58,.08) 0%,transparent 60%),radial-gradient(ellipse at 80% 30%,rgba(61,170,106,.04) 0%,transparent 50%);pointer-events:none}
+    .qr-inner{max-width:1100px;margin:0 auto;position:relative;z-index:1}
+    .qr-header{text-align:center;margin-bottom:64px}
+    .qr-cards{display:grid;grid-template-columns:1fr 1fr;gap:24px;max-width:820px;margin:0 auto}
+    .qr-card{background:rgba(245,240,232,.04);border:1px solid rgba(245,240,232,.08);border-radius:16px;padding:36px 32px;text-align:center;transition:all .2s}
+    .qr-card:hover{border-color:rgba(196,89,58,.25);background:rgba(245,240,232,.06)}
+    .qr-card.homeowner{border-top:3px solid var(--terra)}
+    .qr-card.tradesperson{border-top:3px solid var(--green)}
+    .qr-eyebrow{font-family:var(--fc);font-size:10px;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;margin-bottom:8px}
+    .qr-title{font-family:var(--fd);font-size:26px;letter-spacing:1px;color:#F5F0E8;margin-bottom:6px;line-height:1}
+    .qr-sub{font-size:13px;color:rgba(245,240,232,.4);line-height:1.5;margin-bottom:24px}
+    .qr-box{width:180px;height:180px;background:#fff;border-radius:14px;margin:0 auto 16px;display:flex;align-items:center;justify-content:center;padding:10px;box-shadow:0 8px 32px rgba(0,0,0,.3)}
+    .qr-url{font-family:var(--fc);font-size:12px;font-weight:600;letter-spacing:1px;color:rgba(245,240,232,.3);margin-bottom:20px}
+    .qr-url span{color:var(--terra-l)}
+    .qr-divider{border:none;border-top:1px solid rgba(245,240,232,.06);margin:20px 0}
+    .qr-steps-title{font-family:var(--fc);font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:rgba(245,240,232,.25);margin-bottom:12px;text-align:left}
+    .qr-step{display:flex;align-items:flex-start;gap:10px;margin-bottom:10px;text-align:left}
+    .qr-step-n{width:18px;height:18px;border-radius:50%;background:rgba(196,89,58,.15);border:1px solid rgba(196,89,58,.25);display:flex;align-items:center;justify-content:center;font-family:var(--fc);font-size:9px;font-weight:700;color:var(--terra-l);flex-shrink:0;margin-top:1px}
+    .qr-step-n.green{background:rgba(61,170,106,.15);border-color:rgba(61,170,106,.25);color:#52C47F}
+    .qr-step-text{font-size:12px;color:rgba(245,240,232,.4);line-height:1.5}
+    .qr-step-text strong{color:rgba(245,240,232,.7);font-weight:600}
+    .qr-os{display:flex;gap:8px;justify-content:center;margin-top:16px;flex-wrap:wrap}
+    .qr-os-badge{background:rgba(245,240,232,.06);border:1px solid rgba(245,240,232,.1);border-radius:6px;padding:5px 12px;font-family:var(--fc);font-size:10px;font-weight:600;letter-spacing:.5px;color:rgba(245,240,232,.35);display:flex;align-items:center;gap:5px}
+    .qr-bottom-note{text-align:center;margin-top:40px;font-size:13px;color:rgba(245,240,232,.2);font-family:var(--fc);font-weight:500;letter-spacing:.5px}
+    .qr-bottom-note span{color:var(--terra-l)}
+
     /* CTA SECTION */
     .cta-section{background:var(--terra);padding:100px 40px;text-align:center;position:relative;overflow:hidden}
     .cta-bg{position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(255,255,255,.08) 0%,transparent 70%)}
@@ -158,7 +201,7 @@ export default function LandingPage() {
     .footer-top{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:40px;margin-bottom:48px;padding-bottom:48px;border-bottom:1px solid rgba(255,255,255,.08)}
     .footer-brand p{font-size:14px;color:rgba(245,240,232,.35);line-height:1.7;margin-top:14px;max-width:280px}
     .footer-col-h{font-family:var(--fc);font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:rgba(245,240,232,.3);margin-bottom:16px}
-    .footer-link{display:block;font-size:14px;color:rgba(245,240,232,.5);margin-bottom:10px;cursor:pointer;transition:color .15s;text-decoration:none}
+    .footer-link{display:block;font-size:14px;color:rgba(245,240,232,.5);margin-bottom:10px;cursor:pointer;transition:color .15px;text-decoration:none}
     .footer-link:hover{color:var(--terra-l)}
     .footer-bottom{display:flex;align-items:center;justify-content:space-between}
     .footer-copy{font-size:13px;color:rgba(245,240,232,.2)}
@@ -184,10 +227,14 @@ export default function LandingPage() {
       .why-inner{grid-template-columns:1fr;gap:40px}
       .trades{padding:60px 20px}
       .testi{padding:60px 20px}
+      .qr-section{padding:60px 20px}
       .cta-section{padding:60px 20px}
       .footer{padding:40px 20px 24px}
       .footer-top{grid-template-columns:1fr 1fr;gap:24px}
       .footer-bottom{flex-direction:column;gap:12px;text-align:center}
+    }
+    @media(max-width:700px){
+      .qr-cards{grid-template-columns:1fr;max-width:360px}
     }
     @media(max-width:480px){
       .stats-inner{grid-template-columns:1fr 1fr;gap:12px}
@@ -237,7 +284,6 @@ export default function LandingPage() {
     { stars:5, text:'"The negotiation feature is what sold me. I posted a painting job, got 6 bids, and negotiated to exactly what I wanted to pay. Brilliant concept."', name:'Thabo D.', role:'Homeowner · Midrand', init:'TD' },
   ]
 
-  // Prevent hydration mismatch — render nav class only after mount
   const navClass = mounted ? `nav${scrolled?' scrolled':''}` : 'nav'
 
   return (
@@ -258,9 +304,9 @@ export default function LandingPage() {
           <a href="#how-it-works" className="nav-link">How it works</a>
           <a href="#why" className="nav-link">Why Lungisa</a>
           <a href="#trades" className="nav-link">Trades</a>
+          <a href="#install" className="nav-link">Get the app</a>
           <button className="nav-cta" onClick={()=>router.push('/auth')}>Get started</button>
         </div>
-        <button className="nav-cta" style={{display:'none'}} onClick={()=>router.push('/auth')}>Sign up</button>
       </nav>
 
       {/* HERO */}
@@ -336,12 +382,7 @@ export default function LandingPage() {
             {n:'100%', l:'Escrow protected'},
           ].map((s,i)=>(
             <div key={i} className="stat-item">
-              <div
-                className="stat-n"
-                style={mounted && counting ? {animation:`countUp .4s ${i*.1}s ease both`} : {}}
-              >
-                {s.n}
-              </div>
+              <div className="stat-n" style={mounted&&counting?{animation:`countUp .4s ${i*.1}s ease both`}:{}}>{s.n}</div>
               <div className="stat-l">{s.l}</div>
             </div>
           ))}
@@ -354,12 +395,10 @@ export default function LandingPage() {
           <div className="section-tag">How it works</div>
           <h2 className="section-h" style={{marginBottom:16}}>Simple.<br/><span>Fair.</span> Secure.</h2>
           <p className="section-sub" style={{marginBottom:40}}>Whether you need a job done or you&apos;re a tradesperson looking for work — Lungisa makes it simple.</p>
-
           <div className="hiw-tabs">
             <button className={`hiw-tab${activeTab==='homeowner'?' active':''}`} onClick={()=>setActiveTab('homeowner')}>For homeowners</button>
             <button className={`hiw-tab${activeTab==='tradesperson'?' active':''}`} onClick={()=>setActiveTab('tradesperson')}>For tradespeople</button>
           </div>
-
           <div className="steps">
             {(activeTab==='homeowner'?homeownerSteps:tradespersonSteps).map((s,i)=>(
               <div key={i} className="step">
@@ -371,7 +410,6 @@ export default function LandingPage() {
               </div>
             ))}
           </div>
-
           <div style={{textAlign:'center',marginTop:48}}>
             <button className="btn-primary" onClick={()=>router.push('/auth')} style={{margin:'0 auto'}}>
               {activeTab==='homeowner'?'Post your first job free →':'Join as a tradesperson →'}
@@ -384,7 +422,7 @@ export default function LandingPage() {
       <div id="why" className="why">
         <div className="why-inner">
           <div>
-            <div className="section-tag" style={{color:' var(--terra-l)'}}>Why Lungisa</div>
+            <div className="section-tag" style={{color:'var(--terra-l)'}}>Why Lungisa</div>
             <h2 className="section-h" style={{color:'#F5F0E8',marginBottom:20}}>Built for<br/><span>South Africa.</span></h2>
             <p style={{fontSize:16,color:'rgba(245,240,232,.45)',lineHeight:1.8,marginBottom:32}}>
               Existing platforms don&apos;t negotiate. They quote, you accept or decline. Lungisa gives both parties a voice — and escrow makes sure everyone&apos;s protected.
@@ -444,6 +482,127 @@ export default function LandingPage() {
         </div>
       </div>
 
+      {/* ── QR INSTALL SECTION ─────────────────────────────────────── */}
+      <div id="install" className="qr-section">
+        <div className="qr-inner">
+
+          <div className="qr-header">
+            <div className="section-tag" style={{color:'var(--terra-l)',textAlign:'center'}}>Install the app</div>
+            <h2 className="section-h" style={{color:'#F5F0E8',textAlign:'center',marginBottom:12}}>
+              On your phone<br/><span>in 10 seconds.</span>
+            </h2>
+            <p style={{fontSize:16,color:'rgba(245,240,232,.4)',textAlign:'center',maxWidth:480,margin:'0 auto',lineHeight:1.7}}>
+              No App Store. No download. Scan the QR code with your phone camera and install Lungisa directly to your home screen.
+            </p>
+          </div>
+
+          <div className="qr-cards">
+
+            {/* HOMEOWNER CARD */}
+            <div className="qr-card homeowner">
+              <div className="qr-eyebrow" style={{color:'var(--terra-l)'}}>🏠 For homeowners</div>
+              <div className="qr-title">Post a job free</div>
+              <div className="qr-sub">Scan to open Lungisa and post your first job in 2 minutes</div>
+
+              <div className="qr-box">
+                {homeownerQR ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={homeownerQR} alt="Homeowner QR code — scan to install Lungisa" style={{width:'100%',height:'100%',borderRadius:6}}/>
+                ) : (
+                  <div style={{width:160,height:160,background:'var(--cream-d)',borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,color:'var(--charcoal-l)'}}>
+                    Loading...
+                  </div>
+                )}
+              </div>
+
+              <div className="qr-url">lungiza.co.za — <span>free to use</span></div>
+
+              <hr className="qr-divider"/>
+              <div className="qr-steps-title">How to install</div>
+
+              <div className="qr-step">
+                <div className="qr-step-n">1</div>
+                <div className="qr-step-text">Open your phone camera and <strong>point at the QR code</strong></div>
+              </div>
+              <div className="qr-step">
+                <div className="qr-step-n">2</div>
+                <div className="qr-step-text">Tap the link that appears — <strong>lungiza.co.za opens</strong></div>
+              </div>
+              <div className="qr-step">
+                <div className="qr-step-n">3</div>
+                <div className="qr-step-text">
+                  <strong>Android:</strong> tap &ldquo;Add to Home Screen&rdquo; banner at the bottom<br/>
+                  <strong>iPhone:</strong> tap Share → &ldquo;Add to Home Screen&rdquo;
+                </div>
+              </div>
+              <div className="qr-step">
+                <div className="qr-step-n">4</div>
+                <div className="qr-step-text"><strong>Done.</strong> Lungisa icon appears on your home screen</div>
+              </div>
+
+              <div className="qr-os">
+                <div className="qr-os-badge">🤖 Android</div>
+                <div className="qr-os-badge">🍎 iPhone</div>
+              </div>
+            </div>
+
+            {/* TRADESPERSON CARD */}
+            <div className="qr-card tradesperson">
+              <div className="qr-eyebrow" style={{color:'#52C47F'}}>🔧 For tradespeople</div>
+              <div className="qr-title">Start bidding free</div>
+              <div className="qr-sub">Scan to sign up and start receiving jobs in your area today</div>
+
+              <div className="qr-box">
+                {tradespersonQR ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={tradespersonQR} alt="Tradesperson QR code — scan to install Lungisa" style={{width:'100%',height:'100%',borderRadius:6}}/>
+                ) : (
+                  <div style={{width:160,height:160,background:'var(--cream-d)',borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,color:'var(--charcoal-l)'}}>
+                    Loading...
+                  </div>
+                )}
+              </div>
+
+              <div className="qr-url">lungiza.co.za — <span>free to join</span></div>
+
+              <hr className="qr-divider"/>
+              <div className="qr-steps-title">How to install</div>
+
+              <div className="qr-step">
+                <div className="qr-step-n green">1</div>
+                <div className="qr-step-text">Open your phone camera and <strong>point at the QR code</strong></div>
+              </div>
+              <div className="qr-step">
+                <div className="qr-step-n green">2</div>
+                <div className="qr-step-text">Tap the link — <strong>sign up takes 2 minutes</strong></div>
+              </div>
+              <div className="qr-step">
+                <div className="qr-step-n green">3</div>
+                <div className="qr-step-text">
+                  <strong>Android:</strong> tap &ldquo;Add to Home Screen&rdquo; banner<br/>
+                  <strong>iPhone:</strong> tap Share → &ldquo;Add to Home Screen&rdquo;
+                </div>
+              </div>
+              <div className="qr-step">
+                <div className="qr-step-n green">4</div>
+                <div className="qr-step-text"><strong>Jobs in your area start appearing immediately</strong></div>
+              </div>
+
+              <div className="qr-os">
+                <div className="qr-os-badge">🤖 Android</div>
+                <div className="qr-os-badge">🍎 iPhone</div>
+              </div>
+            </div>
+
+          </div>
+
+          <div className="qr-bottom-note">
+            No app store required · Works on any smartphone · <span>lungiza.co.za</span>
+          </div>
+
+        </div>
+      </div>
+
       {/* CTA */}
       <div className="cta-section">
         <div className="cta-bg"/>
@@ -488,8 +647,9 @@ export default function LandingPage() {
             <div>
               <div className="footer-col-h">Company</div>
               <a href="https://vaultlinkafrica.com" className="footer-link" target="_blank" rel="noreferrer">VaultLink Africa</a>
-              <a href="mailto:support@lungiza.co.za" className="footer-link">Contact us</a>
-              <a href="mailto:support@lungiza.co.za" className="footer-link">Support</a>
+              <a href="mailto:info@lungiza.co.za" className="footer-link">Contact us</a>
+              <a href="mailto:info@lungiza.co.za" className="footer-link">Support</a>
+              <a href="#install" className="footer-link">Get the app</a>
             </div>
           </div>
           <div className="footer-bottom">
