@@ -11,6 +11,13 @@ export default function LandingPage() {
   const [counting, setCounting] = useState(false)
   const [mounted, setMounted] = useState(false)
   const [homeownerQR, setHomeownerQR] = useState('')
+  const [contactOpen, setContactOpen] = useState(false)
+  const [contactName, setContactName] = useState('')
+  const [contactEmail, setContactEmail] = useState('')
+  const [contactMessage, setContactMessage] = useState('')
+  const [contactSending, setContactSending] = useState(false)
+  const [contactDone, setContactDone] = useState(false)
+  const [contactError, setContactError] = useState('')
   const [tradespersonQR, setTradespersonQR] = useState('')
   const statsRef = useRef<HTMLDivElement>(null)
 
@@ -236,6 +243,24 @@ export default function LandingPage() {
     @media(max-width:700px){
       .qr-cards{grid-template-columns:1fr;max-width:360px}
     }
+    /* CONTACT MODAL */
+    .contact-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px);animation:fadeIn .2s ease}
+    .contact-modal{background:#F5F0E8;border-radius:16px;width:100%;max-width:500px;overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,.3);animation:fadeUp .3s ease}
+    .contact-modal-head{background:#2C2C28;padding:28px 32px;position:relative}
+    .contact-modal-close{position:absolute;top:16px;right:16px;background:rgba(255,255,255,.1);border:none;width:32px;height:32px;border-radius:50%;cursor:pointer;color:#F5F0E8;font-size:16px;display:flex;align-items:center;justify-content:center;transition:background .15s}
+    .contact-modal-close:hover{background:rgba(255,255,255,.2)}
+    .contact-modal-body{padding:28px 32px}
+    .contact-label{display:block;font-family:var(--fc);font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--charcoal-l);margin-bottom:6px}
+    .contact-input{width:100%;border:1.5px solid var(--cream-d);border-radius:8px;padding:12px 14px;font-family:var(--fb);font-size:15px;color:var(--charcoal);outline:none;background:#fff;transition:border-color .2s;margin-bottom:16px}
+    .contact-input:focus{border-color:var(--terra)}
+    .contact-ta{width:100%;border:1.5px solid var(--cream-d);border-radius:8px;padding:12px 14px;font-family:var(--fb);font-size:15px;color:var(--charcoal);outline:none;resize:none;height:110px;line-height:1.6;background:#fff;transition:border-color .2s;margin-bottom:6px}
+    .contact-ta:focus{border-color:var(--terra)}
+    .contact-send{width:100%;background:var(--terra);color:#fff;border:none;padding:14px;border-radius:8px;font-family:var(--fc);font-size:14px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;transition:all .15s;margin-top:16px;display:flex;align-items:center;justify-content:center;gap:8px}
+    .contact-send:hover:not(:disabled){background:var(--terra-l)}
+    .contact-send:disabled{opacity:.6;cursor:not-allowed}
+    .contact-done{text-align:center;padding:20px 0}
+    .contact-err{background:rgba(226,75,74,.08);border:1px solid rgba(226,75,74,.2);border-radius:6px;padding:10px 14px;font-size:13px;color:#E24B4A;margin-top:8px}
+
     @media(max-width:480px){
       .stats-inner{grid-template-columns:1fr 1fr;gap:12px}
       .hero-h1{font-size:56px}
@@ -285,6 +310,29 @@ export default function LandingPage() {
   ]
 
   const navClass = mounted ? `nav${scrolled?' scrolled':''}` : 'nav'
+
+  async function sendContact() {
+    if(!contactName.trim()||!contactEmail.trim()||!contactMessage.trim()) {
+      setContactError('Please fill in all fields'); return
+    }
+    setContactSending(true); setContactError('')
+    try {
+      const res = await fetch('/api/contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name:contactName, email:contactEmail, message:contactMessage }),
+      })
+      if(res.ok) {
+        setContactDone(true)
+        setContactName(''); setContactEmail(''); setContactMessage('')
+      } else {
+        setContactError('Something went wrong — please try again')
+      }
+    } catch(e) {
+      setContactError('Could not send — please email us directly at info@lungiza.co.za')
+    }
+    setContactSending(false)
+  }
 
   return (
     <>
@@ -647,8 +695,8 @@ export default function LandingPage() {
             <div>
               <div className="footer-col-h">Company</div>
               <a href="https://vaultlinkafrica.com" className="footer-link" target="_blank" rel="noreferrer">VaultLink Africa</a>
-              <a href="mailto:info@lungiza.co.za" className="footer-link">Contact us</a>
-              <a href="mailto:info@lungiza.co.za" className="footer-link">Support</a>
+              <a onClick={()=>{setContactOpen(true);setContactDone(false)}} className="footer-link" style={{cursor:'pointer'}}>Contact us</a>
+              <a onClick={()=>{setContactOpen(true);setContactDone(false)}} className="footer-link" style={{cursor:'pointer'}}>Support</a>
               <a href="#install" className="footer-link">Get the app</a>
             </div>
           </div>
@@ -658,6 +706,90 @@ export default function LandingPage() {
           </div>
         </div>
       </footer>
+      {/* ── CONTACT MODAL ──────────────────────────────────────────── */}
+      {contactOpen&&(
+        <div className="contact-overlay" onClick={e=>{if(e.target===e.currentTarget)setContactOpen(false)}}>
+          <div className="contact-modal">
+
+            <div className="contact-modal-head">
+              <button className="contact-modal-close" onClick={()=>setContactOpen(false)}>✕</button>
+              <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:11,letterSpacing:3,color:'rgba(245,240,232,.4)',marginBottom:6,textTransform:'uppercase'}}>Lungisa</div>
+              <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:32,letterSpacing:1.5,color:'#F5F0E8',lineHeight:1,marginBottom:6}}>
+                GET IN TOUCH
+              </div>
+              <div style={{fontSize:13,color:'rgba(245,240,232,.45)',lineHeight:1.5}}>
+                Got a question, a partnership idea, or just want to say eish — we&apos;re all ears. 🔨
+              </div>
+            </div>
+
+            <div className="contact-modal-body">
+              {contactDone ? (
+                <div className="contact-done">
+                  <div style={{fontSize:48,marginBottom:16}}>✅</div>
+                  <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:28,letterSpacing:1,color:'var(--charcoal)',marginBottom:8}}>Message sent!</div>
+                  <p style={{fontSize:14,color:'var(--charcoal-l)',lineHeight:1.6,marginBottom:20}}>
+                    We&apos;ll get back to you within 24 hours. Check your inbox — we&apos;ve sent you a confirmation too.
+                  </p>
+                  <button onClick={()=>setContactOpen(false)} className="contact-send">
+                    Close
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+                    <div>
+                      <label className="contact-label">Your name *</label>
+                      <input
+                        className="contact-input"
+                        style={{marginBottom:0}}
+                        type="text"
+                        placeholder="Thabo Mokoena"
+                        value={contactName}
+                        onChange={e=>setContactName(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="contact-label">Email address *</label>
+                      <input
+                        className="contact-input"
+                        style={{marginBottom:0}}
+                        type="email"
+                        placeholder="thabo@email.com"
+                        value={contactEmail}
+                        onChange={e=>setContactEmail(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div style={{height:16}}/>
+                  <label className="contact-label">How can we fix it for you? *</label>
+                  <textarea
+                    className="contact-ta"
+                    placeholder="Tell us what you need — whether it&apos;s a question about posting a job, joining as a tradesperson, a partnership idea, or anything else..."
+                    value={contactMessage}
+                    onChange={e=>setContactMessage(e.target.value)}
+                    maxLength={500}
+                  />
+                  <div style={{fontSize:11,color:'var(--charcoal-l)',textAlign:'right'}}>{500-contactMessage.length} chars left</div>
+                  {contactError&&<div className="contact-err">{contactError}</div>}
+                  <button
+                    className="contact-send"
+                    onClick={sendContact}
+                    disabled={contactSending||!contactName.trim()||!contactEmail.trim()||!contactMessage.trim()}
+                  >
+                    {contactSending?(
+                      <><div style={{width:14,height:14,border:'2px solid rgba(255,255,255,.3)',borderTopColor:'#fff',borderRadius:'50%',animation:'spin .6s linear infinite'}}/> Sending...</>
+                    ):'Send message 🔨'}
+                  </button>
+                  <div style={{textAlign:'center',marginTop:14,fontSize:12,color:'var(--charcoal-l)'}}>
+                    Or email us directly at <a href="mailto:info@lungiza.co.za" style={{color:'var(--terra)'}}>info@lungiza.co.za</a>
+                  </div>
+                </>
+              )}
+            </div>
+
+          </div>
+        </div>
+      )}
     </>
   )
 }
