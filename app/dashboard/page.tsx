@@ -46,26 +46,31 @@ function getJobTags(j:any){const t=[];if(j.urgency==='emergency')t.push({label:'
 // Place this ABOVE the DashboardInner function declaration
 
 function QuoteSubmitCard({ bid, onSubmitted }: { bid: any; onSubmitted: () => void }) {
+  const materialsCoveredBy: 'homeowner' | 'tradesperson' = bid.quoteMaterialsBy || 'homeowner'
   const [labour,    setLabour]    = useState('')
   const [materials, setMaterials] = useState('')
+  const [allIn,     setAllIn]     = useState('')
   const [notes,     setNotes]     = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [submitted,  setSubmitted]  = useState(false)
 
   async function submitQuote() {
-    if(!labour || parseInt(labour) < 1) return
+    const labourVal    = materialsCoveredBy === 'tradesperson' ? parseInt(allIn)||0 : parseInt(labour)||0
+    const materialsVal = materialsCoveredBy === 'tradesperson' ? parseInt(materials)||0 : parseInt(materials)||0
+    if(labourVal < 1) return
     setSubmitting(true)
     try {
       const { data:{ session } } = await supabase.auth.getSession()
       if(!session?.user) return
       const { error } = await supabase.from('quotes').upsert({
-        job_id:            bid.jobId,
-        tradesperson_id:   session.user.id,
-        labour_amount:     parseInt(labour),
-        materials_estimate: parseInt(materials) || 0,
-        notes:             notes || null,
-        status:            'submitted',
-        updated_at:        new Date().toISOString(),
+        job_id:              bid.jobId,
+        tradesperson_id:     session.user.id,
+        labour_amount:       labourVal,
+        materials_estimate:  materialsVal,
+        notes:               notes || null,
+        status:              'submitted',
+        materials_covered_by: materialsCoveredBy,
+        updated_at:          new Date().toISOString(),
       }, { onConflict: 'job_id,tradesperson_id' })
 
       if(error) { console.error('Submit quote error:', error.message); setSubmitting(false); return }
@@ -100,32 +105,72 @@ function QuoteSubmitCard({ bid, onSubmitted }: { bid: any; onSubmitted: () => vo
       <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:15,fontWeight:700,color:'#F5F0E8',marginBottom:4}}>{bid.job}</div>
       <div style={{fontSize:12,color:'rgba(245,240,232,.4)',marginBottom:14}}>{bid.loc}</div>
 
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
-        {/* Labour */}
-        <div>
-          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>
-            Your labour charge *
-          </div>
-          <div style={{display:'flex',alignItems:'center',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,overflow:'hidden'}}>
-            <span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20,color:'rgba(245,240,232,.4)',padding:'10px 12px',borderRight:'1px solid rgba(255,255,255,.08)',flexShrink:0}}>R</span>
-            <input type="number" value={labour} onChange={e=>setLabour(e.target.value)} placeholder="e.g. 800"
-              style={{flex:1,background:'transparent',border:'none',outline:'none',fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:'#F5F0E8',padding:'10px 12px'}}/>
-          </div>
-          <div style={{fontSize:10,color:'rgba(245,240,232,.3)',marginTop:4}}>Fixed · goes into escrow</div>
-        </div>
-        {/* Materials */}
-        <div>
-          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>
-            Materials estimate
-          </div>
-          <div style={{display:'flex',alignItems:'center',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,overflow:'hidden'}}>
-            <span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20,color:'rgba(245,240,232,.4)',padding:'10px 12px',borderRight:'1px solid rgba(255,255,255,.08)',flexShrink:0}}>R</span>
-            <input type="number" value={materials} onChange={e=>setMaterials(e.target.value)} placeholder="e.g. 350"
-              style={{flex:1,background:'transparent',border:'none',outline:'none',fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:'#F5F0E8',padding:'10px 12px'}}/>
-          </div>
-          <div style={{fontSize:10,color:'rgba(245,240,232,.3)',marginTop:4}}>Homeowner pays separately</div>
-        </div>
+      {/* Materials coverage context banner */}
+      <div style={{background:materialsCoveredBy==='tradesperson'?'rgba(196,89,58,.1)':'rgba(61,170,106,.08)',border:`1px solid ${materialsCoveredBy==='tradesperson'?'rgba(196,89,58,.25)':'rgba(61,170,106,.2)'}`,borderRadius:8,padding:'10px 14px',marginBottom:14,fontSize:12,color:'rgba(245,240,232,.7)',lineHeight:1.5}}>
+        {materialsCoveredBy==='tradesperson'
+          ? '📦 Homeowner wants an all-in price — include your labour AND materials in your quote.'
+          : '🏪 Homeowner will buy materials themselves — quote your labour charge only.'}
       </div>
+
+      {materialsCoveredBy==='tradesperson' ? (
+        // All-in quote fields
+        <div style={{marginBottom:12}}>
+          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>
+            All-in price (labour + materials) *
+          </div>
+          <div style={{display:'flex',alignItems:'center',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(196,89,58,.3)',borderRadius:8,overflow:'hidden',marginBottom:4}}>
+            <span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20,color:'rgba(245,240,232,.4)',padding:'10px 12px',borderRight:'1px solid rgba(255,255,255,.08)',flexShrink:0}}>R</span>
+            <input type="number" value={allIn} onChange={e=>setAllIn(e.target.value)} placeholder="e.g. 1200"
+              style={{flex:1,background:'transparent',border:'none',outline:'none',fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:'#F5F0E8',padding:'10px 12px'}}/>
+          </div>
+          <div style={{fontSize:10,color:'rgba(245,240,232,.3)',marginBottom:12}}>Full amount — goes into escrow</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+            <div>
+              <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.3)',marginBottom:6}}>Labour component</div>
+              <div style={{display:'flex',alignItems:'center',background:'rgba(255,255,255,.03)',border:'1px solid rgba(255,255,255,.08)',borderRadius:8,overflow:'hidden'}}>
+                <span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:16,color:'rgba(245,240,232,.3)',padding:'8px 10px',borderRight:'1px solid rgba(255,255,255,.06)',flexShrink:0}}>R</span>
+                <input type="number" value={labour} onChange={e=>setLabour(e.target.value)} placeholder="e.g. 800"
+                  style={{flex:1,background:'transparent',border:'none',outline:'none',fontFamily:"'Bebas Neue',sans-serif",fontSize:18,color:'rgba(245,240,232,.5)',padding:'8px 10px'}}/>
+              </div>
+            </div>
+            <div>
+              <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.3)',marginBottom:6}}>Materials component</div>
+              <div style={{display:'flex',alignItems:'center',background:'rgba(255,255,255,.03)',border:'1px solid rgba(255,255,255,.08)',borderRadius:8,overflow:'hidden'}}>
+                <span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:16,color:'rgba(245,240,232,.3)',padding:'8px 10px',borderRight:'1px solid rgba(255,255,255,.06)',flexShrink:0}}>R</span>
+                <input type="number" value={materials} onChange={e=>setMaterials(e.target.value)} placeholder="e.g. 400"
+                  style={{flex:1,background:'transparent',border:'none',outline:'none',fontFamily:"'Bebas Neue',sans-serif",fontSize:18,color:'rgba(245,240,232,.5)',padding:'8px 10px'}}/>
+              </div>
+            </div>
+          </div>
+          <div style={{fontSize:10,color:'rgba(245,240,232,.25)',marginTop:4}}>Optional breakdown — helps homeowner understand your pricing</div>
+        </div>
+      ) : (
+        // Labour only fields
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
+          <div>
+            <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>
+              Your labour charge *
+            </div>
+            <div style={{display:'flex',alignItems:'center',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,overflow:'hidden'}}>
+              <span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20,color:'rgba(245,240,232,.4)',padding:'10px 12px',borderRight:'1px solid rgba(255,255,255,.08)',flexShrink:0}}>R</span>
+              <input type="number" value={labour} onChange={e=>setLabour(e.target.value)} placeholder="e.g. 800"
+                style={{flex:1,background:'transparent',border:'none',outline:'none',fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:'#F5F0E8',padding:'10px 12px'}}/>
+            </div>
+            <div style={{fontSize:10,color:'rgba(245,240,232,.3)',marginTop:4}}>Fixed · goes into escrow</div>
+          </div>
+          <div>
+            <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>
+              Materials estimate
+            </div>
+            <div style={{display:'flex',alignItems:'center',background:'rgba(255,255,255,.05)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,overflow:'hidden'}}>
+              <span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20,color:'rgba(245,240,232,.4)',padding:'10px 12px',borderRight:'1px solid rgba(255,255,255,.08)',flexShrink:0}}>R</span>
+              <input type="number" value={materials} onChange={e=>setMaterials(e.target.value)} placeholder="e.g. 350"
+                style={{flex:1,background:'transparent',border:'none',outline:'none',fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:'#F5F0E8',padding:'10px 12px'}}/>
+            </div>
+            <div style={{fontSize:10,color:'rgba(245,240,232,.3)',marginTop:4}}>Homeowner pays separately</div>
+          </div>
+        </div>
+      )}
 
       {/* Notes */}
       <div style={{marginBottom:12}}>
@@ -138,7 +183,7 @@ function QuoteSubmitCard({ bid, onSubmitted }: { bid: any; onSubmitted: () => vo
       </div>
 
       {/* You'll earn preview */}
-      {labour && parseInt(labour) > 0 && (
+      {(materialsCoveredBy==='tradesperson'?allIn:labour) && parseInt(materialsCoveredBy==='tradesperson'?allIn:labour) > 0 && (
         <div style={{background:'rgba(61,170,106,.07)',border:'1px solid rgba(61,170,106,.18)',borderRadius:8,padding:'10px 14px',marginBottom:12,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
           <div>
             <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,color:'rgba(61,170,106,.7)'}}>You&apos;ll earn</div>
@@ -151,7 +196,7 @@ function QuoteSubmitCard({ bid, onSubmitted }: { bid: any; onSubmitted: () => vo
       )}
 
       <button onClick={submitQuote} disabled={submitting || !labour || parseInt(labour) < 1}
-        style={{width:'100%',fontFamily:"'Barlow Condensed',sans-serif",fontSize:13,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:submitting||!labour||parseInt(labour)<1?'rgba(196,89,58,.4)':'#C4593A',color:'#fff',border:'none',padding:'12px',borderRadius:8,cursor:submitting||!labour||parseInt(labour)<1?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8,transition:'background .15s'}}>
+        style={{width:'100%',fontFamily:"'Barlow Condensed',sans-serif",fontSize:13,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:submitting||(materialsCoveredBy==='tradesperson'?!allIn||parseInt(allIn)<1:!labour||parseInt(labour)<1)?'rgba(196,89,58,.4)':'#C4593A',color:'#fff',border:'none',padding:'12px',borderRadius:8,cursor:submitting||(materialsCoveredBy==='tradesperson'?!allIn||parseInt(allIn)<1:!labour||parseInt(labour)<1)?'not-allowed':'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8,transition:'background .15s'}}>
         {submitting ? (
           <><div style={{width:14,height:14,border:'2px solid rgba(255,255,255,.3)',borderTopColor:'#fff',borderRadius:'50%',animation:'spin .6s linear infinite'}}/>Submitting...</>
         ) : '📋 Submit formal quote →'}
@@ -452,7 +497,7 @@ function DashboardInner() {
       if(!session?.user) return
       const {data,error}=await supabase
         .from('bids')
-        .select('*, jobs(id, title, area, status), updated_at, quote_requested')
+        .select('*, jobs(id, title, area, status), updated_at, quote_requested, quote_materials_by')
         .eq('tradesperson_id',session.user.id)
         .order('created_at',{ascending:false})
       if(!error&&data){
@@ -469,6 +514,7 @@ function DashboardInner() {
           counterRound:  b.counter_round||0,
           counterUpdatedAt: b.updated_at||null,
           quoteRequested:   b.quote_requested||false,
+          quoteMaterialsBy:  b.quote_materials_by||'homeowner',
           jobId:         b.jobs?.id||b.job_id,
         })))
       }
@@ -1011,7 +1057,7 @@ function DashboardInner() {
                         </div>
                         <div style={{display:'flex',alignItems:'center',gap:6}}>
                           <div style={{width:6,height:6,borderRadius:'50%',background:'#E8A020'}}/>
-                          <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,color:'rgba(232,160,32,.7)',letterSpacing:.5}}>🚀 Going live: August 2026</span>
+                          <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,color:'rgba(232,160,32,.7)',letterSpacing:.5}}>🚀 Launch: 10 June 2026</span>
                         </div>
                       </div>
                     </div>

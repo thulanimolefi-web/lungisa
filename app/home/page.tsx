@@ -92,6 +92,7 @@ type QuoteData = {
   status: string
   tradespersonId: string
   tradespersonName: string
+  materialsCoveredBy: 'homeowner' | 'tradesperson'
 }
 
 const AVATAR_COLORS = ['#8B3A2A','#5A3A2A','#2A4A3A','#3A4A6A','#6A3A5A','#4A5A2A']
@@ -118,6 +119,10 @@ export default function HomeDashboard() {
   // ── Quote state ──────────────────────────────────────────────────
   const [quotes, setQuotes]         = useState<Record<string, QuoteData>>({})
   const [requestingQuote, setRequestingQuote] = useState<Record<string,boolean>>({})
+  // Quote request modal
+  const [quoteModal, setQuoteModal]       = useState<{jobId:string,bidId:string,tradespersonId:string,tradespersonName:string}|null>(null)
+  const [quoteMaterialsBy, setQuoteMaterialsBy] = useState<'homeowner'|'tradesperson'>('homeowner')
+  const [quoteNotes, setQuoteNotes]       = useState('')
   // ── End quote state ──────────────────────────────────────────────
   const [disputeJob, setDisputeJob]   = useState<string|null>(null)
   const [disputeReason, setDisputeReason] = useState('')
@@ -293,12 +298,13 @@ export default function HomeDashboard() {
         const map: Record<string, QuoteData> = {}
         for(const q of data) {
           map[q.job_id] = {
-            labourAmount:      q.labour_amount,
-            materialsEstimate: q.materials_estimate,
-            notes:             q.notes,
-            status:            q.status,
-            tradespersonId:    q.tradesperson_id,
-            tradespersonName:  (q as any).profiles?.full_name || 'Tradesperson',
+            labourAmount:       q.labour_amount,
+            materialsEstimate:  q.materials_estimate,
+            notes:              q.notes,
+            status:             q.status,
+            tradespersonId:     q.tradesperson_id,
+            tradespersonName:   (q as any).profiles?.full_name || 'Tradesperson',
+            materialsCoveredBy: q.materials_covered_by || 'homeowner',
           }
         }
         setQuotes(map)
@@ -364,13 +370,30 @@ export default function HomeDashboard() {
     } catch(e){ console.log('Completions load error:',e) }
   }
 
-  async function requestQuote(jobId:string, bidId:string, tradespersonId:string, tradespersonName:string) {
+  function requestQuote(jobId:string, bidId:string, tradespersonId:string, tradespersonName:string) {
+    // Open modal to ask about materials coverage first
+    setQuoteModal({jobId, bidId, tradespersonId, tradespersonName})
+    setQuoteMaterialsBy('homeowner')
+    setQuoteNotes('')
+  }
+
+  async function sendQuoteRequest() {
+    if(!quoteModal) return
+    const {jobId, bidId, tradespersonId, tradespersonName} = quoteModal
     setRequestingQuote(r=>({...r,[bidId]:true}))
+    setQuoteModal(null)
     try {
-      await supabase.from('bids').update({quote_requested:true}).eq('id',bidId)
+      await supabase.from('bids').update({
+        quote_requested:    true,
+        quote_materials_by: quoteMaterialsBy,
+      }).eq('id',bidId)
       await supabase.from('quotes').upsert({
-        job_id:jobId, tradesperson_id:tradespersonId,
-        labour_amount:0, materials_estimate:0, status:'requested',
+        job_id:              jobId,
+        tradesperson_id:     tradespersonId,
+        labour_amount:       0,
+        materials_estimate:  0,
+        status:              'requested',
+        materials_covered_by: quoteMaterialsBy,
       },{onConflict:'job_id,tradesperson_id'})
       const {data:{session}} = await supabase.auth.getSession()
       const job = jobs.find(j=>j.id===jobId)
@@ -379,9 +402,14 @@ export default function HomeDashboard() {
         body:JSON.stringify({
           type:'quote_requested', jobId, jobTitle:job?.title||'Job',
           tradespersonId, homeownerId:session?.user?.id,
+          materialsCoveredBy: quoteMaterialsBy,
         })
       }).catch(e=>console.log('Email error:',e))
-      toast(`Quote requested from ${tradespersonName.split(' ')[0]}!`,'They have been asked to submit labour + materials breakdown','#E8A020')
+      toast(`Quote requested from ${tradespersonName.split(' ')[0]}!`,
+        quoteMaterialsBy==='homeowner'
+          ? 'They will quote labour only — you cover materials'
+          : 'They will quote an all-in price including materials',
+        '#E8A020')
       loadRealJobs(true)
     } catch(e){ console.log('Request quote error:',e) }
     setRequestingQuote(r=>({...r,[bidId]:false}))
@@ -389,18 +417,18 @@ export default function HomeDashboard() {
 
   async function acceptQuote(jobId:string, bidId:string, tradespersonId:string) {
     try {
+      const q = quotes[jobId]
+      const escrowAmount = q?.materialsCoveredBy === 'tradesperson'
+        ? (q.labourAmount + q.materialsEstimate)
+        : q?.labourAmount
       await supabase.from('quotes').update({status:'accepted'}).eq('job_id',jobId).eq('tradesperson_id',tradespersonId)
-      await supabase.from('bids').update({
-        status:'accepted',
-        amount:      quotes[jobId]?.labourAmount,
-        final_amount:quotes[jobId]?.labourAmount,
-      }).eq('id',bidId)
+      await supabase.from('bids').update({status:'accepted',amount:escrowAmount,final_amount:escrowAmount}).eq('id',bidId)
       await supabase.from('bids').update({status:'declined'}).eq('job_id',jobId).neq('id',bidId)
       await supabase.from('jobs').update({status:'accepted'}).eq('id',jobId)
       const {data:{session}} = await supabase.auth.getSession()
       fetch('/api/send-email',{
         method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({type:'bid_accepted',bidId,amount:quotes[jobId]?.labourAmount,jobTitle:jobs.find(j=>j.id===jobId)?.title||'Job',jobId,tradespersonId})
+        body:JSON.stringify({type:'bid_accepted',bidId,amount:escrowAmount,jobTitle:jobs.find(j=>j.id===jobId)?.title||'Job',jobId,tradespersonId})
       }).catch(e=>console.log('Email error:',e))
       toast('Quote accepted!','Now pay to confirm the job','#3DAA6A')
       loadRealJobs(true); loadQuotes()
@@ -645,6 +673,18 @@ export default function HomeDashboard() {
     .spin{display:inline-block;width:20px;height:20px;border:2px solid var(--cream-d);border-top-color:var(--terra);border-radius:50%;animation:spin .6s linear infinite}
     .spin-sm{display:inline-block;width:12px;height:12px;border:2px solid rgba(196,89,58,.3);border-top-color:var(--terra);border-radius:50%;animation:spin .6s linear infinite}
     @keyframes spin{to{transform:rotate(360deg)}}
+    .quote-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:150;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px);animation:toastIn .2s ease}
+    .quote-modal{background:var(--white);border-radius:16px;width:100%;max-width:480px;overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,.2)}
+    .quote-modal-head{background:var(--charcoal);padding:24px 28px}
+    .quote-modal-body{padding:24px 28px}
+    .materials-opt{border:1.5px solid var(--cream-d);border-radius:10px;padding:16px 18px;cursor:pointer;transition:all .2s;margin-bottom:10px;display:flex;gap:14px;align-items:flex-start}
+    .materials-opt:hover{border-color:var(--terra-l)}
+    .materials-opt.selected{border-color:var(--terra);background:rgba(196,89,58,.04)}
+    .materials-opt-radio{width:20px;height:20px;border-radius:50%;border:2px solid var(--cream-dd);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;transition:all .2s}
+    .materials-opt.selected .materials-opt-radio{border-color:var(--terra);background:var(--terra)}
+    .materials-opt.selected .materials-opt-radio::after{content:'';width:8px;height:8px;border-radius:50%;background:#fff;display:block}
+    .materials-opt-title{font-family:var(--fc);font-size:14px;font-weight:700;color:var(--charcoal);margin-bottom:3px}
+    .materials-opt-sub{font-size:12px;color:var(--charcoal-l);line-height:1.5}
     .quote-box{background:rgba(196,89,58,.04);border:1.5px solid rgba(196,89,58,.2);border-radius:10px;padding:16px 18px;margin-bottom:12px}
     .quote-box.received{background:rgba(61,170,106,.04);border-color:rgba(61,170,106,.25)}
     @media(max-width:900px){
@@ -881,13 +921,23 @@ export default function HomeDashboard() {
                                               {jobQuote.notes}
                                             </div>
                                           )}
-                                          <div style={{background:'rgba(61,170,106,.06)',border:'1px solid rgba(61,170,106,.15)',borderRadius:6,padding:'8px 12px',marginBottom:12,fontSize:12,color:'var(--charcoal-l)'}}>
-                                            💡 Labour is the differentiator. Materials are your cost regardless of tradesperson chosen.
+                                          {/* Materials coverage badge */}
+                                          <div style={{background:jobQuote.materialsCoveredBy==='tradesperson'?'rgba(196,89,58,.06)':'rgba(61,170,106,.06)',border:`1px solid ${jobQuote.materialsCoveredBy==='tradesperson'?'rgba(196,89,58,.2)':'rgba(61,170,106,.15)'}`,borderRadius:6,padding:'8px 12px',marginBottom:12,fontSize:12,color:'var(--charcoal-l)'}}>
+                                            {jobQuote.materialsCoveredBy==='tradesperson'
+                                              ? '📦 All-in quote — tradesperson supplies materials. Full amount goes into escrow.'
+                                              : '💡 Labour only — materials are your cost regardless of tradesperson chosen.'}
                                           </div>
+                                          {/* Escrow amount preview */}
+                                          {jobQuote.materialsCoveredBy==='tradesperson'&&(
+                                            <div style={{background:'var(--white)',borderRadius:8,padding:'10px 14px',border:'1px solid var(--cream-d)',marginBottom:12,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                                              <span style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:600,letterSpacing:1,textTransform:'uppercase',color:'var(--charcoal-l)'}}>Total into escrow</span>
+                                              <span style={{fontFamily:'var(--fd)',fontSize:22,color:'var(--terra)'}}>R{(jobQuote.labourAmount+jobQuote.materialsEstimate).toLocaleString()}</span>
+                                            </div>
+                                          )}
                                           <div style={{display:'flex',gap:8}}>
                                             <button className="btn btn-green" style={{flex:1,justifyContent:'center'}}
                                               onClick={()=>acceptQuote(selectedJob.id,bid.id,bid.tradespersonId)}>
-                                              ✓ Accept — R{jobQuote.labourAmount.toLocaleString()} labour
+                                              ✓ Accept — R{jobQuote.materialsCoveredBy==='tradesperson'?(jobQuote.labourAmount+jobQuote.materialsEstimate).toLocaleString():jobQuote.labourAmount.toLocaleString()} {jobQuote.materialsCoveredBy==='tradesperson'?'all-in':'labour'}
                                             </button>
                                             <button className="btn btn-ghost" onClick={()=>acceptBid(selectedJob.id,bid.id,bid.name)}>
                                               Use original R{bid.price}
@@ -1224,6 +1274,77 @@ export default function HomeDashboard() {
           </div>
         </div>
       </div>
+
+      {/* ── QUOTE REQUEST MODAL ──────────────────────────────────── */}
+      {quoteModal&&(
+        <div className="quote-modal-overlay" onClick={e=>{if(e.target===e.currentTarget)setQuoteModal(null)}}>
+          <div className="quote-modal">
+            <div className="quote-modal-head">
+              <div style={{fontFamily:'var(--fc)',fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>
+                Request formal quote
+              </div>
+              <div style={{fontFamily:'var(--fd)',fontSize:26,letterSpacing:1,color:'#F5F0E8',lineHeight:1,marginBottom:4}}>
+                {quoteModal.tradespersonName.split(' ')[0].toUpperCase()}
+              </div>
+              <div style={{fontSize:13,color:'rgba(245,240,232,.45)'}}>
+                One quick question before we send the request
+              </div>
+            </div>
+            <div className="quote-modal-body">
+              <div style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'var(--charcoal-l)',marginBottom:14}}>
+                Who will cover materials?
+              </div>
+
+              <div className={`materials-opt${quoteMaterialsBy==='homeowner'?' selected':''}`}
+                onClick={()=>setQuoteMaterialsBy('homeowner')}>
+                <div className="materials-opt-radio"/>
+                <div>
+                  <div className="materials-opt-title">🏪 I&apos;ll buy materials myself</div>
+                  <div className="materials-opt-sub">
+                    Tradesperson quotes <strong>labour only</strong>. You buy materials separately from the hardware store. Labour amount goes into escrow.
+                  </div>
+                </div>
+              </div>
+
+              <div className={`materials-opt${quoteMaterialsBy==='tradesperson'?' selected':''}`}
+                onClick={()=>setQuoteMaterialsBy('tradesperson')}>
+                <div className="materials-opt-radio"/>
+                <div>
+                  <div className="materials-opt-title">📦 Tradesperson supplies everything</div>
+                  <div className="materials-opt-sub">
+                    Tradesperson quotes an <strong>all-in price</strong> including materials. Full amount goes into escrow.
+                  </div>
+                </div>
+              </div>
+
+              <div style={{marginTop:16,marginBottom:16}}>
+                <label style={{display:'block',fontFamily:'var(--fc)',fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'var(--charcoal-l)',marginBottom:6}}>
+                  Scope notes <span style={{fontWeight:400,fontSize:10,textTransform:'none',letterSpacing:0,color:'var(--sand)'}}>optional</span>
+                </label>
+                <textarea
+                  value={quoteNotes}
+                  onChange={e=>setQuoteNotes(e.target.value)}
+                  placeholder="Any specific details for the tradesperson to know before quoting..."
+                  style={{width:'100%',border:'1.5px solid var(--cream-d)',borderRadius:8,padding:'10px 14px',fontFamily:'var(--fb)',fontSize:14,color:'var(--charcoal)',outline:'none',resize:'none',height:70,lineHeight:1.55}}
+                />
+              </div>
+
+              <div style={{background:'rgba(232,160,32,.06)',border:'1px solid rgba(232,160,32,.15)',borderRadius:8,padding:'10px 14px',fontSize:12,color:'var(--charcoal-l)',lineHeight:1.6,marginBottom:16}}>
+                💡 {quoteMaterialsBy==='homeowner'
+                  ? 'Labour is the key differentiator. You can compare labour quotes from multiple tradespeople — materials cost is the same regardless of who you choose.'
+                  : 'An all-in quote covers everything. The full amount will be held in escrow until you confirm the job is done.'}
+              </div>
+
+              <div style={{display:'flex',gap:10}}>
+                <button className="btn btn-terra" style={{flex:1,justifyContent:'center'}} onClick={sendQuoteRequest}>
+                  Send quote request →
+                </button>
+                <button className="btn btn-ghost" onClick={()=>setQuoteModal(null)}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── REVIEW MODAL ────────────────────────────────────────────── */}
       {reviewJob&&(
