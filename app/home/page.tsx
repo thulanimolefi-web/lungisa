@@ -134,6 +134,7 @@ export default function HomeDashboard() {
   const [savingProfile, setSavingProfile] = useState(false)
   const [profileMsg, setProfileMsg] = useState('')
   const [refreshing, setRefreshing] = useState(false)
+  const [expiredJobs, setExpiredJobs] = useState<JobData[]>([])
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date())
   const [loading, setLoading]       = useState(true)
 
@@ -222,7 +223,7 @@ export default function HomeDashboard() {
 
       const {data:jobsData, error:jobsErr} = await supabase
         .from('jobs').select('*').eq('homeowner_id',session.user.id)
-        .neq('status','completed').order('created_at',{ascending:false})
+        .not('status','in','("completed","expired","cancelled")').order('created_at',{ascending:false})
 
       if(jobsErr) { console.error('[home] Jobs fetch error:',jobsErr.message); setLoading(false); return }
       if(!jobsData) { setLoading(false); return }
@@ -347,6 +348,37 @@ export default function HomeDashboard() {
         }
       }))
     } catch(e){ console.log('History error:',e) }
+  }
+
+  async function loadExpiredJobs() {
+    try {
+      const {data:{session}} = await supabase.auth.getSession()
+      if(!session?.user) return
+      const {data,error} = await supabase
+        .from('jobs')
+        .select('*')
+        .eq('homeowner_id', session.user.id)
+        .eq('status', 'expired')
+        .order('expires_at', {ascending:false})
+        .limit(10)
+      if(!error && data) {
+        setExpiredJobs(data.map((j:any) => ({
+          id:j.id, title:j.title,
+          category:j.category.charAt(0).toUpperCase()+j.category.slice(1),
+          emoji:getCatEmoji(j.category), area:`${j.area}, JHB`,
+          urgency:getUrgencyLabel(j.urgency), urgColor:getUrgencyColor(j.urgency),
+          budget:j.budget_max||0, status:'expired',
+          posted:getTimeAgo(j.created_at),
+          expiresAt:j.expires_at||null,
+          bids:[],
+        })))
+      }
+    } catch(e){ console.log('Expired jobs error:',e) }
+  }
+
+  async function repostJob(job: JobData) {
+    // Navigate to post page with pre-filled data via query params
+    router.push(`/post?repost=${job.id}&title=${encodeURIComponent(job.title)}&category=${job.category.toLowerCase()}&area=${encodeURIComponent(job.area.replace(', JHB',''))}&budget=${job.budget}`)
   }
 
   async function loadCompletions() {
@@ -564,7 +596,7 @@ export default function HomeDashboard() {
     setReviewJob(null); setReviewTradespersonId(''); setRating(5); setReviewText('')
   }
 
-  const activeJobs  = jobs.filter(j=>!['completed','disputed'].includes(j.status))
+  const activeJobs  = jobs.filter(j=>!['completed','disputed','expired','cancelled'].includes(j.status))
   const allBids     = activeJobs.flatMap(j=>j.bids)
   const avgBidPrice = allBids.length>0?Math.round(allBids.reduce((s,b)=>s+b.price,0)/allBids.length):0
   const totalSpent  = historyJobs.filter(j=>j.status==='completed').reduce((s,j)=>s+j.price,0)
@@ -653,6 +685,8 @@ export default function HomeDashboard() {
     .btn-ghost{background:transparent;border:1.5px solid var(--cream-dd);color:var(--charcoal-l)}
     .btn-ghost:hover{border-color:var(--charcoal-l);color:var(--charcoal)}
     .escrow-note{background:rgba(61,170,106,.08);border:1px solid rgba(61,170,106,.2);border-radius:8px;padding:14px 16px;font-size:13px;color:var(--charcoal-l);display:flex;align-items:flex-start;gap:10px;line-height:1.6;margin:16px 0}
+    .expired-card{background:var(--white);border-radius:10px;border:1.5px dashed var(--cream-dd);padding:16px 20px;margin-bottom:10px;display:flex;align-items:center;gap:16px;opacity:.75;transition:opacity .2s}
+    .expired-card:hover{opacity:1}
     .empty-state{text-align:center;padding:80px 20px;color:var(--charcoal-l)}
     .hist-row{background:var(--white);border-radius:10px;border:1px solid var(--cream-d);padding:16px 20px;margin-bottom:10px;display:flex;align-items:center;gap:16px}
     .hist-ico{width:40px;height:40px;border-radius:10px;background:rgba(196,89,58,.1);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
@@ -979,6 +1013,7 @@ export default function HomeDashboard() {
                               <div className="jc-meta">📍 {job.area} · Posted {job.posted}
                                 {job.expiresAt&&(()=>{
                                   const daysLeft=Math.ceil((new Date(job.expiresAt).getTime()-Date.now())/(1000*60*60*24))
+                                  if(daysLeft<=0) return <span style={{marginLeft:8,color:'#E24B4A',fontFamily:'var(--fc)',fontSize:10,fontWeight:700,letterSpacing:1}}>⚠ Expires today</span>
                                   if(daysLeft<=3) return <span style={{marginLeft:8,color:'#E24B4A',fontFamily:'var(--fc)',fontSize:10,fontWeight:700,letterSpacing:1}}>⚠ Expires in {daysLeft}d</span>
                                   if(daysLeft<=7) return <span style={{marginLeft:8,color:'#E8A020',fontFamily:'var(--fc)',fontSize:10,fontWeight:700,letterSpacing:1}}>Expires in {daysLeft}d</span>
                                   return null
@@ -1322,6 +1357,32 @@ export default function HomeDashboard() {
                   </div>
                 )}
               </>
+            )}
+
+            {/* ── EXPIRED JOBS ──────────────────────────────────── */}
+            {expiredJobs.length>0&&(
+              <div style={{marginTop:28}}>
+                <div style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:700,letterSpacing:2,textTransform:'uppercase',color:'var(--charcoal-l)',marginBottom:12,display:'flex',alignItems:'center',gap:8}}>
+                  <span style={{width:12,height:2,background:'var(--cream-dd)',display:'inline-block'}}/>
+                  Expired jobs — not receiving bids
+                </div>
+                {expiredJobs.map(job=>(
+                  <div key={job.id} className="expired-card">
+                    <div style={{width:38,height:38,borderRadius:10,background:'rgba(0,0,0,.05)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}}>{job.emoji}</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontFamily:'var(--fc)',fontSize:14,fontWeight:700,color:'var(--charcoal)',marginBottom:2,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{job.title}</div>
+                      <div style={{fontSize:12,color:'var(--charcoal-l)'}}>📍 {job.area} · Expired {job.expiresAt?new Date(job.expiresAt).toLocaleDateString('en-ZA',{day:'numeric',month:'short'}):''}</div>
+                    </div>
+                    <button
+                      onClick={()=>repostJob(job)}
+                      style={{flexShrink:0,background:'transparent',border:'1.5px solid var(--cream-dd)',borderRadius:6,padding:'7px 14px',fontFamily:'var(--fc)',fontSize:11,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:'var(--charcoal-l)',cursor:'pointer',transition:'all .15s',whiteSpace:'nowrap'}}
+                      onMouseEnter={e=>{(e.currentTarget as HTMLButtonElement).style.borderColor='var(--terra)';(e.currentTarget as HTMLButtonElement).style.color='var(--terra)'}}
+                      onMouseLeave={e=>{(e.currentTarget as HTMLButtonElement).style.borderColor='var(--cream-dd)';(e.currentTarget as HTMLButtonElement).style.color='var(--charcoal-l)'}}>
+                      ↻ Re-post
+                    </button>
+                  </div>
+                ))}
+              </div>
             )}
 
             {/* ── HISTORY ─────────────────────────────────────────── */}
