@@ -670,6 +670,7 @@ export default function HomeDashboard() {
     .toast-item{background:var(--charcoal);border-radius:10px;border:1px solid rgba(255,255,255,.1);padding:12px 16px;margin-bottom:8px;display:flex;align-items:center;gap:10px;max-width:280px;animation:toastIn .3s ease both}
     @keyframes toastIn{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:translateX(0)}}
     .loading-state{display:flex;align-items:center;justify-content:center;padding:80px;color:var(--charcoal-l);font-family:var(--fc);font-size:13px;letter-spacing:1px;gap:12px}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
     .spin{display:inline-block;width:20px;height:20px;border:2px solid var(--cream-d);border-top-color:var(--terra);border-radius:50%;animation:spin .6s linear infinite}
     .spin-sm{display:inline-block;width:12px;height:12px;border:2px solid rgba(196,89,58,.3);border-top-color:var(--terra);border-radius:50%;animation:spin .6s linear infinite}
     @keyframes spin{to{transform:rotate(360deg)}}
@@ -709,6 +710,163 @@ export default function HomeDashboard() {
       .main{padding-bottom:60px}
     }
   `
+
+  // ── Job Status Timeline ───────────────────────────────────────────
+  function JobTimeline({ job, completionData, jobQuotes }: {
+    job: JobData
+    completionData: any
+    jobQuotes: Record<string, any>
+  }) {
+    const acceptedBid = job.bids.find(b => b.status === 'accepted' || b.status === 'completed')
+    type StepStatus = 'done' | 'active' | 'pending'
+    type Step = { icon: string; label: string; sublabel: string; status: StepStatus }
+
+    const steps: Step[] = [
+      {
+        icon: '📋',
+        label: 'Job posted',
+        sublabel: `Posted ${job.posted}`,
+        status: 'done',
+      },
+      {
+        icon: '💬',
+        label: 'Bids received',
+        sublabel: job.bids.length > 0
+          ? `${job.bids.length} bid${job.bids.length !== 1 ? 's' : ''} received`
+          : 'Waiting for bids',
+        status: job.bids.length > 0 ? 'done' : 'active',
+      },
+      {
+        icon: '📋',
+        label: 'Quote & negotiation',
+        sublabel: jobQuotes[job.id]?.status === 'accepted'
+          ? 'Quote accepted'
+          : jobQuotes[job.id]?.status === 'submitted'
+          ? 'Quote received — review it'
+          : jobQuotes[job.id]?.status === 'requested'
+          ? 'Quote requested'
+          : acceptedBid
+          ? 'Bid accepted directly'
+          : 'Pending',
+        status: acceptedBid || jobQuotes[job.id]?.status === 'accepted' ? 'done'
+          : jobQuotes[job.id] ? 'active' : 'pending',
+      },
+      {
+        icon: '🔒',
+        label: 'Payment in escrow',
+        sublabel: ['in_progress','completion_submitted','completed','disputed'].includes(job.status)
+          ? `R${(acceptedBid?.finalAmount || acceptedBid?.price || 0).toLocaleString()} secured`
+          : 'Pay to lock in',
+        status: ['in_progress','completion_submitted','completed','disputed'].includes(job.status)
+          ? 'done'
+          : acceptedBid ? 'active' : 'pending',
+      },
+      {
+        icon: '⚙️',
+        label: 'Work in progress',
+        sublabel: completionData
+          ? 'Work submitted for review'
+          : job.status === 'in_progress'
+          ? 'Tradesperson on the job'
+          : 'Waiting to start',
+        status: completionData || ['completion_submitted','completed','disputed'].includes(job.status)
+          ? 'done'
+          : job.status === 'in_progress' ? 'active' : 'pending',
+      },
+      {
+        icon: '✅',
+        label: 'Job confirmed done',
+        sublabel: job.status === 'completed'
+          ? 'Payment released'
+          : job.status === 'disputed'
+          ? 'Under dispute'
+          : completionData
+          ? 'Review and confirm below'
+          : 'Pending completion',
+        status: job.status === 'completed' || job.status === 'disputed'
+          ? 'done'
+          : completionData ? 'active' : 'pending',
+      },
+    ]
+
+    const doneCount = steps.filter(s => s.status === 'done').length
+    const pct = Math.round((doneCount / steps.length) * 100)
+
+    return (
+      <div style={{background:'var(--cream)',borderRadius:10,border:'1px solid var(--cream-d)',padding:'16px 18px',marginBottom:16}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
+          <div style={{fontFamily:'var(--fc)',fontSize:10,fontWeight:700,letterSpacing:2,textTransform:'uppercase',color:'var(--charcoal-l)',display:'flex',alignItems:'center',gap:8}}>
+            <span style={{width:12,height:2,background:'var(--terra)',display:'inline-block'}}/>
+            Job progress
+          </div>
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <div style={{width:80,height:4,background:'var(--cream-d)',borderRadius:2,overflow:'hidden'}}>
+              <div style={{height:'100%',width:`${pct}%`,background:'var(--terra)',borderRadius:2,transition:'width .6s ease'}}/>
+            </div>
+            <span style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:700,color:'var(--terra)'}}>{pct}%</span>
+          </div>
+        </div>
+
+        <div style={{position:'relative'}}>
+          {/* Track line */}
+          <div style={{position:'absolute',left:15,top:16,bottom:16,width:2,background:'var(--cream-d)',borderRadius:1,zIndex:0}}/>
+          {/* Fill line */}
+          <div style={{position:'absolute',left:15,top:16,width:2,borderRadius:1,zIndex:1,background:'linear-gradient(to bottom, var(--terra), #E07A5F)',height:`${pct}%`,transition:'height .6s ease'}}/>
+
+          {steps.map((step, i) => (
+            <div key={i} style={{display:'flex',alignItems:'flex-start',gap:14,marginBottom:i < steps.length-1 ? 16 : 0,position:'relative',zIndex:2}}>
+              {/* Dot */}
+              <div style={{
+                width:32, height:32, borderRadius:'50%', flexShrink:0,
+                display:'flex', alignItems:'center', justifyContent:'center',
+                background: step.status==='done' ? 'var(--terra)' : step.status==='active' ? 'rgba(196,89,58,.1)' : 'var(--cream-d)',
+                border: `2px solid ${step.status==='done' ? 'var(--terra)' : step.status==='active' ? 'var(--terra)' : 'var(--cream-dd)'}`,
+                transition: 'all .3s',
+                boxShadow: step.status==='active' ? '0 0 0 4px rgba(196,89,58,.08)' : 'none',
+              }}>
+                {step.status === 'done' ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12"/>
+                  </svg>
+                ) : (
+                  <span style={{fontSize:12, filter:step.status==='pending' ? 'grayscale(1) opacity(0.3)' : 'none'}}>{step.icon}</span>
+                )}
+              </div>
+              {/* Label */}
+              <div style={{flex:1, paddingTop:4}}>
+                <div style={{
+                  fontFamily:'var(--fc)', fontSize:13, fontWeight:700, letterSpacing:.3,
+                  color: step.status==='pending' ? 'var(--cream-dd)' : step.status==='active' ? 'var(--terra)' : 'var(--charcoal)',
+                  marginBottom:2, display:'flex', alignItems:'center', gap:6,
+                }}>
+                  {step.label}
+                  {step.status === 'active' && (
+                    <span style={{display:'inline-block',width:6,height:6,borderRadius:'50%',background:'var(--terra)',animation:'pulse 1.8s ease-in-out infinite'}}/>
+                  )}
+                </div>
+                <div style={{fontSize:11, color:step.status==='pending' ? 'rgba(44,44,40,.2)' : 'var(--charcoal-l)', lineHeight:1.4}}>
+                  {step.sublabel}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Disputed warning */}
+        {job.status === 'disputed' && (
+          <div style={{marginTop:14,background:'rgba(226,75,74,.06)',border:'1px solid rgba(226,75,74,.2)',borderRadius:8,padding:'10px 14px',fontSize:12,color:'#E24B4A',lineHeight:1.5}}>
+            ⚠ Dispute raised — our team is reviewing within 24 hours. Payment remains in escrow until resolved.
+          </div>
+        )}
+        {/* Completion pending prompt */}
+        {completionData && job.status !== 'completed' && job.status !== 'disputed' && (
+          <div style={{marginTop:14,background:'rgba(61,170,106,.06)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'10px 14px',fontSize:12,color:'#1a6e35',lineHeight:1.5}}>
+            ✓ Work submitted — scroll down to review the report, photos and confirm completion.
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <>
@@ -856,6 +1014,8 @@ export default function HomeDashboard() {
                             <div className="dp-meta">Budget R{selectedJob.budget.toLocaleString()} · {selectedJob.urgency} · Posted {selectedJob.posted}</div>
                           </div>
                           <div className="dp-body">
+                            {/* ── JOB STATUS TIMELINE ── */}
+                            <JobTimeline job={selectedJob} completionData={completions[selectedJob.id]||null} jobQuotes={quotes}/>
                             {selectedJob.bids.length===0?(
                               <div style={{textAlign:'center',padding:'40px 0',color:'var(--charcoal-l)'}}>
                                 <div style={{fontSize:32,marginBottom:12}}>⏳</div>
