@@ -1,10 +1,8 @@
-cat > ~/thulanimolefi-web/lungisa/vercel.json << 'EOF'
 {
-  "crons": [
-    {
-      "path": "/api/expire-jobs",
-      "schedule": "0 22 * * *"
-    }
-  ]
-}
-EOF
+    "crons": [
+      {
+        "path": "/api/expire-jobs",
+        "schedule": "0 22 * * *"
+      }
+    ]
+  }
