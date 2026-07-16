@@ -1094,45 +1094,109 @@ export default function HomeDashboard() {
                                       {/* ── QUOTE RECEIVED ── */}
                                       {bidHasQuote&&jobQuote.status==='submitted'&&isOpen&&!jobHasAccepted&&(
                                         <div className="quote-box received">
-                                          <div style={{fontFamily:'var(--fc)',fontSize:10,fontWeight:700,letterSpacing:2,textTransform:'uppercase',color:'#1a6e35',marginBottom:12,display:'flex',alignItems:'center',gap:6}}>
+                                          {/* Header */}
+                                          <div style={{fontFamily:'var(--fc)',fontSize:10,fontWeight:700,letterSpacing:2,textTransform:'uppercase',color:'#1a6e35',marginBottom:4,display:'flex',alignItems:'center',gap:6}}>
                                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                                             Formal quote from {bid.name.split(' ')[0]}
                                           </div>
-                                          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:12}}>
-                                            <div style={{background:'var(--white)',borderRadius:8,padding:'12px 14px',border:'1px solid var(--cream-d)'}}>
-                                              <div style={{fontFamily:'var(--fc)',fontSize:9,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'var(--charcoal-l)',marginBottom:4}}>Labour charge</div>
-                                              <div style={{fontFamily:'var(--fd)',fontSize:28,color:'var(--terra)',lineHeight:1}}>R{jobQuote.labourAmount.toLocaleString()}</div>
-                                              <div style={{fontSize:10,color:'var(--charcoal-l)',marginTop:3}}>Fixed · into escrow</div>
-                                            </div>
-                                            <div style={{background:'var(--white)',borderRadius:8,padding:'12px 14px',border:'1px solid var(--cream-d)'}}>
-                                              <div style={{fontFamily:'var(--fc)',fontSize:9,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'var(--charcoal-l)',marginBottom:4}}>Materials est.</div>
-                                              <div style={{fontFamily:'var(--fd)',fontSize:28,color:'var(--charcoal)',lineHeight:1}}>R{jobQuote.materialsEstimate.toLocaleString()}</div>
-                                              <div style={{fontSize:10,color:'var(--charcoal-l)',marginTop:3}}>You pay separately</div>
-                                            </div>
+                                          {/* Quote type badge */}
+                                          <div style={{display:'inline-flex',alignItems:'center',gap:5,background:jobQuote.materialsCoveredBy==='tradesperson'?'rgba(196,89,58,.1)':'rgba(61,170,106,.08)',border:`1px solid ${jobQuote.materialsCoveredBy==='tradesperson'?'rgba(196,89,58,.25)':'rgba(61,170,106,.2)'}`,borderRadius:20,padding:'3px 10px',fontSize:11,fontWeight:600,color:jobQuote.materialsCoveredBy==='tradesperson'?'var(--terra-d)':'#1a6e35',marginBottom:14}}>
+                                            {jobQuote.materialsCoveredBy==='tradesperson'?'📦 All-in quote':'🏪 Labour only quote'}
                                           </div>
+
+                                          {jobQuote.materialsCoveredBy==='homeowner' ? (
+                                            // ── FLOW A: Labour only ─────────────────────────────────
+                                            <>
+                                              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:12}}>
+                                                {/* Labour box */}
+                                                <div style={{background:'var(--white)',borderRadius:8,padding:'12px 14px',border:'2px solid rgba(61,170,106,.3)'}}>
+                                                  <div style={{fontFamily:'var(--fc)',fontSize:9,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',color:'#1a6e35',marginBottom:4}}>Labour charge</div>
+                                                  <div style={{fontFamily:'var(--fd)',fontSize:28,color:'var(--terra)',lineHeight:1}}>R{jobQuote.labourAmount.toLocaleString()}</div>
+                                                  <div style={{display:'flex',alignItems:'center',gap:4,marginTop:4}}>
+                                                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#3DAA6A" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                                                    <span style={{fontSize:10,color:'#1a6e35',fontWeight:600}}>Goes into escrow</span>
+                                                  </div>
+                                                </div>
+                                                {/* Materials box */}
+                                                <div style={{background:'rgba(232,160,32,.04)',borderRadius:8,padding:'12px 14px',border:'1.5px dashed rgba(232,160,32,.4)'}}>
+                                                  <div style={{fontFamily:'var(--fc)',fontSize:9,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',color:'#854F0B',marginBottom:4}}>Materials est.</div>
+                                                  <div style={{fontFamily:'var(--fd)',fontSize:28,color:'var(--charcoal)',lineHeight:1}}>~R{jobQuote.materialsEstimate.toLocaleString()}</div>
+                                                  <div style={{display:'flex',alignItems:'center',gap:4,marginTop:4}}>
+                                                    <span style={{fontSize:10,color:'#854F0B',fontWeight:600}}>⚠ You pay separately</span>
+                                                  </div>
+                                                </div>
+                                              </div>
+                                              {/* Cost summary */}
+                                              <div style={{background:'var(--white)',borderRadius:8,border:'1px solid var(--cream-d)',padding:'10px 14px',marginBottom:12}}>
+                                                <div style={{display:'flex',justifyContent:'space-between',marginBottom:5,fontSize:12,color:'var(--charcoal-l)'}}>
+                                                  <span>Labour (into escrow)</span>
+                                                  <span style={{fontWeight:600,color:'var(--charcoal)'}}>R{jobQuote.labourAmount.toLocaleString()}</span>
+                                                </div>
+                                                <div style={{display:'flex',justifyContent:'space-between',marginBottom:8,fontSize:12,color:'var(--charcoal-l)'}}>
+                                                  <span>Materials (you pay supplier)</span>
+                                                  <span style={{fontWeight:600,color:'#854F0B'}}>~R{jobQuote.materialsEstimate.toLocaleString()}</span>
+                                                </div>
+                                                <div style={{borderTop:'1px solid var(--cream-d)',paddingTop:8,display:'flex',justifyContent:'space-between'}}>
+                                                  <span style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:700,letterSpacing:.5,color:'var(--charcoal)'}}>Estimated total job cost</span>
+                                                  <span style={{fontFamily:'var(--fd)',fontSize:18,color:'var(--charcoal)'}}>~R{(jobQuote.labourAmount+jobQuote.materialsEstimate).toLocaleString()}</span>
+                                                </div>
+                                              </div>
+                                              <div style={{background:'rgba(232,160,32,.06)',border:'1px solid rgba(232,160,32,.2)',borderRadius:6,padding:'8px 12px',marginBottom:12,fontSize:12,color:'#854F0B',lineHeight:1.6}}>
+                                                💡 You will pay <strong>R{jobQuote.labourAmount.toLocaleString()}</strong> to Lungisa (held in escrow). Buy materials separately — the tradesperson will guide you on what to get.
+                                              </div>
+                                            </>
+                                          ) : (
+                                            // ── FLOW B: All-in (tradesperson supplies materials) ────
+                                            <>
+                                              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:12}}>
+                                                {/* Labour box */}
+                                                <div style={{background:'var(--white)',borderRadius:8,padding:'12px 14px',border:'1px solid var(--cream-d)'}}>
+                                                  <div style={{fontFamily:'var(--fc)',fontSize:9,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'var(--charcoal-l)',marginBottom:4}}>Labour</div>
+                                                  <div style={{fontFamily:'var(--fd)',fontSize:24,color:'var(--charcoal)',lineHeight:1}}>R{jobQuote.labourAmount.toLocaleString()}</div>
+                                                  <div style={{fontSize:10,color:'var(--charcoal-l)',marginTop:3}}>Included in total</div>
+                                                </div>
+                                                {/* Materials box */}
+                                                <div style={{background:'var(--white)',borderRadius:8,padding:'12px 14px',border:'1px solid var(--cream-d)'}}>
+                                                  <div style={{fontFamily:'var(--fc)',fontSize:9,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'var(--charcoal-l)',marginBottom:4}}>Materials</div>
+                                                  <div style={{fontFamily:'var(--fd)',fontSize:24,color:'var(--charcoal)',lineHeight:1}}>R{jobQuote.materialsEstimate.toLocaleString()}</div>
+                                                  <div style={{fontSize:10,color:'var(--charcoal-l)',marginTop:3}}>Included in total</div>
+                                                </div>
+                                              </div>
+                                              {/* Total escrow box */}
+                                              <div style={{background:'rgba(196,89,58,.06)',border:'2px solid rgba(196,89,58,.25)',borderRadius:8,padding:'12px 16px',marginBottom:12}}>
+                                                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+                                                  <div>
+                                                    <div style={{fontFamily:'var(--fc)',fontSize:10,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',color:'var(--terra-d)',marginBottom:2}}>Total into escrow</div>
+                                                    <div style={{fontSize:11,color:'var(--charcoal-l)'}}>Everything included — nothing more to pay</div>
+                                                  </div>
+                                                  <div style={{fontFamily:'var(--fd)',fontSize:32,color:'var(--terra)'}}>R{(jobQuote.labourAmount+jobQuote.materialsEstimate).toLocaleString()}</div>
+                                                </div>
+                                                <div style={{display:'flex',alignItems:'center',gap:4,fontSize:11,color:'#1a6e35',fontWeight:600}}>
+                                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                                                  Held in escrow · Released only when you confirm job done
+                                                </div>
+                                              </div>
+                                              <div style={{background:'rgba(61,170,106,.06)',border:'1px solid rgba(61,170,106,.15)',borderRadius:6,padding:'8px 12px',marginBottom:12,fontSize:12,color:'#1a6e35',lineHeight:1.6}}>
+                                                ✓ All-in price. The tradesperson supplies and pays for materials. You pay one amount — <strong>R{(jobQuote.labourAmount+jobQuote.materialsEstimate).toLocaleString()}</strong> — into escrow.
+                                              </div>
+                                            </>
+                                          )}
+
+                                          {/* Notes */}
                                           {jobQuote.notes&&(
                                             <div style={{background:'var(--white)',borderRadius:8,padding:'10px 12px',border:'1px solid var(--cream-d)',marginBottom:12,fontSize:13,color:'var(--charcoal-l)',lineHeight:1.6}}>
-                                              <div style={{fontFamily:'var(--fc)',fontSize:9,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',color:'var(--charcoal-l)',marginBottom:4}}>Notes</div>
+                                              <div style={{fontFamily:'var(--fc)',fontSize:9,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',color:'var(--charcoal-l)',marginBottom:4}}>Tradesperson notes</div>
                                               {jobQuote.notes}
                                             </div>
                                           )}
-                                          {/* Materials coverage badge */}
-                                          <div style={{background:jobQuote.materialsCoveredBy==='tradesperson'?'rgba(196,89,58,.06)':'rgba(61,170,106,.06)',border:`1px solid ${jobQuote.materialsCoveredBy==='tradesperson'?'rgba(196,89,58,.2)':'rgba(61,170,106,.15)'}`,borderRadius:6,padding:'8px 12px',marginBottom:12,fontSize:12,color:'var(--charcoal-l)'}}>
-                                            {jobQuote.materialsCoveredBy==='tradesperson'
-                                              ? '📦 All-in quote — tradesperson supplies materials. Full amount goes into escrow.'
-                                              : '💡 Labour only — materials are your cost regardless of tradesperson chosen.'}
-                                          </div>
-                                          {/* Escrow amount preview */}
-                                          {jobQuote.materialsCoveredBy==='tradesperson'&&(
-                                            <div style={{background:'var(--white)',borderRadius:8,padding:'10px 14px',border:'1px solid var(--cream-d)',marginBottom:12,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                                              <span style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:600,letterSpacing:1,textTransform:'uppercase',color:'var(--charcoal-l)'}}>Total into escrow</span>
-                                              <span style={{fontFamily:'var(--fd)',fontSize:22,color:'var(--terra)'}}>R{(jobQuote.labourAmount+jobQuote.materialsEstimate).toLocaleString()}</span>
-                                            </div>
-                                          )}
+
+                                          {/* Accept buttons */}
                                           <div style={{display:'flex',gap:8}}>
                                             <button className="btn btn-green" style={{flex:1,justifyContent:'center'}}
                                               onClick={()=>acceptQuote(selectedJob.id,bid.id,bid.tradespersonId)}>
-                                              ✓ Accept — R{jobQuote.materialsCoveredBy==='tradesperson'?(jobQuote.labourAmount+jobQuote.materialsEstimate).toLocaleString():jobQuote.labourAmount.toLocaleString()} {jobQuote.materialsCoveredBy==='tradesperson'?'all-in':'labour'}
+                                              {jobQuote.materialsCoveredBy==='tradesperson'
+                                                ? `✓ Accept all-in — R${(jobQuote.labourAmount+jobQuote.materialsEstimate).toLocaleString()} into escrow`
+                                                : `✓ Accept labour quote — R${jobQuote.labourAmount.toLocaleString()} into escrow`}
                                             </button>
                                             <button className="btn btn-ghost" onClick={()=>acceptBid(selectedJob.id,bid.id,bid.name)}>
                                               Use original R{bid.price}
@@ -1262,12 +1326,62 @@ export default function HomeDashboard() {
                                         const agreedAmount = bid.finalAmount||bid.counterAmount||bid.price
                                         return (
                                           <>
-                                            <div style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'var(--green)',marginBottom:6}}>✓ Bid accepted — pay to confirm</div>
-                                            <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:10}}>
-                                              <div style={{fontFamily:'var(--fd)',fontSize:32,color:'var(--terra)'}}>R{agreedAmount.toLocaleString()}</div>
-                                              {agreedAmount!==bid.price&&(<div style={{fontSize:12,color:'var(--charcoal-l)',textDecoration:'line-through'}}>R{bid.price}</div>)}
-                                              <div style={{fontSize:12,color:'var(--charcoal-l)'}}>agreed amount</div>
-                                            </div>
+                                            <div style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'var(--green)',marginBottom:10}}>✓ Quote accepted — pay to confirm</div>
+
+                                            {/* Payment breakdown receipt */}
+                                            {(() => {
+                                              const q = quotes[selectedJob.id]
+                                              const isAllIn = q?.materialsCoveredBy === 'tradesperson'
+                                              const isLabourOnly = q?.materialsCoveredBy === 'homeowner' && q?.labourAmount > 0
+                                              if(isLabourOnly) return (
+                                                <div style={{background:'var(--white)',borderRadius:8,border:'1px solid var(--cream-d)',padding:'12px 16px',marginBottom:12}}>
+                                                  <div style={{fontFamily:'var(--fc)',fontSize:9,fontWeight:700,letterSpacing:2,textTransform:'uppercase',color:'var(--charcoal-l)',marginBottom:10}}>Payment summary</div>
+                                                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:6,fontSize:13}}>
+                                                    <span style={{color:'var(--charcoal-l)'}}>Labour (Lungisa escrow)</span>
+                                                    <span style={{fontWeight:700,color:'var(--terra)'}}>R{q.labourAmount.toLocaleString()}</span>
+                                                  </div>
+                                                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:10,fontSize:13}}>
+                                                    <span style={{color:'var(--charcoal-l)'}}>Materials (you pay supplier)</span>
+                                                    <span style={{fontWeight:700,color:'#854F0B'}}>~R{q.materialsEstimate.toLocaleString()}</span>
+                                                  </div>
+                                                  <div style={{borderTop:'1px solid var(--cream-d)',paddingTop:8,display:'flex',justifyContent:'space-between'}}>
+                                                    <span style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:700,color:'var(--charcoal)'}}>Estimated total job</span>
+                                                    <span style={{fontFamily:'var(--fd)',fontSize:18,color:'var(--charcoal)'}}>~R{(q.labourAmount+q.materialsEstimate).toLocaleString()}</span>
+                                                  </div>
+                                                  <div style={{marginTop:8,fontSize:11,color:'#854F0B',background:'rgba(232,160,32,.06)',border:'1px solid rgba(232,160,32,.15)',borderRadius:6,padding:'6px 10px'}}>
+                                                    ⚠ You pay the R{q.materialsEstimate.toLocaleString()} materials cost separately to the supplier — not through Lungisa.
+                                                  </div>
+                                                </div>
+                                              )
+                                              if(isAllIn) return (
+                                                <div style={{background:'var(--white)',borderRadius:8,border:'1px solid var(--cream-d)',padding:'12px 16px',marginBottom:12}}>
+                                                  <div style={{fontFamily:'var(--fc)',fontSize:9,fontWeight:700,letterSpacing:2,textTransform:'uppercase',color:'var(--charcoal-l)',marginBottom:10}}>Payment summary</div>
+                                                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:6,fontSize:13}}>
+                                                    <span style={{color:'var(--charcoal-l)'}}>Labour</span>
+                                                    <span style={{color:'var(--charcoal)'}}>R{q.labourAmount.toLocaleString()}</span>
+                                                  </div>
+                                                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:10,fontSize:13}}>
+                                                    <span style={{color:'var(--charcoal-l)'}}>Materials (tradesperson supplies)</span>
+                                                    <span style={{color:'var(--charcoal)'}}>R{q.materialsEstimate.toLocaleString()}</span>
+                                                  </div>
+                                                  <div style={{borderTop:'1px solid var(--cream-d)',paddingTop:8,display:'flex',justifyContent:'space-between'}}>
+                                                    <span style={{fontFamily:'var(--fc)',fontSize:11,fontWeight:700,color:'var(--charcoal)'}}>Total into escrow</span>
+                                                    <span style={{fontFamily:'var(--fd)',fontSize:20,color:'var(--terra)'}}>R{agreedAmount.toLocaleString()}</span>
+                                                  </div>
+                                                  <div style={{marginTop:8,fontSize:11,color:'#1a6e35',background:'rgba(61,170,106,.06)',border:'1px solid rgba(61,170,106,.15)',borderRadius:6,padding:'6px 10px'}}>
+                                                    ✓ All-in price. Nothing more to pay after this.
+                                                  </div>
+                                                </div>
+                                              )
+                                              // No quote — direct bid acceptance
+                                              return (
+                                                <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:10}}>
+                                                  <div style={{fontFamily:'var(--fd)',fontSize:32,color:'var(--terra)'}}>R{agreedAmount.toLocaleString()}</div>
+                                                  {agreedAmount!==bid.price&&(<div style={{fontSize:12,color:'var(--charcoal-l)',textDecoration:'line-through'}}>R{bid.price}</div>)}
+                                                  <div style={{fontSize:12,color:'var(--charcoal-l)'}}>agreed amount</div>
+                                                </div>
+                                              )
+                                            })()}
                                             <div className="escrow-note">🔒 Your payment is held in escrow. <strong>{bid.name.split(' ')[0]}</strong> only gets paid once you confirm the job is done.</div>
                                             <div onClick={()=>releasePayment(selectedJob.id,agreedAmount)}
                                               style={{border:'1.5px solid var(--cream-d)',borderRadius:8,padding:'14px',background:'var(--white)',cursor:'pointer',textAlign:'center',transition:'all .18s',marginTop:8}}
