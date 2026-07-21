@@ -12,6 +12,7 @@ export default function LandingPage() {
   const [mounted, setMounted] = useState(false)
   const [homeownerQR, setHomeownerQR] = useState('')
   const [contactOpen, setContactOpen] = useState(false)
+  const [menuOpen, setMenuOpen]         = useState(false)
   const [contactName, setContactName] = useState('')
   const [contactEmail, setContactEmail] = useState('')
   const [contactMessage, setContactMessage] = useState('')
@@ -64,6 +65,7 @@ export default function LandingPage() {
     @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
     @keyframes countUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 
     /* NAV */
     .nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:0 40px;height:68px;display:flex;align-items:center;justify-content:space-between;transition:all .3s}
@@ -221,9 +223,23 @@ export default function LandingPage() {
     .trust-dot{width:8px;height:8px;border-radius:50%;background:var(--green)}
 
     /* RESPONSIVE */
+    .hamburger{display:none;flex-direction:column;gap:5px;cursor:pointer;padding:8px;background:transparent;border:none;z-index:110}
+    .hamburger span{display:block;width:22px;height:2px;background:var(--charcoal);border-radius:2px;transition:all .3s}
+    .hamburger.open span:nth-child(1){transform:translateY(7px) rotate(45deg)}
+    .hamburger.open span:nth-child(2){opacity:0;transform:scaleX(0)}
+    .hamburger.open span:nth-child(3){transform:translateY(-7px) rotate(-45deg)}
+    .mobile-menu{position:fixed;top:0;right:0;bottom:0;width:280px;background:var(--charcoal);z-index:105;transform:translateX(100%);transition:transform .3s ease;padding:80px 28px 40px;display:flex;flex-direction:column;gap:8px;box-shadow:-8px 0 40px rgba(0,0,0,.3)}
+    .mobile-menu.open{transform:translateX(0)}
+    .mobile-menu-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:104;opacity:0;pointer-events:none;transition:opacity .3s}
+    .mobile-menu-overlay.open{opacity:1;pointer-events:all}
+    .mm-link{font-family:var(--fc);font-size:18px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:rgba(245,240,232,.6);padding:14px 0;border-bottom:1px solid rgba(255,255,255,.06);cursor:pointer;text-decoration:none;transition:color .15s;display:block}
+    .mm-link:hover{color:var(--terra-l)}
+    .mm-cta{margin-top:24px;background:var(--terra);color:#fff;border:none;padding:16px;border-radius:8px;font-family:var(--fc);font-size:14px;font-weight:700;letter-spacing:2px;text-transform:uppercase;cursor:pointer;width:100%;transition:background .15s}
+    .mm-cta:hover{background:var(--terra-l)}
     @media(max-width:900px){
       .nav{padding:0 20px}
       .nav-links{display:none}
+      .hamburger{display:flex}
       .hero{padding:100px 20px 60px}
       .hero-card{display:none}
       .hero-h1{font-size:72px}
@@ -261,11 +277,15 @@ export default function LandingPage() {
     .contact-done{text-align:center;padding:20px 0}
     .contact-err{background:rgba(226,75,74,.08);border:1px solid rgba(226,75,74,.2);border-radius:6px;padding:10px 14px;font-size:13px;color:#E24B4A;margin-top:8px}
 
+    .sticky-cta{display:none;position:fixed;bottom:0;left:0;right:0;z-index:90;padding:12px 16px;background:var(--charcoal);border-top:1px solid rgba(255,255,255,.08);gap:10px}
+    @media(max-width:900px){.sticky-cta{display:flex}}
+    .sticky-cta-primary{flex:1;background:var(--terra);color:#fff;border:none;padding:13px;border-radius:8px;font-family:var(--fc);font-size:13px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;text-align:center}
+    .sticky-cta-secondary{flex:1;background:transparent;color:rgba(245,240,232,.7);border:1px solid rgba(255,255,255,.15);padding:13px;border-radius:8px;font-family:var(--fc);font-size:13px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;cursor:pointer;text-align:center}
     @media(max-width:480px){
       .stats-inner{grid-template-columns:1fr 1fr;gap:12px}
       .hero-h1{font-size:56px}
-      .hero-btns{flex-direction:column}
-      .btn-primary,.btn-secondary{width:100%;justify-content:center}
+      .hero-btns{flex-direction:column;gap:12px!important}
+      .btn-primary,.btn-secondary{width:100%;justify-content:center;padding:16px!important}
       .footer-top{grid-template-columns:1fr}
     }
   `
@@ -304,9 +324,9 @@ export default function LandingPage() {
   ]
 
   const testimonials = [
-    { stars:5, text:'"Got 4 bids within an hour of posting. Negotiated down from R1,200 to R850. The plumber was verified, on time, and the escrow meant I never had to worry about paying upfront."', name:'Nomsa K.', role:'Homeowner · Sandton', init:'NK' },
-    { stars:5, text:'"I was sceptical at first but Lungisa changed how I get work. No more cold calling or relying on word of mouth. I now get 3-4 jobs a week in my area."', name:'Brian M.', role:'Plumber · Fourways', init:'BM' },
-    { stars:5, text:'"The negotiation feature is what sold me. I posted a painting job, got 6 bids, and negotiated to exactly what I wanted to pay. Brilliant concept."', name:'Thabo D.', role:'Homeowner · Midrand', init:'TD' },
+    { stars:5, text:'"Posted a job about a burst pipe and had 3 bids within minutes. Chose the one with the best rating and negotiated the price. The escrow feature meant I only paid when the job was done properly."', name:'Lerato L.', role:'Homeowner · Randburg', init:'LL' },
+    { stars:5, text:'"As a plumber in Fourways I was always relying on word of mouth. Lungisa changed that completely. Jobs come to me now. And I only pay 5% when I actually get paid — that is fair."', name:'Zuki S.', role:'Electrician · Fourways', init:'ZS' },
+    { stars:5, text:'"What I love most is knowing exactly where my job is at all times. The progress tracker tells me everything — from bids received to payment in escrow. No more chasing and wondering."', name:'Kele L.', role:'Homeowner · Centurion', init:'KL' },
   ]
 
   const navClass = mounted ? `nav${scrolled?' scrolled':''}` : 'nav'
@@ -355,7 +375,23 @@ export default function LandingPage() {
           <a href="#install" className="nav-link">Get the app</a>
           <button className="nav-cta" onClick={()=>router.push('/auth')}>Get started</button>
         </div>
+        {/* Hamburger — mobile only */}
+        <button className={`hamburger${menuOpen?' open':''}`} onClick={()=>setMenuOpen(m=>!m)} aria-label="Menu">
+          <span/><span/><span/>
+        </button>
       </nav>
+
+      {/* Mobile menu overlay */}
+      <div className={`mobile-menu-overlay${menuOpen?' open':''}`} onClick={()=>setMenuOpen(false)}/>
+      {/* Mobile menu drawer */}
+      <div className={`mobile-menu${menuOpen?' open':''}`}>
+        <a href="#how-it-works" className="mm-link" onClick={()=>setMenuOpen(false)}>How it works</a>
+        <a href="#why" className="mm-link" onClick={()=>setMenuOpen(false)}>Why Lungisa</a>
+        <a href="#trades" className="mm-link" onClick={()=>setMenuOpen(false)}>Trades</a>
+        <a href="#install" className="mm-link" onClick={()=>setMenuOpen(false)}>Get the app</a>
+        <button className="mm-cta" onClick={()=>{setMenuOpen(false);router.push('/auth')}}>Post a job free →</button>
+        <button className="mm-cta" style={{marginTop:10,background:'transparent',border:'1px solid rgba(255,255,255,.2)',color:'rgba(245,240,232,.7)'}} onClick={()=>{setMenuOpen(false);router.push('/auth?role=tradesperson')}}>I&apos;m a tradesperson</button>
+      </div>
 
       {/* HERO */}
       <section className="hero">
@@ -365,6 +401,10 @@ export default function LandingPage() {
           <div className="hero-tag">
             <div className="hero-dot"/>
             South Africa&apos;s home repair marketplace
+          </div>
+          <div style={{display:'inline-flex',alignItems:'center',gap:8,background:'rgba(232,160,32,.12)',border:'1px solid rgba(232,160,32,.3)',borderRadius:100,padding:'5px 14px',marginBottom:20,animation:'fadeUp .6s .05s ease both'}}>
+            <span style={{fontSize:11}}>📍</span>
+            <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:700,letterSpacing:2,textTransform:'uppercase',color:'#E8A020'}}>Launching Johannesburg &amp; Pretoria · 1 August 2026</span>
           </div>
           <h1 className="hero-h1">FIX IT.<br/><span>RIGHT.</span></h1>
           <p className="hero-sub">
@@ -426,7 +466,7 @@ export default function LandingPage() {
           {[
             {n:'5%', l:'Commission on success'},
             {n:'R0', l:'Cost to post a job'},
-            {n:'24h', l:'Average first bid'},
+            {n:'50+', l:'Founding tradespeople'},
             {n:'100%', l:'Escrow protected'},
           ].map((s,i)=>(
             <div key={i} className="stat-item">
@@ -557,8 +597,7 @@ export default function LandingPage() {
                   /* eslint-disable-next-line @next/next/no-img-element */
                   <img src={homeownerQR} alt="Homeowner QR code — scan to install Lungisa" style={{width:'100%',height:'100%',borderRadius:6}}/>
                 ) : (
-                  <div style={{width:160,height:160,background:'var(--cream-d)',borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,color:'var(--charcoal-l)'}}>
-                    Loading...
+                  <div style={{width:160,height:160,borderRadius:8,background:'linear-gradient(90deg,#e8e0d4 25%,#f0e8dc 50%,#e8e0d4 75%)',backgroundSize:'200% 100%',animation:'shimmer 1.5s infinite'}}>
                   </div>
                 )}
               </div>
@@ -605,8 +644,7 @@ export default function LandingPage() {
                   /* eslint-disable-next-line @next/next/no-img-element */
                   <img src={tradespersonQR} alt="Tradesperson QR code — scan to install Lungisa" style={{width:'100%',height:'100%',borderRadius:6}}/>
                 ) : (
-                  <div style={{width:160,height:160,background:'var(--cream-d)',borderRadius:8,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,color:'var(--charcoal-l)'}}>
-                    Loading...
+                  <div style={{width:160,height:160,borderRadius:8,background:'linear-gradient(90deg,#e8e0d4 25%,#f0e8dc 50%,#e8e0d4 75%)',backgroundSize:'200% 100%',animation:'shimmer 1.5s infinite'}}>
                   </div>
                 )}
               </div>
@@ -696,7 +734,7 @@ export default function LandingPage() {
               <div className="footer-col-h">Company</div>
               <a href="https://vaultlinkafrica.com" className="footer-link" target="_blank" rel="noreferrer">VaultLink Africa</a>
               <a onClick={()=>{setContactOpen(true);setContactDone(false)}} className="footer-link" style={{cursor:'pointer'}}>Contact us</a>
-              <a onClick={()=>{setContactOpen(true);setContactDone(false)}} className="footer-link" style={{cursor:'pointer'}}>Support</a>
+              <a href="mailto:info@lungiza.co.za?subject=Support%20request%20%E2%80%94%20Lungisa" className="footer-link">Support</a>
               <a href="#install" className="footer-link">Get the app</a>
             </div>
           </div>
@@ -706,6 +744,12 @@ export default function LandingPage() {
           </div>
         </div>
       </footer>
+      {/* ── MOBILE STICKY CTA ──────────────────────────────────────── */}
+      <div className="sticky-cta">
+        <button className="sticky-cta-primary" onClick={()=>router.push('/auth')}>Post a job free →</button>
+        <button className="sticky-cta-secondary" onClick={()=>router.push('/auth?role=tradesperson')}>Join as tradesperson</button>
+      </div>
+
       {/* ── CONTACT MODAL ──────────────────────────────────────────── */}
       {contactOpen&&(
         <div className="contact-overlay" onClick={e=>{if(e.target===e.currentTarget)setContactOpen(false)}}>
