@@ -25,22 +25,40 @@ function getTimeAgo(d: string) {
 
 function getNotifIcon(type: string) {
   const m: Record<string, string> = {
-    new_bid:           '🔨',
-    bid_accepted:      '✅',
-    counter_offer:     '💬',
-    payment_confirmed: '🔒',
-    job_completed:     '🎉',
+    new_bid:                  '🔨',
+    bid_accepted:             '✅',
+    counter_offer:            '💬',
+    payment_confirmed:        '🔒',
+    payment_sent:             '💸',
+    job_completed:            '🎉',
+    job_completion_submitted: '📸',
+    quote_requested:          '📋',
+    quote_submitted:          '📋',
+    dispute_raised:           '⚠️',
+    job_expired:              '⏰',
+    id_approved:              '✓',
+    id_rejected:              '✗',
+    payment_processing:       '⏳',
   }
   return m[type] || '🔔'
 }
 
 function getNotifAccent(type: string, dark: boolean) {
   const m: Record<string, string> = {
-    new_bid:           '#C4593A',
-    bid_accepted:      '#3DAA6A',
-    counter_offer:     '#E8A020',
-    payment_confirmed: '#3DAA6A',
-    job_completed:     '#3DAA6A',
+    new_bid:                  '#C4593A',
+    bid_accepted:             '#3DAA6A',
+    counter_offer:            '#E8A020',
+    payment_confirmed:        '#3DAA6A',
+    payment_sent:             '#3DAA6A',
+    job_completed:            '#3DAA6A',
+    job_completion_submitted: '#3DAA6A',
+    quote_requested:          '#C4593A',
+    quote_submitted:          '#3DAA6A',
+    dispute_raised:           '#E24B4A',
+    job_expired:              '#E8A020',
+    id_approved:              '#3DAA6A',
+    id_rejected:              '#E24B4A',
+    payment_processing:       '#E8A020',
   }
   return m[type] || (dark ? 'rgba(245,240,232,.3)' : '#5A5952')
 }
@@ -63,12 +81,18 @@ export default function NotificationBell({ theme }: Props) {
     loadNotifications()
 
     // Real-time: new notification arrives → reload + badge updates instantly
-    const channel = supabase
-      .channel('notifications-bell')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, () => {
-        loadNotifications()
-      })
-      .subscribe()
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if(!session?.user) return
+      const channel = supabase
+        .channel('notifications-bell')
+        .on('postgres_changes', {
+          event: 'INSERT', schema: 'public', table: 'notifications',
+          filter: `user_id=eq.${session.user.id}`,
+        }, () => { loadNotifications() })
+        .subscribe()
+      // Store channel ref for cleanup
+      ;(window as any).__notifChannel = channel
+    })
 
     // Close dropdown on outside click
     function handleClick(e: MouseEvent) {
@@ -77,7 +101,7 @@ export default function NotificationBell({ theme }: Props) {
     document.addEventListener('mousedown', handleClick)
 
     return () => {
-      supabase.removeChannel(channel)
+      if((window as any).__notifChannel) supabase.removeChannel((window as any).__notifChannel)
       document.removeEventListener('mousedown', handleClick)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps

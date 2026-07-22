@@ -221,6 +221,11 @@ function DashboardInner() {
   const [bidEta, setBidEta]       = useState('30 mins')
   const [bidNote, setBidNote]     = useState('')
   const [myBids, setMyBids]       = useState<Bid[]>([])
+  // Job feed filters
+  const [filterCategory, setFilterCategory] = useState<string>('all')
+  const [filterUrgency,  setFilterUrgency]  = useState<string>('all')
+  const [filterBudget,   setFilterBudget]   = useState<string>('all')
+  const [filterSearch,   setFilterSearch]   = useState<string>('')
   const [filter, setFilter]       = useState('all')
   const [toasts, setToasts]       = useState<{id:number,title:string,sub:string,alert:boolean}[]>([])
   const [profile, setProfile]     = useState<any>(null)
@@ -525,7 +530,7 @@ function DashboardInner() {
     try{
       const {data:{session}}=await supabase.auth.getSession()
       if(!session?.user) return
-      const {data}=await supabase.from('payments').select('*').eq('tradesperson_id',session.user.id)
+      const {data}=await supabase.from('payments').select('*,jobs(title,id)').eq('tradesperson_id',session.user.id).order('created_at',{ascending:false})
       if(data){
         const released=data.filter((p:any)=>p.status==='released')
         const held=data.filter((p:any)=>p.status==='held')
@@ -820,6 +825,13 @@ function DashboardInner() {
   const visibleJobs=jobs.filter(j=>{
     if(filter==='urgent') return j.urgency==='today'||j.urgency==='emergency'
     if(filter==='new') return j.bids===0&&!j.submitted
+    // Advanced filters
+    if(filterCategory!=='all' && (j.cat||'').toLowerCase().indexOf(filterCategory)<0) return false
+    if(filterUrgency!=='all' && j.urgency!==filterUrgency) return false
+    if(filterBudget==='under500'  && parseInt(j.budget?.replace('R','').replace(',','')||'0') >= 500)  return false
+    if(filterBudget==='500to2000' && (parseInt(j.budget?.replace('R','').replace(',','')||'0') < 500 || parseInt(j.budget?.replace('R','').replace(',','')||'0') > 2000)) return false
+    if(filterBudget==='over2000'  && parseInt(j.budget?.replace('R','').replace(',','')||'0') <= 2000) return false
+    if(filterSearch && !j.title?.toLowerCase().includes(filterSearch.toLowerCase()) && !j.loc?.toLowerCase().includes(filterSearch.toLowerCase())) return false
     return true
   })
 
@@ -1119,6 +1131,39 @@ function DashboardInner() {
                 </div>
               </div>
 
+              {/* ── FILTER BAR ── */}
+              <div style={{marginBottom:14,display:'flex',flexDirection:'column',gap:8}}>
+                <div style={{display:'flex',alignItems:'center',gap:8,background:'rgba(255,255,255,.04)',border:'1px solid rgba(255,255,255,.08)',borderRadius:8,padding:'8px 12px'}}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="rgba(245,240,232,.4)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  <input type="text" placeholder="Search by title or area..." value={filterSearch} onChange={e=>setFilterSearch(e.target.value)}
+                    style={{flex:1,background:'transparent',border:'none',outline:'none',fontFamily:"'Barlow',sans-serif",fontSize:13,color:'#F5F0E8'}}/>
+                  {filterSearch&&<button onClick={()=>setFilterSearch('')} style={{background:'transparent',border:'none',cursor:'pointer',color:'rgba(245,240,232,.4)',fontSize:16,lineHeight:1,padding:0}}>×</button>}
+                </div>
+                <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                  {([
+                    {val:filterCategory,set:(v:string)=>setFilterCategory(v),opts:[{v:'all',l:'All trades'},{v:'plumbing',l:'🔧 Plumbing'},{v:'electrical',l:'⚡ Electrical'},{v:'painting',l:'🎨 Painting'},{v:'roofing',l:'🏠 Roofing'},{v:'tiling',l:'🚿 Tiling'},{v:'solar',l:'☀️ Solar'},{v:'general',l:'🔩 General'},{v:'cleaning',l:'🧹 Cleaning'}]},
+                    {val:filterUrgency,set:(v:string)=>setFilterUrgency(v),opts:[{v:'all',l:'Any urgency'},{v:'emergency',l:'🔴 Emergency'},{v:'within_3_days',l:'🟡 3 days'},{v:'this_week',l:'🟢 This week'},{v:'flexible',l:'⚪ Flexible'}]},
+                    {val:filterBudget,set:(v:string)=>setFilterBudget(v),opts:[{v:'all',l:'Any budget'},{v:'under500',l:'Under R500'},{v:'500to2000',l:'R500–R2k'},{v:'over2000',l:'Over R2k'}]},
+                  ] as const).map((f,i)=>(
+                    <select key={i} value={f.val} onChange={e=>f.set(e.target.value)}
+                      style={{background:'rgba(255,255,255,.04)',border:'1px solid rgba(255,255,255,.08)',borderRadius:6,padding:'6px 8px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,color:'rgba(245,240,232,.65)',outline:'none',cursor:'pointer',flex:'1 1 auto',minWidth:85}}>
+                      {f.opts.map(o=><option key={o.v} value={o.v} style={{background:'#222'}}>{o.l}</option>)}
+                    </select>
+                  ))}
+                  {(filterCategory!=='all'||filterUrgency!=='all'||filterBudget!=='all'||filterSearch)&&(
+                    <button onClick={()=>{setFilterCategory('all');setFilterUrgency('all');setFilterBudget('all');setFilterSearch('')}}
+                      style={{background:'rgba(196,89,58,.12)',border:'1px solid rgba(196,89,58,.25)',borderRadius:6,padding:'6px 10px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:'#E07A5F',cursor:'pointer',whiteSpace:'nowrap'}}>
+                      ✕ Clear
+                    </button>
+                  )}
+                </div>
+                {(filterCategory!=='all'||filterUrgency!=='all'||filterBudget!=='all'||filterSearch)&&(
+                  <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,color:'rgba(245,240,232,.3)',letterSpacing:.5}}>
+                    {visibleJobs.length} of {jobs.length} jobs match
+                  </div>
+                )}
+              </div>
+
               {loading?(
                 <div style={{textAlign:'center',padding:'60px',color:'rgba(245,240,232,.4)',fontFamily:"'Barlow Condensed',sans-serif",fontSize:13,letterSpacing:1,display:'flex',alignItems:'center',justifyContent:'center',gap:12}}>
                   <div className="spin"/> Loading jobs...
@@ -1337,7 +1382,7 @@ function DashboardInner() {
                         <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:15,fontWeight:700,color:'#F5F0E8',marginBottom:3}}>{b.job}</div>
                         <div style={{fontSize:12,color:'rgba(245,240,232,.4)'}}>📍 {b.loc} · {b.time}</div>
                         <div style={{marginTop:6}}>
-                          {b.jobStatus==='completed'&&(<span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:1,textTransform:'uppercase',background:'rgba(61,170,106,.12)',border:'1px solid rgba(61,170,106,.2)',color:'#3DAA6A',padding:'2px 8px',borderRadius:3}}>✓ Paid</span>)}
+                          {b.jobStatus==='completed'&&(<span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:1,textTransform:'uppercase',background:'rgba(61,170,106,.12)',border:'1px solid rgba(61,170,106,.2)',color:'#3DAA6A',padding:'2px 8px',borderRadius:3}}>✓ Payment confirmed</span>)}
                           {b.jobStatus==='completion_submitted'&&(<span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:1,textTransform:'uppercase',background:'rgba(232,160,32,.1)',border:'1px solid rgba(232,160,32,.2)',color:'#E8A020',padding:'2px 8px',borderRadius:3}}>⏳ Awaiting confirmation</span>)}
                           {b.jobStatus==='in_progress'&&(<span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:1,textTransform:'uppercase',background:'rgba(46,127,212,.1)',border:'1px solid rgba(46,127,212,.2)',color:'#5B9BD5',padding:'2px 8px',borderRadius:3}}>🔒 In escrow</span>)}
                         </div>

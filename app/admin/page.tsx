@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../lib/supabase'
 
-const ADMIN_EMAIL = 'stockstvm@gmail.com'
+const ADMIN_EMAIL = 'stockstvm@gmail.com' // also check info@lungiza.co.za
 
 type Tab = 'overview' | 'payouts' | 'disputes' | 'users' | 'jobs'
 
@@ -125,7 +125,7 @@ export default function AdminPanel() {
       .from('profiles')
       .select(`
         id, full_name, email, phone, role, area, created_at,
-        tradesperson_profiles(trade_category, service_areas, rating_avg, jobs_completed, id_verified, verification_status, rejection_reason)
+        tradesperson_profiles(trade_category, service_areas, rating_avg, jobs_completed, id_verified, verification_status, rejection_reason, id_document_url)
       `)
       .order('created_at', {ascending:false})
       .limit(50)
@@ -553,6 +553,21 @@ export default function AdminPanel() {
                           <td>
                             {u.tradesperson_profiles?.verification_status==='pending'&&(
                               <div style={{display:'flex',flexDirection:'column',gap:6,minWidth:200}}>
+                                {u.tradesperson_profiles?.id_document_url ? (
+                                  <div style={{marginBottom:8}}>
+                                    <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(245,240,232,.3)',marginBottom:5}}>ID Document</div>
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                      src={u.tradesperson_profiles.id_document_url}
+                                      alt="ID document"
+                                      style={{width:'100%',maxWidth:220,borderRadius:6,border:'1px solid rgba(255,255,255,.1)',display:'block',cursor:'pointer'}}
+                                      onClick={()=>window.open(u.tradesperson_profiles.id_document_url,'_blank')}
+                                    />
+                                    <div style={{fontSize:10,color:'rgba(245,240,232,.25)',marginTop:3}}>Click to open full size</div>
+                                  </div>
+                                ) : (
+                                  <div style={{fontSize:11,color:'rgba(232,160,32,.6)',marginBottom:6}}>⚠ No ID document uploaded</div>
+                                )}
                                 <div style={{display:'flex',gap:6}}>
                                   <button className="btn-sm btn-green" onClick={()=>verifyTradesperson(u.id)}>
                                     ✓ Verify

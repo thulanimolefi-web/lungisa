@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useParams } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 
 type Review = {
@@ -30,6 +30,9 @@ type Profile = {
   bio: string
   id_verified: boolean
   verification_status: string
+  trade_categories: string[]
+  is_founding_member: boolean
+  is_online: boolean
 }
 
 function getCatEmoji(cat:string){
@@ -41,8 +44,9 @@ function getInitials(name:string){
   return name.split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase()
 }
 
-export default function TradespersonProfile({ params }: { params: { id: string } }) {
+export default function TradespersonProfile() {
   const router = useRouter()
+  const params  = useParams()
   const [profile, setProfile]   = useState<Profile|null>(null)
   const [reviews, setReviews]   = useState<Review[]>([])
   const [loading, setLoading]   = useState(true)
@@ -52,7 +56,7 @@ export default function TradespersonProfile({ params }: { params: { id: string }
     loadProfile()
     loadReviews()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[params.id])
+  },[params?.id])
 
   async function loadProfile(){
     try{
@@ -62,6 +66,7 @@ export default function TradespersonProfile({ params }: { params: { id: string }
           *,
           tradesperson_profiles(
             trade_category,
+            trade_categories,
             service_areas,
             years_experience,
             rating_avg,
@@ -69,10 +74,12 @@ export default function TradespersonProfile({ params }: { params: { id: string }
             jobs_completed,
             bio,
             id_verified,
-            verification_status
+            verification_status,
+            is_founding_member,
+            is_online
           )
         `)
-        .eq('id', params.id)
+        .eq('id', params?.id as string)
         .eq('role', 'tradesperson')
         .single()
 
@@ -96,6 +103,9 @@ export default function TradespersonProfile({ params }: { params: { id: string }
         bio:                 tp?.bio||'',
         id_verified:         tp?.id_verified||false,
         verification_status: tp?.verification_status||'unsubmitted',
+        trade_categories:    tp?.trade_categories||[],
+        is_founding_member:  tp?.is_founding_member||false,
+        is_online:           tp?.is_online||false,
       })
     }catch(e){ setNotFound(true) }
     setLoading(false)
@@ -110,7 +120,7 @@ export default function TradespersonProfile({ params }: { params: { id: string }
           profiles!reviewer_id(full_name),
           jobs(title)
         `)
-        .eq('reviewee_id', params.id)
+        .eq('reviewee_id', params?.id as string)
         .order('created_at', {ascending:false})
         .limit(10)
 
@@ -231,8 +241,11 @@ export default function TradespersonProfile({ params }: { params: { id: string }
     </>
   )
 
-  const tradeEmoji   = getCatEmoji(profile.trade_category)
-  const tradeName    = profile.trade_category.charAt(0).toUpperCase()+profile.trade_category.slice(1)
+  const categories   = profile.trade_categories?.length > 0
+    ? profile.trade_categories
+    : profile.trade_category ? [profile.trade_category] : ['general']
+  const tradeEmoji   = getCatEmoji(categories[0])
+  const tradeName    = categories.map(c=>c.charAt(0).toUpperCase()+c.slice(1)).join(' · ')
   const initials     = getInitials(profile.full_name)
   const memberSince  = new Date(profile.created_at).toLocaleDateString('en-ZA',{month:'long',year:'numeric'})
   const ratingDisplay = profile.rating_avg>0 ? profile.rating_avg.toFixed(1) : '—'
@@ -268,9 +281,11 @@ export default function TradespersonProfile({ params }: { params: { id: string }
 
           <div className="hero-info">
             <div className="trade-badge">
-              <span>{tradeEmoji}</span>
-              <span>{tradeName}</span>
+              {categories.map((cat:string)=>(
+                <span key={cat} style={{marginRight:6}}>{getCatEmoji(cat)} {cat.charAt(0).toUpperCase()+cat.slice(1)}</span>
+              ))}
               {profile.years_experience>0&&<span>· {profile.years_experience} yrs experience</span>}
+              {profile.is_online&&<span style={{marginLeft:6,color:'#3DAA6A'}}>● Online now</span>}
             </div>
 
             {/* Name + verified chip inline */}
@@ -307,7 +322,7 @@ export default function TradespersonProfile({ params }: { params: { id: string }
                 <div className="hs-lbl">Yrs exp</div>
               </div>
             </div>
-            <div className="founding-badge">🔨 Founding Member</div>
+            {profile.is_founding_member&&(<div className="founding-badge">🔨 Founding Member</div>)}
           </div>
         </div>
       </div>
@@ -327,7 +342,7 @@ export default function TradespersonProfile({ params }: { params: { id: string }
           <div className="card">
             <div className="card-title">Profile Details</div>
             {[
-              {label:'Trade',          val:`${tradeEmoji} ${tradeName}`},
+              {label:'Trade',          val:tradeName},
               {label:'Experience',     val:`${profile.years_experience} year${profile.years_experience!==1?'s':''}`},
               {label:'Member since',   val:memberSince},
               {label:'Jobs completed', val:String(profile.jobs_completed)},
