@@ -1069,7 +1069,7 @@ function DashboardInner() {
                         </div>
                         <div style={{display:'flex',alignItems:'center',gap:6}}>
                           <div style={{width:6,height:6,borderRadius:'50%',background:'#E8A020'}}/>
-                          <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,color:'rgba(232,160,32,.7)',letterSpacing:.5}}>🚀 Launch: 10 June 2026</span>
+                          <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,color:'rgba(232,160,32,.7)',letterSpacing:.5}}>🚀 Launch: 1 August 2026</span>
                         </div>
                       </div>
                     </div>
@@ -1079,7 +1079,7 @@ function DashboardInner() {
                       <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(232,160,32,.8)',marginBottom:4}}>🎁 Coming soon — Founding Member Referral Rewards</div>
                       <div style={{fontSize:12,color:'rgba(245,240,232,.4)',lineHeight:1.5}}>Refer fellow tradespeople to Lungisa and earn rewards when they complete their first job. Exclusive to founding members. Details dropping at launch.</div>
                     </div>
-                    <div style={{background:'rgba(232,160,32,.08)',border:'1px solid rgba(232,160,32,.2)',borderRadius:6,padding:'6px 14px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',color:'#E8A020',whiteSpace:'nowrap',flexShrink:0}}>Coming 10 June</div>
+                    <div style={{background:'rgba(232,160,32,.08)',border:'1px solid rgba(232,160,32,.2)',borderRadius:6,padding:'6px 14px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',color:'#E8A020',whiteSpace:'nowrap',flexShrink:0}}>Coming 1 August</div>
                   </div>
                 </div>
               )}
