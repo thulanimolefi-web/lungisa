@@ -301,14 +301,14 @@ export default function LandingPage() {
     { n:'01', icon:'👤', h:'Create your profile', p:'Set your trade, service areas, and upload your ID for verification. Free to join.' },
     { n:'02', icon:'🔍', h:'Browse local jobs', p:'See jobs in your area that match your trade. No chasing leads — they come to you.' },
     { n:'03', icon:'💰', h:'Bid your price', p:'Submit your best price and negotiate directly with the homeowner. You set your rate.' },
-    { n:'04', icon:'✅', h:'Get paid securely', p:'Complete the job, submit photos, and payment is released. 5% commission only on success.' },
+    { n:'04', icon:'✅', h:'Get paid securely', p:'Complete the job, submit photos, and payment is released. 8% commission only on success.' },
   ]
 
   const whyCards = [
     { icon:'⚖️', h:'True negotiation', p:'Counter-offers, not fixed prices. Homeowners and tradespeople agree on a fair price together.' },
     { icon:'🔒', h:'Escrow protection', p:'Money is held securely and only released when the homeowner confirms the job is done right.' },
     { icon:'✓', h:'Vetted tradespeople', p:'ID-verified tradespeople with real reviews from real jobs. Trust built into the platform.' },
-    { icon:'💳', h:'5% only on success', p:'No subscriptions, no listing fees. Tradespeople pay 5% only when they complete a paid job.' },
+    { icon:'💳', h:'8% on completion', p:'No subscriptions, no listing fees. Tradespeople pay 8% only when they complete a paid job.' },
     { icon:'📸', h:'Photo evidence', p:'Tradespeople submit completion photos and a work report before payment is released.' },
     { icon:'⚡', h:'Real-time bidding', p:'Bids and counter-offers happen in real time. No waiting 3 days for a callback.' },
   ]
@@ -449,7 +449,7 @@ export default function LandingPage() {
             {icon:'🔒', label:'Escrow protected payments'},
             {icon:'✓', label:'ID-verified tradespeople'},
             {icon:'⭐', label:'Real reviews, real jobs'},
-            {icon:'💳', label:'5% commission only'},
+            {icon:'💳', label:'8% commission only'},
             {icon:'📱', label:'Fully mobile friendly'},
           ].map((t,i)=>(
             <div key={i} className="trust-item">
@@ -464,7 +464,7 @@ export default function LandingPage() {
       <div className="stats" ref={statsRef}>
         <div className="stats-inner">
           {[
-            {n:'5%', l:'Commission on success'},
+            {n:'8%', l:'Commission on success'},
             {n:'R0', l:'Cost to post a job'},
             {n:'50+', l:'Founding tradespeople'},
             {n:'100%', l:'Escrow protected'},
