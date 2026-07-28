@@ -22,7 +22,7 @@ type Bid = {
   jobId: string
   jobStatus: string
   quoteRequested: boolean
-  finalAmount: number|null
+  finalAmount:  number|null
 }
 type JobMedia = {
   url: string
@@ -521,7 +521,7 @@ function DashboardInner() {
           counterUpdatedAt: b.updated_at||null,
           quoteRequested:   b.quote_requested||false,
           quoteMaterialsBy:  b.quote_materials_by||'homeowner',
-          finalAmount:       b.final_amount||null,
+          finalAmount:       b.final_amount ? b.final_amount/100 : null,
           jobId:         b.jobs?.id||b.job_id,
         })))
       }

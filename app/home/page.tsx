@@ -332,7 +332,7 @@ export default function HomeDashboard() {
       const jobIds = jobsData.map((j:any)=>j.id)
       const {data:bidsData} = await supabase
         .from('bids').select('job_id,amount,final_amount,tradesperson_id,profiles!tradesperson_id(full_name)')
-        .in('job_id',jobIds).in('status',['accepted','completed'])
+        .in('job_id',jobIds).eq('status','accepted')
       const {data:reviewsData} = await supabase
         .from('reviews').select('job_id,rating').eq('reviewer_id',session.user.id).in('job_id',jobIds)
       setHistoryJobs(jobsData.map((j:any)=>{
@@ -342,7 +342,7 @@ export default function HomeDashboard() {
           id:j.id, title:j.title, category:j.category, emoji:getCatEmoji(j.category),
           area:j.area, tradesperson:(bid as any)?.profiles?.full_name||'Tradesperson',
           tradespersonId:bid?.tradesperson_id||'',
-          price:bid?.final_amount||bid?.amount||0, rating:review?.rating||0,
+          price: bid?.final_amount ? bid.final_amount/100 : bid?.amount ? bid.amount/100 : 0, rating:review?.rating||0,
           date:new Date(j.updated_at).toLocaleDateString('en-ZA',{day:'numeric',month:'short',year:'numeric'}),
           status:j.status,
         }
