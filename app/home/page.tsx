@@ -472,14 +472,51 @@ export default function HomeDashboard() {
       const {data:{session}} = await supabase.auth.getSession()
       const job = jobs.find(j=>j.id===jobId)
       const acceptedBid = job?.bids.find(b=>b.id===bidId)
+      const netAmount = Math.round(amount * 0.92 * 100) // 92% net in cents
+
+      // Update job and bid status
       await supabase.from('jobs').update({status:'completed'}).eq('id',jobId)
-      await supabase.from('bids').update({status:'completed'}).eq('id',bidId)
+      await supabase.from('bids').update({status:'accepted'}).eq('id',bidId)
+
+      // Update payments table — mark as released, set payout pending
+      await supabase.from('payments')
+        .update({
+          status:         'released',
+          released_at:    new Date().toISOString(),
+          payout_status:  'pending',
+          net_amount:     netAmount,
+        })
+        .eq('job_id', jobId)
+
+      // Create in-app notification for tradesperson
+      if(acceptedBid?.tradespersonId) {
+        await supabase.from('notifications').insert({
+          user_id: acceptedBid.tradespersonId,
+          type:    'payment_processing',
+          title:   'Payment being processed',
+          message: `Homeowner confirmed the job done. R${Math.round(amount*0.92).toLocaleString()} will be paid to your bank account within 24 hours.`,
+          link:    '/dashboard',
+          read:    false,
+        })
+      }
+
+      // Email admin + tradesperson
       fetch('/api/send-email',{
-        method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({type:'payment_release_request',jobId,jobTitle:job?.title||'Job',amount,homeownerId:session?.user?.id,tradespersonId:acceptedBid?.tradespersonId||bidId,tradespersonName:acceptedBid?.name||'Tradesperson'})
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          type:             'payment_release_request',
+          jobId,
+          jobTitle:         job?.title||'Job',
+          amount,
+          netAmount:        Math.round(amount*0.92),
+          homeownerId:      session?.user?.id,
+          tradespersonId:   acceptedBid?.tradespersonId||bidId,
+          tradespersonName: acceptedBid?.name||'Tradesperson',
+        })
       }).catch(e=>console.log('Email error:',e))
+
       setPaidJobs(p=>({...p,[jobId]:true}))
-      toast('Payment release requested! 🎉','Admin has been notified to process payment','#3DAA6A')
+      toast('Job confirmed done! 🎉','Payment will be processed to tradesperson within 24 hours','#3DAA6A')
       setReviewJob(jobId)
       setReviewTradespersonId(acceptedBid?.tradespersonId||'')
       loadRealJobs(true); loadHistoryJobs()
@@ -574,7 +611,7 @@ export default function HomeDashboard() {
       if(!session?.user||!reviewJob) return
       let tradespersonId = reviewTradespersonId
       if(!tradespersonId) {
-        const {data:bid} = await supabase.from('bids').select('tradesperson_id').eq('job_id',reviewJob).in('status',['accepted','completed']).single()
+        const {data:bid} = await supabase.from('bids').select('tradesperson_id').eq('job_id',reviewJob).eq('status','accepted').single()
         tradespersonId = bid?.tradesperson_id||''
       }
       if(!tradespersonId){ toast('Could not identify tradesperson','Please contact support','#E24B4A'); setReviewJob(null); return }
@@ -1281,7 +1318,7 @@ export default function HomeDashboard() {
                                               </div>
                                               <div className="counter-row">
                                                 <div className="counter-r">R</div>
-                                                <input className="counter-in" type="number" placeholder={String(Math.round(bid.price*0.95))} value={counterAmts[bid.id]||''} onChange={e=>setCounterAmts(a=>({...a,[bid.id]:e.target.value}))}/>
+                                                <input className="counter-in" type="number" placeholder={String(Math.round(bid.price*0.92))} value={counterAmts[bid.id]||''} onChange={e=>setCounterAmts(a=>({...a,[bid.id]:e.target.value}))}/>
                                               </div>
                                               <div className="bc-actions">
                                                 <button className="btn btn-terra" onClick={()=>sendCounter(selectedJob.id,bid.id)}>
@@ -1453,7 +1490,7 @@ export default function HomeDashboard() {
                                       {/* ── COMPLETION SUBMITTED ── */}
                                       {isAccepted&&isPaid&&completions[selectedJob.id]&&selectedJob.status==='completion_submitted'&&(
                                         <div style={{background:'rgba(232,160,32,.08)',border:'1px solid rgba(232,160,32,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'#E8A020',lineHeight:1.5,marginTop:8}}>
-                                          ⏳ Completion submitted — waiting for your confirmation to release R{Math.round((bid.finalAmount||bid.price)*0.95).toLocaleString()}.
+                                          ⏳ Completion submitted — waiting for your confirmation to release R{Math.round((bid.finalAmount||bid.price)*0.92).toLocaleString()}.
                                         </div>
                                       )}
 
