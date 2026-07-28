@@ -490,14 +490,16 @@ export default function HomeDashboard() {
 
       // Create in-app notification for tradesperson
       if(acceptedBid?.tradespersonId) {
-        await supabase.from('notifications').insert({
-          user_id: acceptedBid.tradespersonId,
-          type:    'payment_processing',
-          title:   'Payment being processed',
-          message: `Homeowner confirmed the job done. R${Math.round(amount*0.92).toLocaleString()} will be paid to your bank account within 24 hours.`,
-          link:    '/dashboard',
-          read:    false,
-        })
+        try {
+          await supabase.from('notifications').insert({
+            user_id: acceptedBid.tradespersonId,
+            type:    'payment_processing',
+            title:   'Payment being processed',
+            message: `Homeowner confirmed the job done. R${Math.round(amount*0.92).toLocaleString()} will be paid to your bank account within 24 hours.`,
+            link:    '/dashboard',
+            read:    false,
+          })
+        } catch(e) { console.log('Notif insert error:', e) }
       }
 
       // Email admin + tradesperson

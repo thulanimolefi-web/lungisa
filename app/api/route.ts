@@ -72,25 +72,29 @@ export async function POST(req: NextRequest) {
 
       // In-app notifications
       if(homeownerId) {
-        await supabase.from('notifications').insert({
-          user_id: homeownerId,
-          type:    'payment_confirmed',
-          title:   'Payment confirmed 🔒',
-          message: `R${(amountInCents/100).toLocaleString()} is now held in escrow for ${jobTitle||'your job'}.`,
-          link:    '/home',
-          read:    false,
-        }).catch(e => console.log('Notif error:', e))
+        try {
+          await supabase.from('notifications').insert({
+            user_id: homeownerId,
+            type:    'payment_confirmed',
+            title:   'Payment confirmed 🔒',
+            message: `R${(amountInCents/100).toLocaleString()} is now held in escrow for ${jobTitle||'your job'}.`,
+            link:    '/home',
+            read:    false,
+          })
+        } catch(e) { console.log('Notif error:', e) }
       }
 
       if(tradespersonId) {
-        await supabase.from('notifications').insert({
-          user_id: tradespersonId,
-          type:    'payment_confirmed',
-          title:   'Payment in escrow 🔒',
-          message: `R${Math.round(amountInCents*0.92/100).toLocaleString()} is secured in escrow for ${jobTitle||'this job'}. Complete the job to release payment.`,
-          link:    '/dashboard',
-          read:    false,
-        }).catch(e => console.log('Notif error:', e))
+        try {
+          await supabase.from('notifications').insert({
+            user_id: tradespersonId,
+            type:    'payment_confirmed',
+            title:   'Payment in escrow 🔒',
+            message: `R${Math.round(amountInCents*0.92/100).toLocaleString()} is secured in escrow for ${jobTitle||'this job'}. Complete the job to release payment.`,
+            link:    '/dashboard',
+            read:    false,
+          })
+        } catch(e) { console.log('Notif error:', e) }
       }
 
       // Email confirmation
