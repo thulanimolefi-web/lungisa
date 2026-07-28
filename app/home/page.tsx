@@ -1086,7 +1086,12 @@ export default function HomeDashboard() {
                                           <div className="bc-stars">★★★★★ <span style={{color:'var(--charcoal-l)',fontSize:11}}>{bid.ratingNum} · {bid.jobs} jobs</span></div>
                                         </div>
                                         <div>
-                                          <div className="bc-price">R{bid.price}</div>
+                                          <div className="bc-price">
+                                            R{isPaid&&bid.finalAmount ? bid.finalAmount.toLocaleString() : bid.price.toLocaleString()}
+                                          </div>
+                                          {isPaid&&bid.finalAmount&&bid.finalAmount!==bid.price&&(
+                                            <div style={{fontSize:10,color:'rgba(44,44,40,.4)',textDecoration:'line-through',textAlign:'right',marginTop:1}}>R{bid.price}</div>
+                                          )}
                                           <div className="bc-eta">ETA: {bid.eta}</div>
                                         </div>
                                       </div>
@@ -1768,5 +1773,4 @@ export default function HomeDashboard() {
       </div>
     </>
   )
-  
 }

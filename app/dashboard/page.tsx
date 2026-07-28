@@ -22,6 +22,7 @@ type Bid = {
   jobId: string
   jobStatus: string
   quoteRequested: boolean
+  finalAmount: number|null
 }
 type JobMedia = {
   url: string
@@ -502,7 +503,7 @@ function DashboardInner() {
       if(!session?.user) return
       const {data,error}=await supabase
         .from('bids')
-        .select('*, jobs(id, title, area, status), updated_at, quote_requested, quote_materials_by')
+        .select('*, jobs(id, title, area, status), updated_at, quote_requested, quote_materials_by, final_amount')
         .eq('tradesperson_id',session.user.id)
         .order('created_at',{ascending:false})
       if(!error&&data){
@@ -520,6 +521,7 @@ function DashboardInner() {
           counterUpdatedAt: b.updated_at||null,
           quoteRequested:   b.quote_requested||false,
           quoteMaterialsBy:  b.quote_materials_by||'homeowner',
+          finalAmount:       b.final_amount||null,
           jobId:         b.jobs?.id||b.job_id,
         })))
       }
@@ -1260,7 +1262,7 @@ function DashboardInner() {
                         <div style={{fontSize:12,color:'rgba(245,240,232,.4)'}}>{b.loc} · {b.time}</div>
                       </div>
                       <div style={{textAlign:'right'}}>
-                        <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:'#E07A5F'}}>R{b.price}</div>
+                        <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:'#E07A5F'}}>R{(b.finalAmount||b.price).toLocaleString()}</div>
                         <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:1,textTransform:'uppercase',color:isCompleted?'#3DAA6A':isAccepted||isInEscrow?'#3DAA6A':isDeclined?'#f08080':isCounterExpired?'#E24B4A':homeownerCountered?'#E8A020':iSentCounter?'rgba(232,160,32,.6)':'rgba(245,240,232,.4)'}}>
                           {isCompleted?'✓ Completed & paid':isCompletionSubmitted?'⏳ Awaiting homeowner confirmation':isInEscrow?'🔒 In escrow — complete the job':isAccepted&&!isInEscrow?'✓ Accepted — awaiting payment':isCounterExpired?'⚠ Counter expired — bid again':homeownerCountered?'⚡ Counter received':iSentCounter?'⏳ Counter sent':isDeclined?'Declined':'Pending'}
                         </div>
@@ -1277,7 +1279,7 @@ function DashboardInner() {
                         </div>
                         <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:12}}>
                           <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:32,color:'#F5F0E8'}}>R{b.counterAmount}</div>
-                          <div style={{fontSize:12,color:'rgba(245,240,232,.4)'}}>vs your bid of R{b.price}</div>
+                          <div style={{fontSize:12,color:'rgba(245,240,232,.4)'}}>vs your bid of R{b.price}{b.finalAmount&&b.finalAmount!==b.price?` · agreed R${b.finalAmount}`:''}</div>
                         </div>
                         <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:12}}>
                           <button onClick={()=>acceptCounter(b)} style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:'#3DAA6A',color:'#fff',border:'none',padding:'10px 18px',borderRadius:6,cursor:'pointer',flex:1}}>✓ Accept R{b.counterAmount}</button>
@@ -1314,13 +1316,13 @@ function DashboardInner() {
                     )}
                     {isInEscrow&&!isCompletionSubmitted&&!submittedCompletions.has(b.jobId)&&(
                       <div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.25)',borderRadius:8,padding:'14px 16px'}}>
-                        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'#3DAA6A',marginBottom:8}}>🔒 R{Math.round(b.price*0.95).toLocaleString()} in escrow — complete the job to get paid</div>
+                        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'#3DAA6A',marginBottom:8}}>🔒 R{Math.round((b.finalAmount||b.price)*0.95).toLocaleString()} in escrow — complete the job to get paid</div>
                         <p style={{fontSize:13,color:'rgba(245,240,232,.6)',lineHeight:1.6,marginBottom:12}}>Once done, submit your completion report with photos. The homeowner confirms and your payment is released.</p>
                         <button onClick={()=>{setCompletionJobId(b.jobId);setCompletionBidId(b.id)}} style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:13,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:'#3DAA6A',color:'#fff',border:'none',padding:'11px 20px',borderRadius:6,cursor:'pointer',width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>📋 Mark job as complete</button>
                       </div>
                     )}
                     {(isCompletionSubmitted||submittedCompletions.has(b.jobId))&&!isCompleted&&(
-                      <div style={{background:'rgba(232,160,32,.08)',border:'1px solid rgba(232,160,32,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'#E8A020',lineHeight:1.5}}>⏳ Completion report submitted — waiting for homeowner to confirm and release R{Math.round(b.price*0.95).toLocaleString()} to you.</div>
+                      <div style={{background:'rgba(232,160,32,.08)',border:'1px solid rgba(232,160,32,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'#E8A020',lineHeight:1.5}}>⏳ Completion report submitted — waiting for homeowner to confirm and release R{Math.round((b.finalAmount||b.price)*0.95).toLocaleString()} to you.</div>
                     )}
                     {isDeclined&&(<div style={{background:'rgba(226,75,74,.06)',border:'1px solid rgba(226,75,74,.15)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(226,75,74,.7)',lineHeight:1.5}}>✗ Not accepted this time. Keep bidding on new jobs.</div>)}
                     {!homeownerCountered&&!iSentCounter&&!isAccepted&&!isDeclined&&!isCompleted&&!isInEscrow&&(
@@ -1335,7 +1337,7 @@ function DashboardInner() {
                       </div>
                     )}
                     {isCompleted&&(
-                      <div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(61,170,106,.9)',lineHeight:1.5}}>✓ Job complete · R{Math.round(b.price*0.95).toLocaleString()} payment released to your account · Check Earnings tab</div>
+                      <div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(61,170,106,.9)',lineHeight:1.5}}>✓ Job complete · R{Math.round((b.finalAmount||b.price)*0.95).toLocaleString()} payment released to your account · Check Earnings tab</div>
                     )}
                   </div>
                 )
@@ -1358,7 +1360,7 @@ function DashboardInner() {
                   <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:12,marginBottom:20}}>
                     <div style={{background:'#222220',borderRadius:10,border:'1px solid rgba(255,255,255,.06)',padding:'18px 20px'}}>
                       <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.3)',marginBottom:6}}>Total earned</div>
-                      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:40,color:'#52C47F',letterSpacing:1,lineHeight:1}}>R{myBids.filter(b=>b.jobStatus==='completed').reduce((s,b)=>s+Math.round(b.price*0.95),0).toLocaleString()}</div>
+                      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:40,color:'#52C47F',letterSpacing:1,lineHeight:1}}>R{myBids.filter(b=>b.jobStatus==='completed').reduce((s,b)=>s+Math.round((b.finalAmount||b.price)*0.95),0).toLocaleString()}</div>
                     </div>
                     <div style={{background:'#222220',borderRadius:10,border:'1px solid rgba(255,255,255,.06)',padding:'18px 20px'}}>
                       <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.3)',marginBottom:6}}>Jobs completed</div>
@@ -1366,7 +1368,7 @@ function DashboardInner() {
                     </div>
                     <div style={{background:'#222220',borderRadius:10,border:'1px solid rgba(255,255,255,.06)',padding:'18px 20px'}}>
                       <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.3)',marginBottom:6}}>In escrow</div>
-                      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:40,color:'#E8A020',letterSpacing:1,lineHeight:1}}>R{myBids.filter(b=>['in_progress','completion_submitted'].includes(b.jobStatus)).reduce((s,b)=>s+Math.round(b.price*0.95),0).toLocaleString()}</div>
+                      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:40,color:'#E8A020',letterSpacing:1,lineHeight:1}}>R{myBids.filter(b=>['in_progress','completion_submitted'].includes(b.jobStatus)).reduce((s,b)=>s+Math.round((b.finalAmount||b.price)*0.95),0).toLocaleString()}</div>
                     </div>
                     <div style={{background:'#222220',borderRadius:10,border:'1px solid rgba(255,255,255,.06)',padding:'18px 20px'}}>
                       <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.3)',marginBottom:6}}>Rating</div>
@@ -1388,7 +1390,7 @@ function DashboardInner() {
                         </div>
                       </div>
                       <div style={{textAlign:'right',flexShrink:0}}>
-                        <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:26,color:b.jobStatus==='completed'?'#52C47F':'#E8A020',letterSpacing:1}}>R{Math.round(b.price*0.95).toLocaleString()}</div>
+                        <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:26,color:b.jobStatus==='completed'?'#52C47F':'#E8A020',letterSpacing:1}}>R{Math.round((b.finalAmount||b.price)*0.95).toLocaleString()}</div>
                         <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,color:'rgba(245,240,232,.3)',letterSpacing:.5}}>after 5% commission</div>
                       </div>
                     </div>
