@@ -28,41 +28,51 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Payment not configured — contact support' }, { status: 500 })
     }
 
-    // ── Create Yoco hosted checkout (current API) ───────────────────
+    // ── Create Yoco hosted checkout ───────────────────────────────
     console.log('Creating Yoco checkout:', { amountInCents, currency, jobId })
-    console.log('Using secret key prefix:', secretKey.substring(0, 10) + '...')
+    console.log('Key prefix:', secretKey.substring(0, 12) + '...')
+
+    const idempotencyKey = `lungisa-${jobId}-${Date.now()}`
+
+    const payload = {
+      amount:     amountInCents,
+      currency,
+      successUrl: successUrl || 'https://lungiza.co.za/home?payment=success',
+      cancelUrl:  cancelUrl  || 'https://lungiza.co.za/home?payment=cancelled',
+      metadata:   { jobId, jobTitle, homeownerId, tradespersonId },
+    }
+
+    console.log('Yoco payload:', JSON.stringify(payload))
 
     const yocoRes = await fetch('https://payments.yoco.com/api/checkouts', {
       method:  'POST',
       headers: {
-        'Authorization':  `Bearer ${secretKey}`,
-        'Content-Type':   'application/json',
-        'Idempotency-Key': `lungisa-${jobId}-${Date.now()}`,
+        'Authorization':   `Bearer ${secretKey}`,
+        'Content-Type':    'application/json',
+        'Idempotency-Key': idempotencyKey,
       },
-      body: JSON.stringify({
-        amount:     amountInCents,
-        currency,
-        successUrl: successUrl || 'https://www.lungiza.co.za/home?payment=success',
-        cancelUrl:  cancelUrl  || 'https://www.lungiza.co.za/home?payment=cancelled',
-        metadata: { jobId, jobTitle, homeownerId, tradespersonId },
-      }),
+      body: JSON.stringify(payload),
     })
 
     const checkout = await yocoRes.json()
-    console.log('Yoco response status:', yocoRes.status)
-    console.log('Yoco response body:', JSON.stringify(checkout))
+    console.log('Yoco status:', yocoRes.status)
+    console.log('Yoco full response:', JSON.stringify(checkout))
 
-    if(!yocoRes.ok || checkout.error) {
-      console.error('Yoco error:', JSON.stringify(checkout))
-      return NextResponse.json({
-        error: checkout.displayMessage || checkout.message || 'Payment setup failed — try again'
-      }, { status: 400 })
+    if(!yocoRes.ok) {
+      console.error('Yoco error detail:', JSON.stringify(checkout))
+      // Surface the actual Yoco error message to frontend
+      const errMsg = checkout?.displayMessage
+        || checkout?.message
+        || checkout?.error?.message
+        || checkout?.errors?.[0]?.message
+        || JSON.stringify(checkout)
+      return NextResponse.json({ error: errMsg }, { status: 400 })
     }
 
-    // ── Update job status ───────────────────────────────────────────
+    // ── Update job status ─────────────────────────────────────────
     await supabase.from('jobs').update({ status: 'in_progress' }).eq('id', jobId)
 
-    // ── Record payment ──────────────────────────────────────────────
+    // ── Record payment ────────────────────────────────────────────
     try {
       await supabase.from('payments').insert({
         job_id:          jobId,
@@ -76,17 +86,15 @@ export async function POST(req: NextRequest) {
       })
     } catch(e) { console.log('Payment record error (non-fatal):', e) }
 
-    // ── Send payment confirmation email ─────────────────────────────
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.lungiza.co.za'
+    // ── Send payment confirmation email ───────────────────────────
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://lungiza.co.za'
     fetch(`${appUrl}/api/send-email`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({
-        type:           'payment_confirmed',
-        jobId,
-        amount:         amountInCents / 100,
-        homeownerId,
-        tradespersonId,
+        type: 'payment_confirmed', jobId,
+        amount: amountInCents / 100,
+        homeownerId, tradespersonId,
       }),
     }).catch(e => console.log('Email error:', e))
 
