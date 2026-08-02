@@ -252,8 +252,9 @@ function DashboardInner() {
   const [bankingMsg, setBankingMsg] = useState('')
   const [editingProfile, setEditingProfile] = useState(false)
   const [profileForm, setProfileForm] = useState({full_name:'', phone:'', service_areas:[] as string[], trade_category:'', trade_categories:[] as string[]})
-  const [bankingSaved, setBankingSaved] = useState(false)
-  const [hasBanking, setHasBanking]     = useState(false)
+  const [bankingSaved, setBankingSaved]   = useState(false)
+  const [bankingLoading, setBankingLoading] = useState(false)
+  const [hasBanking, setHasBanking]       = useState(false)
   const [savingProfile, setSavingProfile] = useState(false)
   const [profileMsg, setProfileMsg] = useState('')
 
