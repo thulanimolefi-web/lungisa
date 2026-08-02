@@ -735,6 +735,7 @@ export default function LandingPage() {
               <a href="https://vaultlinkafrica.com" className="footer-link" target="_blank" rel="noreferrer">VaultLink Africa</a>
               <a onClick={()=>{setContactOpen(true);setContactDone(false)}} className="footer-link" style={{cursor:'pointer'}}>Contact us</a>
               <a href="mailto:info@lungiza.co.za?subject=Support%20request%20%E2%80%94%20Lungisa" className="footer-link">Support</a>
+              <a href="/terms" className="footer-link">Terms of Service</a>
               <a href="#install" className="footer-link">Get the app</a>
             </div>
           </div>

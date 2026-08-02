@@ -7,7 +7,7 @@ import NotificationBell from '../components/NotificationBell'
 import VerificationBadge from '../components/VerificationBadge'
 import Messaging from '../components/Messaging'
 
-type View = 'feed' | 'bids' | 'earnings' | 'messages' | 'profile'
+type View = 'feed' | 'bids' | 'earnings' | 'messages' | 'profile' | 'banking'
 type Bid = {
   id: string
   job: string
@@ -252,6 +252,8 @@ function DashboardInner() {
   const [bankingMsg, setBankingMsg] = useState('')
   const [editingProfile, setEditingProfile] = useState(false)
   const [profileForm, setProfileForm] = useState({full_name:'', phone:'', service_areas:[] as string[], trade_category:'', trade_categories:[] as string[]})
+  const [bankingSaved, setBankingSaved] = useState(false)
+  const [hasBanking, setHasBanking]     = useState(false)
   const [savingProfile, setSavingProfile] = useState(false)
   const [profileMsg, setProfileMsg] = useState('')
 
@@ -893,13 +895,14 @@ function DashboardInner() {
     btn:(variant:'terra'|'ghost')=>({padding:'12px 22px',borderRadius:8,fontFamily:"'Barlow Condensed',sans-serif",fontSize:13,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase' as const,cursor:'pointer',border:'none',background:variant==='terra'?'#C4593A':'rgba(255,255,255,.06)',color:variant==='ghost'?'rgba(245,240,232,.6)':'#fff',flex:variant!=='ghost'?1:undefined,display:'flex',alignItems:'center',justifyContent:'center' as const,gap:8,transition:'all .15s'}),
   }
 
-  const viewTitles:Record<View,string>={feed:'JOB FEED',bids:'MY BIDS',earnings:'EARNINGS',messages:'MESSAGES',profile:'MY PROFILE'}
+  const viewTitles:Record<View,string>={feed:'JOB FEED',bids:'MY BIDS',earnings:'EARNINGS',messages:'MESSAGES',profile:'MY PROFILE',banking:'BANKING'}
   const navItems=[
     {view:'feed'     as View,icon:'🏠',label:'Job Feed',  badge:jobs.filter(j=>!j.submitted).length},
     {view:'bids'     as View,icon:'💸',label:'My Bids',   badge:countersPending.length>0?countersPending.length:myBids.length},
     {view:'messages' as View,icon:'💬',label:'Messages',  badge:0},
     {view:'earnings' as View,icon:'📈',label:'Earnings'},
     {view:'profile'  as View,icon:'👤',label:'My Profile'},
+    {view:'banking'  as View,icon:'🏦',label:'Banking'},
   ]
 
   return (
@@ -1408,6 +1411,153 @@ function DashboardInner() {
           )}
 
           {/* PROFILE */}
+          {view==='banking'&&(
+            <div style={S.content}>
+              <div style={{marginBottom:20}}>
+                <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,letterSpacing:1.5,color:'#F5F0E8',marginBottom:4}}>BANKING DETAILS</div>
+                <div style={{fontSize:13,color:'rgba(245,240,232,.4)',lineHeight:1.6}}>
+                  Your banking details are used to process your payouts after a job is confirmed complete. Keep them accurate and up to date.
+                </div>
+              </div>
+
+              {/* Status banner */}
+              {hasBanking ? (
+                <div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'10px 16px',marginBottom:20,fontSize:13,color:'#3DAA6A',display:'flex',alignItems:'center',gap:8}}>
+                  ✓ Banking details saved — payouts will be processed to this account
+                </div>
+              ) : (
+                <div style={{background:'rgba(232,160,32,.08)',border:'1px solid rgba(232,160,32,.25)',borderRadius:8,padding:'10px 16px',marginBottom:20,fontSize:13,color:'#E8A020',display:'flex',alignItems:'center',gap:8}}>
+                  ⚠ No banking details saved — add your account below to receive payouts
+                </div>
+              )}
+
+              {/* Form */}
+              <div style={{background:'rgba(255,255,255,.04)',border:'1px solid rgba(255,255,255,.08)',borderRadius:12,padding:24,display:'flex',flexDirection:'column',gap:16}}>
+
+                {/* Bank name */}
+                <div>
+                  <label style={{display:'block',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:7}}>
+                    Bank name *
+                  </label>
+                  <select
+                    value={bankingForm.bank_name}
+                    onChange={e=>setBankingForm(f=>({...f,bank_name:e.target.value}))}
+                    style={{width:'100%',background:'rgba(255,255,255,.06)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'11px 14px',fontFamily:"'Barlow',sans-serif",fontSize:14,color:'#F5F0E8',outline:'none'}}>
+                    <option value="" style={{background:'#222'}}>Select your bank</option>
+                    {['ABSA','Capitec Bank','First National Bank (FNB)','Nedbank','Standard Bank','African Bank','Bidvest Bank','Discovery Bank','Investec','TymeBank'].map(b=>(
+                      <option key={b} value={b} style={{background:'#222'}}>{b}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Account holder */}
+                <div>
+                  <label style={{display:'block',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:7}}>
+                    Account holder name *
+                  </label>
+                  <input
+                    type="text"
+                    value={bankingForm.account_holder}
+                    onChange={e=>setBankingForm(f=>({...f,account_holder:e.target.value}))}
+                    placeholder="Full name as it appears on your bank account"
+                    style={{width:'100%',background:'rgba(255,255,255,.06)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'11px 14px',fontFamily:"'Barlow',sans-serif",fontSize:14,color:'#F5F0E8',outline:'none'}}
+                  />
+                </div>
+
+                {/* Account number */}
+                <div>
+                  <label style={{display:'block',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:7}}>
+                    Account number *
+                  </label>
+                  <input
+                    type="text"
+                    value={bankingForm.account_number}
+                    onChange={e=>setBankingForm(f=>({...f,account_number:e.target.value.replace(/\D/g,'')}))}
+                    placeholder="e.g. 1234567890"
+                    maxLength={16}
+                    style={{width:'100%',background:'rgba(255,255,255,.06)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'11px 14px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:16,color:'#F5F0E8',outline:'none',letterSpacing:2}}
+                  />
+                </div>
+
+                {/* Branch code + Account type */}
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+                  <div>
+                    <label style={{display:'block',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:7}}>
+                      Branch code *
+                    </label>
+                    <input
+                      type="text"
+                      value={bankingForm.branch_code}
+                      onChange={e=>setBankingForm(f=>({...f,branch_code:e.target.value.replace(/\D/g,'')}))}
+                      placeholder="e.g. 250655"
+                      maxLength={6}
+                      style={{width:'100%',background:'rgba(255,255,255,.06)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'11px 14px',fontFamily:"'Barlow Condensed',sans-serif",fontSize:16,color:'#F5F0E8',outline:'none',letterSpacing:2}}
+                    />
+                  </div>
+                  <div>
+                    <label style={{display:'block',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:7}}>
+                      Account type *
+                    </label>
+                    <select
+                      value={bankingForm.account_type}
+                      onChange={e=>setBankingForm(f=>({...f,account_type:e.target.value}))}
+                      style={{width:'100%',background:'rgba(255,255,255,.06)',border:'1.5px solid rgba(255,255,255,.1)',borderRadius:8,padding:'11px 14px',fontFamily:"'Barlow',sans-serif",fontSize:14,color:'#F5F0E8',outline:'none'}}>
+                      <option value="cheque" style={{background:'#222'}}>Cheque / Current</option>
+                      <option value="savings" style={{background:'#222'}}>Savings</option>
+                      <option value="transmission" style={{background:'#222'}}>Transmission</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Common branch codes helper */}
+                <div style={{background:'rgba(255,255,255,.03)',border:'1px solid rgba(255,255,255,.06)',borderRadius:8,padding:'12px 14px'}}>
+                  <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(245,240,232,.3)',marginBottom:8}}>
+                    Common branch codes
+                  </div>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:4,fontSize:12,color:'rgba(245,240,232,.4)'}}>
+                    {[
+                      ['ABSA',        '632005'],
+                      ['Capitec',     '470010'],
+                      ['FNB',         '250655'],
+                      ['Nedbank',     '198765'],
+                      ['Standard',    '051001'],
+                      ['African Bank','430000'],
+                      ['TymeBank',    '678910'],
+                      ['Discovery',   '679000'],
+                    ].map(([bank,code])=>(
+                      <div key={bank} style={{cursor:'pointer'}} onClick={()=>setBankingForm(f=>({...f,branch_code:code}))}>
+                        <span style={{color:'rgba(245,240,232,.6)',fontWeight:600}}>{bank}:</span> {code}
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{fontSize:11,color:'rgba(245,240,232,.25)',marginTop:6}}>Click a bank to auto-fill branch code</div>
+                </div>
+
+                {/* Security note */}
+                <div style={{background:'rgba(196,89,58,.06)',border:'1px solid rgba(196,89,58,.15)',borderRadius:8,padding:'10px 14px',fontSize:12,color:'rgba(245,240,232,.5)',lineHeight:1.6}}>
+                  🔒 Your banking details are encrypted and used only for processing your job payouts. They are never shared with homeowners or third parties.
+                </div>
+
+                {/* Save button */}
+                <button
+                  onClick={saveBanking}
+                  disabled={bankingLoading||!bankingForm.bank_name||!bankingForm.account_holder||!bankingForm.account_number||!bankingForm.branch_code}
+                  style={{
+                    background:bankingLoading||!bankingForm.bank_name||!bankingForm.account_holder||!bankingForm.account_number||!bankingForm.branch_code?'rgba(196,89,58,.4)':'#C4593A',
+                    color:'#fff',border:'none',padding:'14px',borderRadius:8,
+                    fontFamily:"'Barlow Condensed',sans-serif",fontSize:14,fontWeight:700,
+                    letterSpacing:2,textTransform:'uppercase',cursor:bankingLoading?'not-allowed':'pointer',
+                    transition:'background .15s',display:'flex',alignItems:'center',justifyContent:'center',gap:8,
+                  }}>
+                  {bankingLoading?(
+                    <><div style={{width:14,height:14,border:'2px solid rgba(255,255,255,.3)',borderTopColor:'#fff',borderRadius:'50%',animation:'spin .6s linear infinite'}}/>Saving...</>
+                  ):bankingSaved?'✓ Saved successfully!':'Save banking details'}
+                </button>
+
+              </div>
+            </div>
+          )}
+
           {view==='profile'&&(
             <div style={S.content}>
               <VerificationBadge variant="full" />
