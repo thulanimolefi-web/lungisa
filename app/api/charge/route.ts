@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { splitCommission } from '../../lib/commission'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -73,14 +74,26 @@ export async function POST(req: NextRequest) {
     await supabase.from('jobs').update({ status: 'in_progress' }).eq('id', jobId)
 
     // ── Record payment ────────────────────────────────────────────
+    // This is a preliminary record — the Yoco webhook (app/api/route.ts)
+    // upserts the authoritative version once payment actually completes.
     try {
+      let bidBreakdown = null
+      const { data: jobRow } = await supabase.from('jobs').select('accepted_bid_id').eq('id', jobId).single()
+      if(jobRow?.accepted_bid_id) {
+        const { data: bidRow } = await supabase.from('bids')
+          .select('call_out_fee,labour_amount,materials_amount,amount')
+          .eq('id', jobRow.accepted_bid_id).single()
+        bidBreakdown = bidRow
+      }
+      const { commissionAmountCents, netAmountCents } = splitCommission(amountInCents, bidBreakdown)
+
       await supabase.from('payments').insert({
         job_id:          jobId,
         homeowner_id:    homeownerId,
         tradesperson_id: tradespersonId,
         gross_amount:       amountInCents,
-        commission_amount:  Math.round(amountInCents * 0.08),
-        net_amount:         Math.round(amountInCents * 0.92),
+        commission_amount:  commissionAmountCents,
+        net_amount:         netAmountCents,
         payment_method:     'card',
         currency,
         yoco_charge_id:  checkout.id,

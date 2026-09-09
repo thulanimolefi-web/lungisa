@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../lib/supabase'
+import { trackEvent, AnalyticsEvents } from '../lib/analytics'
 
 type Role = 'homeowner' | 'tradesperson'
 type Screen = 'role' | 'signup' | 'otp' | 'verify-id' | 'success' | 'login' | 'login-otp' | 'forgot' | 'forgot-sent'
@@ -184,6 +185,7 @@ export default function AuthPage() {
         if(role==='tradesperson') {
           setScreen('verify-id')
         } else {
+          trackEvent(AnalyticsEvents.SIGNUP_COMPLETED,{role})
           setScreen('success')
         }
       }
@@ -263,6 +265,7 @@ export default function AuthPage() {
       })
 
       setUploadProgress(100)
+      trackEvent(AnalyticsEvents.SIGNUP_COMPLETED,{role:'tradesperson',id_verified:true})
       setScreen('success')
     } catch(e) {
       setUploadErr('Something went wrong. Please try again.')
@@ -272,6 +275,7 @@ export default function AuthPage() {
 
   async function handleSkipVerification() {
     // Mark as unsubmitted and proceed — they can verify later from dashboard
+    trackEvent(AnalyticsEvents.SIGNUP_COMPLETED,{role:'tradesperson',id_verified:false})
     setScreen('success')
   }
 
@@ -515,13 +519,13 @@ export default function AuthPage() {
               <h1 className="st">WHO<br/>ARE YOU?</h1>
               <p className="ss">Choose how you&apos;ll be using Lungisa.</p>
               <div className="rc">
-                <div className={`rcard ${role==='homeowner'?'sel':''}`} onClick={()=>setRole('homeowner')}>
+                <div className={`rcard ${role==='homeowner'?'sel':''}`} onClick={()=>{setRole('homeowner');trackEvent(AnalyticsEvents.ROLE_SELECTED,{role:'homeowner'})}}>
                   <div className="rchk"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
                   <div className="rico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#C4593A" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
                   <div className="rt">Homeowner</div>
                   <div className="rd">Post jobs and get bids from vetted tradespeople</div>
                 </div>
-                <div className={`rcard ${role==='tradesperson'?'sel':''}`} onClick={()=>setRole('tradesperson')}>
+                <div className={`rcard ${role==='tradesperson'?'sel':''}`} onClick={()=>{setRole('tradesperson');trackEvent(AnalyticsEvents.ROLE_SELECTED,{role:'tradesperson'})}}>
                   <div className="rchk"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
                   <div className="rico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#C4593A" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></div>
                   <div className="rt">Tradesperson</div>

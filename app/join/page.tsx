@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../lib/supabase'
+import { trackEvent, AnalyticsEvents } from '../lib/analytics'
 
 const TRADES = [
   {id:'plumbing',     label:'Plumbing',       emoji:'🔧', desc:'Pipes, geysers, taps, drains'},
@@ -148,7 +149,7 @@ export default function JoinPage() {
         setLastOtpDate()
         setCount(c=>c+1)
       }
-      setOtpErr(''); setStep('success')
+      setOtpErr(''); trackEvent(AnalyticsEvents.SIGNUP_COMPLETED,{role:'tradesperson',source:'join_page'}); setStep('success')
     } catch(e){ setOtpErr('Something went wrong. Please try again.') }
     setLoading(false)
   }

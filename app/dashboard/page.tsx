@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '../lib/supabase'
+import { trackEvent, AnalyticsEvents } from '../lib/analytics'
 import NotificationBell from '../components/NotificationBell'
 import VerificationBadge from '../components/VerificationBadge'
 import Messaging from '../components/Messaging'
@@ -35,6 +36,7 @@ type Job = {
   tags: {label:string,color:string,text:string}[]
   timing: string; submitted: boolean; submitPrice: number
   media: JobMedia[]
+  noCalloutPreferred: boolean
 }
 
 function getCatEmoji(cat:string){const m:Record<string,string>={plumbing:'🔧',electrical:'⚡',painting:'🎨',carpentry:'🪚',roofing:'🏠',tiling:'🚿',solar:'☀️',landscaping:'🌿',waterproofing:'💧',welding:'🔥',cleaning:'🧹',general:'🔩',moving:'🚛','pest control':'🐛','appliance repair':'🔌','air conditioning':'❄️',security:'🔐',paving:'🧱',plastering:'🏗️'};return m[cat?.toLowerCase()]||'🔧'}
@@ -188,7 +190,7 @@ function QuoteSubmitCard({ bid, onSubmitted }: { bid: any; onSubmitted: () => vo
         <div style={{background:'rgba(61,170,106,.07)',border:'1px solid rgba(61,170,106,.18)',borderRadius:8,padding:'10px 14px',marginBottom:12,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
           <div>
             <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,color:'rgba(61,170,106,.7)'}}>You&apos;ll earn</div>
-            <div style={{fontSize:10,color:'rgba(61,170,106,.5)',marginTop:1}}>after 5% Lungisa commission</div>
+            <div style={{fontSize:10,color:'rgba(61,170,106,.5)',marginTop:1}}>after 8% Lungisa commission</div>
           </div>
           <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:24,color:'#52C47F',letterSpacing:.5}}>
             R{Math.round(parseInt(labour)*0.92).toLocaleString()}
@@ -218,9 +220,15 @@ function DashboardInner() {
   const [mediaLoading, setMediaLoading] = useState(false)
   const [lightboxUrl, setLightboxUrl] = useState<string|null>(null)
   const [lightboxType, setLightboxType] = useState<'image'|'video'>('image')
-  const [bidPrice, setBidPrice]   = useState('')
+  const [bidCallout, setBidCallout]   = useState('')
+  const [bidLabour, setBidLabour]     = useState('')
+  const [bidMaterials, setBidMaterials] = useState('')
   const [bidEta, setBidEta]       = useState('30 mins')
   const [bidNote, setBidNote]     = useState('')
+  const bidCalloutNum   = parseInt(bidCallout)   || 0
+  const bidLabourNum    = parseInt(bidLabour)    || 0
+  const bidMaterialsNum = parseInt(bidMaterials) || 0
+  const bidPrice = String(bidCalloutNum + bidLabourNum + bidMaterialsNum)
   const [myBids, setMyBids]       = useState<Bid[]>([])
   // Job feed filters
   const [filterCategory, setFilterCategory] = useState<string>('all')
@@ -442,7 +450,7 @@ function DashboardInner() {
 
       const {data,error}=await supabase
         .from('jobs')
-        .select('id,title,category,area,urgency,budget_max,description,created_at,status,bid_count,homeowner_id,preferred_time,expires_at')
+        .select('id,title,category,area,urgency,budget_max,description,created_at,status,bid_count,homeowner_id,preferred_time,expires_at,no_callout_preferred')
         .in('status',['open','bidding'])
         .or('expires_at.is.null,expires_at.gt.'+new Date().toISOString())
         .order('created_at',{ascending:false})
@@ -494,6 +502,7 @@ function DashboardInner() {
           submitted:    false,
           submitPrice:  0,
           media:        [],
+          noCalloutPreferred: !!j.no_callout_preferred,
         })))
       }
     }catch(e){console.log('[feed] error:',e)}
@@ -604,7 +613,9 @@ function DashboardInner() {
 
   async function openModal(job:Job){
     setModalJob(job)
-    setBidPrice('')
+    setBidCallout('')
+    setBidLabour('')
+    setBidMaterials('')
     setBidNote('')
     setBidEta('30 mins')
     setModalMedia([])
@@ -790,7 +801,7 @@ function DashboardInner() {
   }
 
   async function submitBid(){
-    if(!bidPrice||parseInt(bidPrice)<100||!modalJob) return
+    if(!bidLabourNum||parseInt(bidPrice)<100||!modalJob) return
     const price=parseInt(bidPrice)
     try{
       const {data:{session}}=await supabase.auth.getSession()
@@ -799,6 +810,9 @@ function DashboardInner() {
           job_id:          modalJob.id,
           tradesperson_id: session.user.id,
           amount:          price,
+          call_out_fee:    bidCalloutNum,
+          labour_amount:   bidLabourNum,
+          materials_amount:bidMaterialsNum,
           eta_label:       bidEta,
           note:            bidNote||null,
           status:          'pending',
@@ -813,6 +827,7 @@ function DashboardInner() {
           }
           return
         }
+        trackEvent(AnalyticsEvents.BID_SUBMITTED,{has_callout:bidCalloutNum>0,has_materials:bidMaterialsNum>0})
         await supabase.from('jobs').update({ status:'bidding' }).eq('id',modalJob.id)
         fetch('/api/send-email',{
           method:'POST',headers:{'Content-Type':'application/json'},
@@ -1725,11 +1740,31 @@ function DashboardInner() {
               {!modalJob.submitted?(
                 <>
                   <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',margin:'18px 0 10px',display:'flex',alignItems:'center',gap:8}}>
-                    <span style={{width:14,height:2,background:'#C4593A',display:'inline-block'}}/>Your bid
+                    <span style={{width:14,height:2,background:'#C4593A',display:'inline-block'}}/>Your bid — itemised
                   </div>
+                  {modalJob.noCalloutPreferred && (
+                    <div style={{background:'rgba(232,160,32,.1)',border:'1px solid rgba(232,160,32,.25)',borderRadius:8,padding:'10px 12px',marginBottom:14,fontSize:12,color:'#E8A020',lineHeight:1.5}}>
+                      ⚠️ This homeowner would prefer a bid with no call-out fee. You can still add one — just worth explaining why in your message if you do.
+                    </div>
+                  )}
+                  <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:1,textTransform:'uppercase',color:'rgba(245,240,232,.35)',marginBottom:6}}>Call-out fee (optional)</div>
+                  <div style={{...S.priceWrap,marginBottom:10}}>
+                    <div style={{...S.priceR,fontSize:20,padding:'8px 14px'}}>R</div>
+                    <input style={{...S.priceInput,fontSize:22,padding:'8px 14px'}} type="number" placeholder="0" value={bidCallout} onChange={e=>setBidCallout(e.target.value)}/>
+                  </div>
+                  <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:1,textTransform:'uppercase',color:'rgba(245,240,232,.35)',marginBottom:6}}>Labour</div>
+                  <div style={{...S.priceWrap,marginBottom:10}}>
+                    <div style={{...S.priceR,fontSize:20,padding:'8px 14px'}}>R</div>
+                    <input style={{...S.priceInput,fontSize:22,padding:'8px 14px'}} type="number" placeholder="750" value={bidLabour} onChange={e=>setBidLabour(e.target.value)}/>
+                  </div>
+                  <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:1,textTransform:'uppercase',color:'rgba(245,240,232,.35)',marginBottom:6}}>Materials (optional — passed through at cost, no commission)</div>
                   <div style={S.priceWrap}>
-                    <div style={S.priceR}>R</div>
-                    <input style={S.priceInput} type="number" placeholder="750" value={bidPrice} onChange={e=>setBidPrice(e.target.value)}/>
+                    <div style={{...S.priceR,fontSize:20,padding:'8px 14px'}}>R</div>
+                    <input style={{...S.priceInput,fontSize:22,padding:'8px 14px'}} type="number" placeholder="0" value={bidMaterials} onChange={e=>setBidMaterials(e.target.value)}/>
+                  </div>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 2px',marginBottom:14,borderTop:'1px dashed rgba(255,255,255,.1)',paddingTop:12}}>
+                    <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:600,letterSpacing:1,textTransform:'uppercase',color:'rgba(245,240,232,.5)'}}>Total bid to homeowner</div>
+                    <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,color:'#F5F0E8'}}>R {(bidCalloutNum+bidLabourNum+bidMaterialsNum).toLocaleString()}</div>
                   </div>
                   <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:10}}>Estimated arrival</div>
                   <div style={S.etaChips}>{ETAS.map(e=><div key={e} style={S.etaChip(bidEta===e)} onClick={()=>setBidEta(e)}>{e}</div>)}</div>
@@ -1738,9 +1773,9 @@ function DashboardInner() {
                   <div style={S.earningsPreview}>
                     <div>
                       <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:12,fontWeight:600,color:'rgba(61,170,106,.7)'}}>You&apos;ll earn</div>
-                      <div style={{fontSize:10,color:'rgba(61,170,106,.5)',marginTop:1}}>after 5% Lungisa commission</div>
+                      <div style={{fontSize:10,color:'rgba(61,170,106,.5)',marginTop:1}}>materials in full, plus 92% of call-out + labour</div>
                     </div>
-                    <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:24,color:'#52C47F',letterSpacing:.5}}>{bidPrice?`R ${Math.round(parseInt(bidPrice)*0.92).toLocaleString()}`:'—'}</div>
+                    <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:24,color:'#52C47F',letterSpacing:.5}}>{bidPrice&&parseInt(bidPrice)>0?`R ${Math.round(bidMaterialsNum + (bidCalloutNum+bidLabourNum)*0.92).toLocaleString()}`:'—'}</div>
                   </div>
                 </>
               ):(

@@ -69,9 +69,9 @@ export default function TermsPage() {
         </ul>
 
         <h2>4. For Tradespeople</h2>
-        <p>Joining Lungisa as a tradesperson is free. You pay a commission of <strong>8% on each successfully completed and paid job only</strong>. There are no subscription fees, no listing fees and no per-bid fees.</p>
+        <p>Joining Lungisa as a tradesperson is free. You pay a commission of <strong>8% on the labour and call-out portion of each successfully completed and paid job only</strong>. Materials are passed through at cost and are never subject to commission. There are no subscription fees, no listing fees and no per-bid fees.</p>
         <div className="highlight">
-          <strong>Commission structure:</strong> 8% of the agreed job amount is retained by Lungisa. The remaining 92% is paid to you via EFT to your registered bank account within 24 hours of the homeowner confirming completion.
+          <strong>Commission structure:</strong> Bids are itemised into a call-out fee, labour, and materials. Lungisa retains 8% of the call-out fee plus labour amount only. The materials amount, plus the remaining 92% of call-out and labour, is paid to you via EFT to your registered bank account within 24 hours of the homeowner confirming completion.
         </div>
         <p>You agree to:</p>
         <ul>
@@ -88,8 +88,8 @@ export default function TermsPage() {
         <ul>
           <li>All payments are in South African Rand (ZAR)</li>
           <li>Minimum job value: R300</li>
-          <li>Lungisa commission: 8% of gross job amount</li>
-          <li>Tradesperson payout: 92% of gross job amount</li>
+          <li>Lungisa commission: 8% of the call-out fee and labour amount (materials are excluded from commission)</li>
+          <li>Tradesperson payout: 100% of materials, plus 92% of the call-out fee and labour amount</li>
           <li>Payout method: EFT to registered bank account</li>
           <li>Payout timing: within 24 hours of homeowner confirming completion</li>
         </ul>

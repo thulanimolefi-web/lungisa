@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import QRCode from 'qrcode'
+import { trackEvent, AnalyticsEvents } from './lib/analytics'
 
 export default function LandingPage() {
   const router = useRouter()
@@ -304,13 +305,22 @@ export default function LandingPage() {
     { n:'04', icon:'✅', h:'Get paid securely', p:'Complete the job, submit photos, and payment is released. 8% commission only on success.' },
   ]
 
-  const whyCards = [
-    { icon:'⚖️', h:'True negotiation', p:'Counter-offers, not fixed prices. Homeowners and tradespeople agree on a fair price together.' },
-    { icon:'🔒', h:'Escrow protection', p:'Money is held securely and only released when the homeowner confirms the job is done right.' },
+  const whyCardsHomeowner = [
+    { icon:'⚖️', h:'True negotiation', p:'Counter-offers, not fixed prices. You and the tradesperson agree on a fair price together.' },
+    { icon:'🔒', h:'Escrow protection', p:'Money is held securely and only released when you confirm the job is done right.' },
     { icon:'✓', h:'Vetted tradespeople', p:'ID-verified tradespeople with real reviews from real jobs. Trust built into the platform.' },
-    { icon:'💳', h:'8% on completion', p:'No subscriptions, no listing fees. Tradespeople pay 8% only when they complete a paid job.' },
     { icon:'📸', h:'Photo evidence', p:'Tradespeople submit completion photos and a work report before payment is released.' },
+    { icon:'🧾', h:'Itemised bids', p:'Every bid breaks down call-out fee, labour and materials — no surprise totals.' },
     { icon:'⚡', h:'Real-time bidding', p:'Bids and counter-offers happen in real time. No waiting 3 days for a callback.' },
+  ]
+
+  const whyCardsTradesperson = [
+    { icon:'💳', h:'8% on labour only', p:'No subscriptions, no listing fees. You pay 8% of call-out + labour only when you complete a paid job — materials are never commissioned.' },
+    { icon:'⚖️', h:'True negotiation', p:'Counter-offers, not fixed prices. You and the homeowner agree on a fair price together.' },
+    { icon:'🔒', h:'Get paid securely', p:'Payment is held in escrow and released to you as soon as the homeowner confirms the job is done.' },
+    { icon:'⚡', h:'Real-time bidding', p:'See jobs and bid in real time — no call centre, no waiting 3 days for a callback.' },
+    { icon:'🧾', h:'Itemised bids', p:'Break your bid into call-out fee, labour and materials, so homeowners see exactly what they’re paying for.' },
+    { icon:'⭐', h:'Build your reputation', p:'Every completed job builds your public rating. Higher rating, more jobs.' },
   ]
 
   const trades = [
@@ -325,7 +335,7 @@ export default function LandingPage() {
 
   const testimonials = [
     { stars:5, text:'"Posted a job about a burst pipe and had 3 bids within minutes. Chose the one with the best rating and negotiated the price. The escrow feature meant I only paid when the job was done properly."', name:'Lerato L.', role:'Homeowner · Randburg', init:'LL' },
-    { stars:5, text:'"As a plumber in Fourways I was always relying on word of mouth. Lungisa changed that completely. Jobs come to me now. And I only pay 5% when I actually get paid — that is fair."', name:'Zuki S.', role:'Electrician · Fourways', init:'ZS' },
+    { stars:5, text:'"As an electrician in Fourways I was always relying on word of mouth. Lungisa changed that completely. Jobs come to me now. And I only pay 8% when I actually get paid — that is fair."', name:'Zuki S.', role:'Electrician · Fourways', init:'ZS' },
     { stars:5, text:'"What I love most is knowing exactly where my job is at all times. The progress tracker tells me everything — from bids received to payment in escrow. No more chasing and wondering."', name:'Kele L.', role:'Homeowner · Centurion', init:'KL' },
   ]
 
@@ -389,8 +399,8 @@ export default function LandingPage() {
         <a href="#why" className="mm-link" onClick={()=>setMenuOpen(false)}>Why Lungisa</a>
         <a href="#trades" className="mm-link" onClick={()=>setMenuOpen(false)}>Trades</a>
         <a href="#install" className="mm-link" onClick={()=>setMenuOpen(false)}>Get the app</a>
-        <button className="mm-cta" onClick={()=>{setMenuOpen(false);router.push('/auth')}}>Post a job free →</button>
-        <button className="mm-cta" style={{marginTop:10,background:'transparent',border:'1px solid rgba(255,255,255,.2)',color:'rgba(245,240,232,.7)'}} onClick={()=>{setMenuOpen(false);router.push('/auth?role=tradesperson')}}>I&apos;m a tradesperson</button>
+        <button className="mm-cta" onClick={()=>{setMenuOpen(false);router.push('/post')}}>Post a job free →</button>
+        <button className="mm-cta" style={{marginTop:10,background:'transparent',border:'1px solid rgba(255,255,255,.2)',color:'rgba(245,240,232,.7)'}} onClick={()=>{setMenuOpen(false);router.push('/join')}}>I&apos;m a tradesperson</button>
       </div>
 
       {/* HERO */}
@@ -411,10 +421,10 @@ export default function LandingPage() {
             Post a job, get competitive bids from vetted tradespeople, negotiate your price, pay safely. No middlemen. No call centres. No surprises.
           </p>
           <div className="hero-btns">
-            <button className="btn-primary" onClick={()=>router.push('/auth')}>
+            <button className="btn-primary" onClick={()=>{trackEvent(AnalyticsEvents.HERO_CTA_CLICK,{role:'homeowner'});router.push('/post')}}>
               Post a job free →
             </button>
-            <button className="btn-secondary" onClick={()=>router.push('/auth?role=tradesperson')}>
+            <button className="btn-secondary" onClick={()=>{trackEvent(AnalyticsEvents.HERO_CTA_CLICK,{role:'tradesperson'});router.push('/join')}}>
               I&apos;m a tradesperson
             </button>
           </div>
@@ -499,7 +509,7 @@ export default function LandingPage() {
             ))}
           </div>
           <div style={{textAlign:'center',marginTop:48}}>
-            <button className="btn-primary" onClick={()=>router.push('/auth')} style={{margin:'0 auto'}}>
+            <button className="btn-primary" onClick={()=>router.push(activeTab==='homeowner'?'/post':'/join')} style={{margin:'0 auto'}}>
               {activeTab==='homeowner'?'Post your first job free →':'Join as a tradesperson →'}
             </button>
           </div>
@@ -512,13 +522,21 @@ export default function LandingPage() {
           <div>
             <div className="section-tag" style={{color:'var(--terra-l)'}}>Why Lungisa</div>
             <h2 className="section-h" style={{color:'#F5F0E8',marginBottom:20}}>Built for<br/><span>South Africa.</span></h2>
-            <p style={{fontSize:16,color:'rgba(245,240,232,.45)',lineHeight:1.8,marginBottom:32}}>
-              Existing platforms don&apos;t negotiate. They quote, you accept or decline. Lungisa gives both parties a voice — and escrow makes sure everyone&apos;s protected.
+            <p style={{fontSize:16,color:'rgba(245,240,232,.45)',lineHeight:1.8,marginBottom:24}}>
+              {activeTab==='homeowner'
+                ? 'Existing platforms don’t negotiate. They quote, you accept or decline. Lungisa gives both parties a voice — and escrow makes sure everyone’s protected.'
+                : 'No subscriptions. No listing fees. No call centre selling your leads to five other pros. You bid, you negotiate, you get paid — only when the job’s done.'}
             </p>
-            <button className="btn-primary" onClick={()=>router.push('/auth')}>Get started free →</button>
+            <div className="hiw-tabs" style={{marginBottom:24}}>
+              <button className={`hiw-tab${activeTab==='homeowner'?' active':''}`} onClick={()=>setActiveTab('homeowner')}>For homeowners</button>
+              <button className={`hiw-tab${activeTab==='tradesperson'?' active':''}`} onClick={()=>setActiveTab('tradesperson')}>For tradespeople</button>
+            </div>
+            <button className="btn-primary" onClick={()=>router.push(activeTab==='homeowner'?'/post':'/join')}>
+              {activeTab==='homeowner'?'Post a job free →':'Join as a tradesperson →'}
+            </button>
           </div>
           <div>
-            {whyCards.map((c,i)=>(
+            {(activeTab==='homeowner'?whyCardsHomeowner:whyCardsTradesperson).map((c,i)=>(
               <div key={i} className="why-card">
                 <div className="why-icon">{c.icon}</div>
                 <div>
@@ -538,7 +556,7 @@ export default function LandingPage() {
           <h2 className="section-h">Whatever needs<br/><span>fixing.</span></h2>
           <div className="trades-grid">
             {trades.map((t,i)=>(
-              <div key={i} className="trade-chip" onClick={()=>router.push('/auth')}>
+              <div key={i} className="trade-chip" onClick={()=>router.push(activeTab==='homeowner'?`/post?category=${encodeURIComponent(t.n)}`:`/join?trade=${encodeURIComponent(t.n)}`)}>
                 <span className="trade-emoji">{t.e}</span>
                 <div className="trade-name">{t.n}</div>
               </div>
@@ -695,8 +713,8 @@ export default function LandingPage() {
         <h2 className="cta-h">READY TO<br/>LUNGISA?</h2>
         <p className="cta-sub">Join homeowners and tradespeople across Johannesburg. Free to start.</p>
         <div className="cta-btns">
-          <button className="btn-white" onClick={()=>router.push('/auth')}>Post a job — it&apos;s free</button>
-          <button className="btn-outline-white" onClick={()=>router.push('/auth?role=tradesperson')}>Join as a tradesperson</button>
+          <button className="btn-white" onClick={()=>router.push('/post')}>Post a job — it&apos;s free</button>
+          <button className="btn-outline-white" onClick={()=>router.push('/join')}>Join as a tradesperson</button>
         </div>
       </div>
 
@@ -720,13 +738,13 @@ export default function LandingPage() {
             </div>
             <div>
               <div className="footer-col-h">Homeowners</div>
-              <a href="/auth" className="footer-link">Post a job</a>
+              <a href="/post" className="footer-link">Post a job</a>
               <a href="/home" className="footer-link">My dashboard</a>
               <a href="#how-it-works" className="footer-link">How it works</a>
             </div>
             <div>
               <div className="footer-col-h">Tradespeople</div>
-              <a href="/auth" className="footer-link">Join free</a>
+              <a href="/join" className="footer-link">Join free</a>
               <a href="/dashboard" className="footer-link">My dashboard</a>
               <a href="#trades" className="footer-link">Trades covered</a>
             </div>
@@ -747,8 +765,8 @@ export default function LandingPage() {
       </footer>
       {/* ── MOBILE STICKY CTA ──────────────────────────────────────── */}
       <div className="sticky-cta">
-        <button className="sticky-cta-primary" onClick={()=>router.push('/auth')}>Post a job free →</button>
-        <button className="sticky-cta-secondary" onClick={()=>router.push('/auth?role=tradesperson')}>Join as tradesperson</button>
+        <button className="sticky-cta-primary" onClick={()=>router.push('/post')}>Post a job free →</button>
+        <button className="sticky-cta-secondary" onClick={()=>router.push('/join')}>Join as tradesperson</button>
       </div>
 
       {/* ── CONTACT MODAL ──────────────────────────────────────────── */}

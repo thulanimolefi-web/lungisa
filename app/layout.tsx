@@ -90,6 +90,8 @@ export const metadata: Metadata = {
   },
 }
 
+const GA_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID
+
 export default function RootLayout({
   children,
 }: {
@@ -98,6 +100,23 @@ export default function RootLayout({
   return (
     <html lang="en-ZA">
       <head>
+        {/* ── Analytics — inert until NEXT_PUBLIC_GA_MEASUREMENT_ID is set in .env ── */}
+        {GA_MEASUREMENT_ID && (
+          <>
+            <script async src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`} />
+            <script
+              dangerouslySetInnerHTML={{
+                __html: `
+                  window.dataLayer = window.dataLayer || [];
+                  function gtag(){dataLayer.push(arguments);}
+                  gtag('js', new Date());
+                  gtag('config', '${GA_MEASUREMENT_ID}');
+                  window.gtag = gtag;
+                `,
+              }}
+            />
+          </>
+        )}
         {/* ── Viewport — prevents zoom, fits edge to edge ── */}
         <meta
           name="viewport"
@@ -141,7 +160,7 @@ export default function RootLayout({
               ],
               offers: {
                 '@type':       'Offer',
-                description:   'Free to post jobs. 5% commission on completed work.',
+                description:   'Free to post jobs. 8% commission on completed work.',
                 price:         '0',
                 priceCurrency: 'ZAR',
               },

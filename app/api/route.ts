@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
 import nodemailer from 'nodemailer'
+import { splitCommission } from '../lib/commission'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -54,14 +55,29 @@ export async function POST(req: NextRequest) {
         .eq('id', jobId)
         .neq('status', 'completed')
 
+      // Look up the accepted bid's itemised breakdown so commission is
+      // charged on call-out + labour only — never on materials.
+      let bidBreakdown = null
+      try {
+        const { data: jobRow } = await supabase.from('jobs').select('accepted_bid_id').eq('id', jobId).single()
+        if(jobRow?.accepted_bid_id) {
+          const { data: bidRow } = await supabase.from('bids')
+            .select('call_out_fee,labour_amount,materials_amount,amount')
+            .eq('id', jobRow.accepted_bid_id).single()
+          bidBreakdown = bidRow
+        }
+      } catch(e) { console.log('Bid breakdown lookup error (falling back to full-amount commission):', e) }
+
+      const { commissionAmountCents, netAmountCents } = splitCommission(amountInCents, bidBreakdown)
+
       // Upsert payment record
       const { error: pmtErr } = await supabase.from('payments').upsert({
         job_id:           jobId,
         homeowner_id:     homeownerId,
         tradesperson_id:  tradespersonId,
         gross_amount:     amountInCents,
-        commission_amount:Math.round(amountInCents * 0.08),
-        net_amount:       Math.round(amountInCents * 0.92),
+        commission_amount:commissionAmountCents,
+        net_amount:       netAmountCents,
         payment_method:   'card',
         yoco_charge_id:   checkoutId,
         status:           'held',
@@ -90,7 +106,7 @@ export async function POST(req: NextRequest) {
             user_id: tradespersonId,
             type:    'payment_confirmed',
             title:   'Payment in escrow 🔒',
-            message: `R${Math.round(amountInCents*0.92/100).toLocaleString()} is secured in escrow for ${jobTitle||'this job'}. Complete the job to release payment.`,
+            message: `R${Math.round(netAmountCents/100).toLocaleString()} is secured in escrow for ${jobTitle||'this job'}. Complete the job to release payment.`,
             link:    '/dashboard',
             read:    false,
           })

@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../lib/supabase'
+import { splitCommission } from '../lib/commission'
+import { trackEvent, AnalyticsEvents } from '../lib/analytics'
 
 const AREAS = [
   'Sandton','Fourways','Bryanston','Morningside','Rivonia','Sunninghill',
@@ -54,6 +56,9 @@ type BidData = {
   finalAmount: number|null
   counterUpdatedAt: string|null
   quoteRequested: boolean
+  callOutFee: number|null
+  labourAmount: number|null
+  materialsAmount: number|null
 }
 
 type JobData = {
@@ -237,7 +242,7 @@ export default function HomeDashboard() {
 
       const {data:bidsData} = await supabase
         .from('bids')
-        .select('id,job_id,amount,counter_amount,counter_by,counter_round,final_amount,eta_label,note,status,created_at,updated_at,tradesperson_id,quote_requested')
+        .select('id,job_id,amount,counter_amount,counter_by,counter_round,final_amount,eta_label,note,status,created_at,updated_at,tradesperson_id,quote_requested,call_out_fee,labour_amount,materials_amount')
         .in('job_id',jobIds).order('created_at',{ascending:true})
 
       const tpIds = Array.from(new Set((bidsData||[]).map((b:any)=>b.tradesperson_id)))
@@ -272,6 +277,8 @@ export default function HomeDashboard() {
               counterBy:b.counter_by||null, counterRound:b.counter_round||0,
               finalAmount:b.final_amount||null, counterUpdatedAt:b.updated_at||null,
               quoteRequested:b.quote_requested||false,
+              callOutFee:b.call_out_fee ?? null, labourAmount:b.labour_amount ?? null,
+              materialsAmount:b.materials_amount ?? null,
             }
           })
         }
@@ -472,7 +479,14 @@ export default function HomeDashboard() {
       const {data:{session}} = await supabase.auth.getSession()
       const job = jobs.find(j=>j.id===jobId)
       const acceptedBid = job?.bids.find(b=>b.id===bidId)
-      const netAmount = Math.round(amount * 0.92 * 100) // 92% net in cents
+      // Commission is 8% of call-out + labour only — materials pass through
+      // uncommissioned. Falls back to the old flat-92% split if this bid
+      // predates itemisation (labourAmount null).
+      const { netAmountCents } = splitCommission(Math.round(amount*100), acceptedBid ? {
+        call_out_fee: acceptedBid.callOutFee, labour_amount: acceptedBid.labourAmount, materials_amount: acceptedBid.materialsAmount,
+      } : null)
+      const netAmount = netAmountCents
+      trackEvent(AnalyticsEvents.JOB_COMPLETED,{jobId})
 
       // Update job and bid status
       await supabase.from('jobs').update({status:'completed'}).eq('id',jobId)
@@ -495,7 +509,7 @@ export default function HomeDashboard() {
             user_id: acceptedBid.tradespersonId,
             type:    'payment_processing',
             title:   'Payment being processed',
-            message: `Homeowner confirmed the job done. R${Math.round(amount*0.92).toLocaleString()} will be paid to your bank account within 24 hours.`,
+            message: `Homeowner confirmed the job done. R${Math.round(netAmount/100).toLocaleString()} will be paid to your bank account within 24 hours.`,
             link:    '/dashboard',
             read:    false,
           })
@@ -510,7 +524,7 @@ export default function HomeDashboard() {
           jobId,
           jobTitle:         job?.title||'Job',
           amount,
-          netAmount:        Math.round(amount*0.92),
+          netAmount:        Math.round(netAmount/100),
           homeownerId:      session?.user?.id,
           tradespersonId:   acceptedBid?.tradespersonId||bidId,
           tradespersonName: acceptedBid?.name||'Tradesperson',
@@ -1134,6 +1148,15 @@ export default function HomeDashboard() {
                                           <div className="bc-eta">ETA: {bid.eta}</div>
                                         </div>
                                       </div>
+
+                                      {/* ── ITEMISED BREAKDOWN ── */}
+                                      {bid.labourAmount!=null&&(
+                                        <div style={{display:'flex',gap:12,flexWrap:'wrap',fontSize:11,color:'var(--charcoal-l)',padding:'0 0 10px',marginTop:-4}}>
+                                          {!!bid.callOutFee&&<span>🚗 Call-out R{bid.callOutFee.toLocaleString()}</span>}
+                                          <span>🔧 Labour R{bid.labourAmount.toLocaleString()}</span>
+                                          {!!bid.materialsAmount&&<span>🧱 Materials R{bid.materialsAmount.toLocaleString()} <em style={{fontStyle:'italic',opacity:.7}}>(no commission)</em></span>}
+                                        </div>
+                                      )}
 
                                       {/* ── QUOTE RECEIVED ── */}
                                       {bidHasQuote&&jobQuote.status==='submitted'&&isOpen&&!jobHasAccepted&&(

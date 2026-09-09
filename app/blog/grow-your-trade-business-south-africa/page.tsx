@@ -99,8 +99,8 @@ export default function GrowTradeBusiness() {
             <div className="stat-label">Cost to join Lungisa</div>
           </div>
           <div className="stat-card">
-            <div className="stat-num">5%</div>
-            <div className="stat-label">Commission on success only</div>
+            <div className="stat-num">8%</div>
+            <div className="stat-label">Commission on labour, success only</div>
           </div>
           <div className="stat-card">
             <div className="stat-num">24h</div>
@@ -147,13 +147,13 @@ export default function GrowTradeBusiness() {
 
         <div className="cta-box">
           <h3>Start Finding Work in Your Area</h3>
-          <p>Join free. Bid on jobs near you. Pay 5% only when you complete a paid job. No subscriptions, no listing fees.</p>
+          <p>Join free. Bid on jobs near you. Pay 8% on labour only when you complete a paid job. No subscriptions, no listing fees.</p>
           <Link href="/auth"><span className="cta-btn">Join as a tradesperson →</span></Link>
         </div>
 
         <h2>Frequently Asked Questions</h2>
         <h3>How much does it cost to join Lungisa as a tradesperson?</h3>
-        <p>Nothing. Joining is free, bidding is free. You pay a 5% commission only when you complete a paid job. If you don&apos;t win a job, you pay nothing.</p>
+        <p>Nothing. Joining is free, bidding is free. You pay an 8% commission on labour only when you complete a paid job. If you don&apos;t win a job, you pay nothing.</p>
 
         <h3>How many jobs can I bid on?</h3>
         <p>There&apos;s no limit on bids. You can bid on as many open jobs in your trade and service area as you want.</p>

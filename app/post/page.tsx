@@ -1,6 +1,7 @@
 'use client'
 
 import { supabase } from '../lib/supabase'
+import { trackEvent, AnalyticsEvents } from '../lib/analytics'
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 
@@ -97,6 +98,7 @@ export default function PostJob() {
   const [time, setTime]               = useState('')
   const [budget, setBudget]           = useState(750)
   const [budgetOpen, setBudgetOpen]   = useState(false)
+  const [noCalloutPreferred, setNoCalloutPreferred] = useState(false)
 
   // ── Media state — track files with type ──────────────────────────
   const [mediaFiles, setMediaFiles]   = useState<MediaFile[]>([])
@@ -307,13 +309,36 @@ export default function PostJob() {
     setAreaErr(''); goStep(3)
   }
 
+  function savePendingJobDraft() {
+    try {
+      localStorage.setItem('lungisa_pending_job', JSON.stringify({
+        cat, title, desc, area, urgency, date, time, budget, budgetOpen, mediaFiles, noCalloutPreferred,
+      }))
+    } catch(e) { /* storage unavailable — draft is lost but flow still works */ }
+  }
+
   async function postJob() {
+    // Check auth BEFORE showing any success state — never promise a live job
+    // to someone who isn't actually signed in yet.
+    let session
+    try {
+      const { data } = await supabase.auth.getSession()
+      session = data.session
+    } catch(e) {
+      toast('Something went wrong', 'Please check your connection and try again.')
+      return
+    }
+
+    if(!session?.user) {
+      savePendingJobDraft()
+      toast('Almost there!', 'Create your free account to publish this job — we\'ve saved everything you entered.')
+      window.location.href = '/auth'
+      return
+    }
+
     goStep(5)
     toast('Job posted!','Your job is live. Tradespeople are being notified.')
     try {
-      const { data:{ session } } = await supabase.auth.getSession()
-      if(!session?.user) { window.location.href = '/auth'; return }
-
       const { data, error } = await supabase.from('jobs').insert({
         homeowner_id:   session.user.id,
         title,
@@ -326,12 +351,14 @@ export default function PostJob() {
         preferred_date: date||null,
         preferred_time: time||null,
         status:         'open',
+        no_callout_preferred: noCalloutPreferred,
         expires_at:     new Date(Date.now() + 30*24*60*60*1000).toISOString(),
       }).select('id').single()
 
-      if(error) { toast('Error posting job', error.message); return }
+      if(error) { toast('Error posting job', error.message); goStep(4); return }
 
       if(data) {
+        trackEvent(AnalyticsEvents.JOB_POSTED,{category:cat,urgency,no_callout_preferred:noCalloutPreferred})
         setPostedJobId(data.id)
         // Save all media to job_photos table
         if(mediaFiles.length > 0) {
@@ -347,8 +374,38 @@ export default function PostJob() {
       }
     } catch(e) {
       console.error('Job post error:', e)
+      toast('Something went wrong', 'Please try again.')
+      goStep(4)
     }
   }
+
+  // Resume a job draft that was saved when an anonymous visitor hit the
+  // signup wall — restores their work instead of making them retype it.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('lungisa_pending_job')
+      if(!raw) return
+      supabase.auth.getSession().then(({ data:{ session } }) => {
+        if(!session?.user) return
+        const draft = JSON.parse(raw)
+        setCat(draft.cat ?? 'Plumbing')
+        setTitle(draft.title ?? '')
+        setDesc(draft.desc ?? '')
+        setArea(draft.area ?? '')
+        setUrgency(draft.urgency ?? 'Today — emergency')
+        setDate(draft.date ?? '')
+        setTime(draft.time ?? '')
+        setBudget(draft.budget ?? 750)
+        setBudgetOpen(!!draft.budgetOpen)
+        setMediaFiles(draft.mediaFiles ?? [])
+        setNoCalloutPreferred(!!draft.noCalloutPreferred)
+        localStorage.removeItem('lungisa_pending_job')
+        goStep(4)
+        toast('Welcome back!', 'Your job details were saved — review and post below.')
+      })
+    } catch(e) { /* ignore malformed/unavailable draft */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
 
   function acceptBid(bid:RealBid, price:number) {
@@ -775,8 +832,15 @@ export default function PostJob() {
                   </div>
                 )}
 
+                <label style={{display:'flex',alignItems:'flex-start',gap:10,marginBottom:20,cursor:'pointer',background:'rgba(255,255,255,.03)',border:'1px solid rgba(255,255,255,.08)',borderRadius:8,padding:'12px 16px'}}>
+                  <input type="checkbox" checked={noCalloutPreferred} onChange={e=>setNoCalloutPreferred(e.target.checked)} style={{marginTop:3,width:16,height:16,accentColor:'var(--terra)',flexShrink:0,cursor:'pointer'}}/>
+                  <span style={{fontSize:13,color:'rgba(245,240,232,.65)',lineHeight:1.5}}>
+                    <strong style={{color:'var(--cream)'}}>I&apos;d prefer bids without a separate call-out fee.</strong> Tradespeople will see this — it&apos;s a preference, not a rule, so you may still get bids that include one.
+                  </span>
+                </label>
+
                 <div style={{background:'rgba(196,89,58,.08)',border:'1px solid rgba(196,89,58,.2)',borderRadius:8,padding:'12px 16px',fontSize:13,color:'rgba(245,240,232,.65)',marginBottom:20,lineHeight:1.55}}>
-                  <strong style={{color:'var(--terra-l)'}}>FREE TO POST.</strong> Lungisa charges R0 to homeowners. Tradespeople pay a 5% commission only when a job is completed.
+                  <strong style={{color:'var(--terra-l)'}}>FREE TO POST.</strong> Lungisa charges R0 to homeowners. Tradespeople pay an 8% commission on labour only when a job is completed. Bids will show a call-out fee, labour and materials breakdown — no surprise totals.
                 </div>
                 <div style={S.btnRow}>
                   <button style={S.btn('ghost')} onClick={()=>goStep(3)}>← Edit</button>
