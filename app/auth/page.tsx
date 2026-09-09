@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../lib/supabase'
 import { trackEvent, AnalyticsEvents } from '../lib/analytics'
@@ -70,6 +70,15 @@ function needsDailyOtp(): boolean {
 export default function AuthPage() {
   const router = useRouter()
   const [screen, setScreen]         = useState<Screen>('role')
+
+  // Support deep-linking straight to login (e.g. /auth?screen=login from
+  // /post or /join, for a returning user who doesn't want the role picker).
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search)
+      if(params.get('screen') === 'login') setScreen('login')
+    } catch(e) { /* no-op */ }
+  }, [])
   const [role, setRole]             = useState<Role>('homeowner')
   const [fname, setFname]           = useState('')
   const [lname, setLname]           = useState('')

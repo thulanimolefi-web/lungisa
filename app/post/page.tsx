@@ -490,7 +490,10 @@ export default function PostJob() {
           <a href="/" style={{display:'flex',alignItems:'center',gap:9,textDecoration:'none'}}>
             <span style={S.navWord}>LUNGISA</span>
           </a>
-          <div style={{fontFamily:'var(--fc)',fontSize:13,color:'rgba(245,240,232,.5)',letterSpacing:1}}>Post a Job</div>
+          <div style={{display:'flex',alignItems:'center',gap:16}}>
+            <div style={{fontFamily:'var(--fc)',fontSize:13,color:'rgba(245,240,232,.5)',letterSpacing:1}}>Post a Job</div>
+            <a href="/auth?screen=login" style={{fontFamily:'var(--fc)',fontSize:12,fontWeight:600,letterSpacing:1,color:'var(--terra-l)',textDecoration:'none',whiteSpace:'nowrap'}}>Already have an account? Sign in →</a>
+          </div>
         </nav>
 
         {/* STEP BAR */}
