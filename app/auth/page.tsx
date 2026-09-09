@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../lib/supabase'
 import { trackEvent, AnalyticsEvents } from '../lib/analytics'
+import { AREAS } from '../lib/areas'
 
 type Role = 'homeowner' | 'tradesperson'
 type Screen = 'role' | 'signup' | 'otp' | 'verify-id' | 'success' | 'login' | 'login-otp' | 'forgot' | 'forgot-sent'
@@ -13,44 +14,6 @@ const TRADES = [
   'Solar','Landscaping','Waterproofing','Welding','Cleaning','General',
   'Moving','Pest Control','Appliance Repair','Air Conditioning',
   'Security','Paving','Plastering',
-]
-const AREAS = [
-  // Johannesburg North
-  'Sandton','Fourways','Bryanston','Morningside','Rivonia','Sunninghill',
-  'Paulshof','Kyalami','Halfway House','Woodmead','Kramerville',
-  // Johannesburg Central & South
-  'Johannesburg CBD','Parktown','Rosebank','Melrose','Illovo','Hyde Park',
-  'Northcliff','Auckland Park','Greenside','Linden','Victory Park',
-  'Mayfair','Fordsburg','Newtown','Maboneng',
-  // Johannesburg West
-  'Randburg','Ferndale','Honeydew','Ruimsig','Florida','Krugersdorp',
-  'Roodepoort','Northgate','Weltevredenpark','Constantia Kloof',
-  'Strubensvalley','Radiokop','Wilgeheuwel',
-  // Johannesburg South & SW
-  'Soweto','Lenasia','Ennerdale','Orange Farm','Alberton','Germiston',
-  'Meyersdal','Glenvista','Bassonia','Kibler Park','Mulbarton',
-  'Winchester Hills','Turffontein','Booysens','Ophirton',
-  // East Rand / Ekurhuleni
-  'Boksburg','Benoni','Brakpan','Springs','Edenvale','Bedfordview',
-  'Kempton Park','Tembisa','Ekurhuleni','Germiston','Alberton',
-  'Vosloorus','Daveyton','Katlehong','Thokoza','Nigel',
-  'Heidelberg','Duduza',
-  // Midrand
-  'Midrand','Vorna Valley','Halfway House','Waterfall','Jukskei Park',
-  'Grand Central','Carlswald',
-  // Pretoria / Tshwane
-  'Pretoria Central','Centurion','Pretoria East','Pretoria North',
-  'Pretoria West','Soshanguve','Mamelodi','Atteridgeville','Hatfield',
-  'Menlyn','Lynnwood','Faerie Glen','Moreleta Park','Garsfontein',
-  'Queenswood','Arcadia','Muckleneuk','Brooklyn','Groenkloof',
-  'Montana','Gezina','Silverton','Eersterust','Watloo',
-  'Irene','Rooihuiskraal','Olievenhoutbosch',
-  // West Rand
-  'Randfontein','Westonaria','Carletonville','Fochville',
-  'Magaliesburg','Krugersdorp','Chamdor',
-  // Sedibeng
-  'Vereeniging','Vanderbijlpark','Meyerton','Evaton','Sebokeng',
-  'Sharpeville','Bophelong','Three Rivers',
 ]
 
 function getLastOtpDate(): string {

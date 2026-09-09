@@ -4,6 +4,8 @@ import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '../lib/supabase'
 import { trackEvent, AnalyticsEvents } from '../lib/analytics'
+import { splitCommission } from '../lib/commission'
+import { AREAS } from '../lib/areas'
 import NotificationBell from '../components/NotificationBell'
 import VerificationBadge from '../components/VerificationBadge'
 import Messaging from '../components/Messaging'
@@ -24,6 +26,10 @@ type Bid = {
   jobStatus: string
   quoteRequested: boolean
   finalAmount:  number|null
+  callOutFee: number|null
+  labourAmount: number|null
+  materialsAmount: number|null
+  streetAddress: string|null
 }
 type JobMedia = {
   url: string
@@ -43,6 +49,18 @@ function getCatEmoji(cat:string){const m:Record<string,string>={plumbing:'🔧',
 function getUrgencyLabel(u:string){const m:Record<string,string>={emergency:'Today — emergency',within_3_days:'Within 3 days',this_week:'This week',flexible:'Flexible'};return m[u]||'Flexible'}
 function getUrgencyColor(u:string){const m:Record<string,string>={emergency:'#E24B4A',within_3_days:'#E8A020',this_week:'#3DAA6A',flexible:'#D4C9B4'};return m[u]||'#D4C9B4'}
 function getTimeAgo(d:string){const diff=Date.now()-new Date(d).getTime();const mins=Math.floor(diff/60000);if(mins<60)return`${mins} min ago`;const hrs=Math.floor(mins/60);if(hrs<24)return`${hrs} hr${hrs>1?'s':''} ago`;return`${Math.floor(hrs/24)} day${Math.floor(hrs/24)>1?'s':''} ago`}
+// Estimated take-home for a bid still in flight (not yet in the payments
+// table). Uses the bid's itemised breakdown when available so materials
+// aren't shown as commissioned — falls back to the flat 8% estimate for
+// older bids with no breakdown. Once a job is actually paid, the real
+// figure lives in payments.net_amount; this is just the pre-payment guess.
+function estimateBidNet(b:{price:number, finalAmount:number|null, callOutFee?:number|null, labourAmount?:number|null, materialsAmount?:number|null}) {
+  const grossRand = b.finalAmount || b.price
+  const { netAmountCents } = splitCommission(Math.round(grossRand*100), b.labourAmount!=null ? {
+    call_out_fee: b.callOutFee, labour_amount: b.labourAmount, materials_amount: b.materialsAmount,
+  } : null)
+  return Math.round(netAmountCents/100)
+}
 function getJobTags(j:any){const t=[];if(j.urgency==='emergency')t.push({label:'Urgent',color:'rgba(226,75,74,.12)',text:'#f08080'});if((j.photo_count||0)>0)t.push({label:`${j.photo_count} Photo${j.photo_count>1?'s':''}`,color:'rgba(46,127,212,.1)',text:'#6aaee8'});if((j.bid_count||0)>0)t.push({label:`${j.bid_count} bids placed`,color:'rgba(255,255,255,.06)',text:'rgba(245,240,232,.45)'});if((j.bid_count||0)===0)t.push({label:'New',color:'rgba(196,89,58,.15)',text:'#E07A5F'});return t}
 
 // ── QuoteSubmitCard — rendered inside tradesperson dashboard ────────
@@ -515,27 +533,51 @@ function DashboardInner() {
       if(!session?.user) return
       const {data,error}=await supabase
         .from('bids')
-        .select('*, jobs(id, title, area, status), updated_at, quote_requested, quote_materials_by, final_amount')
+        .select('*, jobs(id, title, area, status), updated_at, quote_requested, quote_materials_by, final_amount, call_out_fee, labour_amount, materials_amount')
         .eq('tradesperson_id',session.user.id)
         .order('created_at',{ascending:false})
       if(!error&&data){
-        setMyBids(data.map((b:any)=>({
-          id:            b.id,
-          job:           b.jobs?.title||'Job',
-          loc:           b.jobs?.area||'JHB',
-          price:         b.amount,
-          status:        (b.status||'pending').toLowerCase(),
-          jobStatus:     b.jobs?.status||'open',
-          time:          getTimeAgo(b.created_at),
-          counterAmount: b.counter_amount||null,
-          counterBy:     b.counter_by||null,
-          counterRound:  b.counter_round||0,
-          counterUpdatedAt: b.updated_at||null,
-          quoteRequested:   b.quote_requested||false,
-          quoteMaterialsBy:  b.quote_materials_by||'homeowner',
-          finalAmount:       b.final_amount ? b.final_amount/100 : null,
-          jobId:         b.jobs?.id||b.job_id,
-        })))
+        const mapped = data.map((b:any)=>{
+          const jobStatus = b.jobs?.status||'open'
+          const status = (b.status||'pending').toLowerCase()
+          // Only jobs that reached acceptance or beyond are eligible to have
+          // their exact street address revealed to this tradesperson — a
+          // declined/pending bidder should never receive it, so we fetch it
+          // separately (below) rather than including it in this query.
+          const addressEligible = status==='accepted' || ['in_progress','completion_submitted','completed'].includes(jobStatus)
+          return {
+            id:            b.id,
+            job:           b.jobs?.title||'Job',
+            loc:           b.jobs?.area||'JHB',
+            price:         b.amount,
+            status,
+            jobStatus,
+            time:          getTimeAgo(b.created_at),
+            counterAmount: b.counter_amount||null,
+            counterBy:     b.counter_by||null,
+            counterRound:  b.counter_round||0,
+            counterUpdatedAt: b.updated_at||null,
+            quoteRequested:   b.quote_requested||false,
+            quoteMaterialsBy:  b.quote_materials_by||'homeowner',
+            finalAmount:       b.final_amount ? b.final_amount/100 : null,
+            jobId:         b.jobs?.id||b.job_id,
+            callOutFee:    b.call_out_fee ?? null,
+            labourAmount:  b.labour_amount ?? null,
+            materialsAmount: b.materials_amount ?? null,
+            streetAddress: null as string|null,
+            _addressEligible: addressEligible,
+          }
+        })
+
+        const eligibleJobIds = Array.from(new Set(mapped.filter((b:any)=>b._addressEligible).map((b:any)=>b.jobId).filter(Boolean)))
+        if(eligibleJobIds.length > 0){
+          const {data:addrRows} = await supabase.from('jobs').select('id, street_address').in('id', eligibleJobIds)
+          const addrMap: Record<string,string> = {}
+          for(const r of (addrRows||[])) if(r.street_address) addrMap[r.id] = r.street_address
+          for(const b of mapped) if(b.jobId && addrMap[b.jobId]) b.streetAddress = addrMap[b.jobId]
+        }
+
+        setMyBids(mapped.map(({_addressEligible, ...rest})=>rest))
       }
     }catch(e){console.log('Bids error:',e)}
   }
@@ -1287,6 +1329,15 @@ function DashboardInner() {
                         </div>
                       </div>
                     </div>
+                    {(isAccepted||isInEscrow||isCompletionSubmitted||isCompleted)&&b.streetAddress&&(
+                      <div style={{background:'rgba(61,170,106,.06)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'12px 16px',marginBottom:12,display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}>
+                        <div>
+                          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'#3DAA6A',marginBottom:3}}>📍 Job address</div>
+                          <div style={{fontSize:13.5,color:'rgba(245,240,232,.85)'}}>{b.streetAddress}</div>
+                        </div>
+                        <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(b.streetAddress)}`} target="_blank" rel="noreferrer" style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:700,letterSpacing:1,textTransform:'uppercase',color:'#3DAA6A',textDecoration:'none',whiteSpace:'nowrap'}}>Open in Maps →</a>
+                      </div>
+                    )}
                     {homeownerCountered&&(
                       <div style={{background:'rgba(232,160,32,.06)',border:'1px solid rgba(232,160,32,.2)',borderRadius:8,padding:'14px 16px'}}>
                         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
@@ -1335,13 +1386,13 @@ function DashboardInner() {
                     )}
                     {isInEscrow&&!isCompletionSubmitted&&!submittedCompletions.has(b.jobId)&&(
                       <div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.25)',borderRadius:8,padding:'14px 16px'}}>
-                        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'#3DAA6A',marginBottom:8}}>🔒 R{Math.round((b.finalAmount||b.price)*0.92).toLocaleString()} in escrow — complete the job to get paid</div>
+                        <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'#3DAA6A',marginBottom:8}}>🔒 R{estimateBidNet(b).toLocaleString()} in escrow — complete the job to get paid</div>
                         <p style={{fontSize:13,color:'rgba(245,240,232,.6)',lineHeight:1.6,marginBottom:12}}>Once done, submit your completion report with photos. The homeowner confirms and your payment is released.</p>
                         <button onClick={()=>{setCompletionJobId(b.jobId);setCompletionBidId(b.id)}} style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:13,fontWeight:700,letterSpacing:1.5,textTransform:'uppercase',background:'#3DAA6A',color:'#fff',border:'none',padding:'11px 20px',borderRadius:6,cursor:'pointer',width:'100%',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>📋 Mark job as complete</button>
                       </div>
                     )}
                     {(isCompletionSubmitted||submittedCompletions.has(b.jobId))&&!isCompleted&&(
-                      <div style={{background:'rgba(232,160,32,.08)',border:'1px solid rgba(232,160,32,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'#E8A020',lineHeight:1.5}}>⏳ Completion report submitted — waiting for homeowner to confirm and release R{Math.round((b.finalAmount||b.price)*0.92).toLocaleString()} to you.</div>
+                      <div style={{background:'rgba(232,160,32,.08)',border:'1px solid rgba(232,160,32,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'#E8A020',lineHeight:1.5}}>⏳ Completion report submitted — waiting for homeowner to confirm and release R{estimateBidNet(b).toLocaleString()} to you.</div>
                     )}
                     {isDeclined&&(<div style={{background:'rgba(226,75,74,.06)',border:'1px solid rgba(226,75,74,.15)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(226,75,74,.7)',lineHeight:1.5}}>✗ Not accepted this time. Keep bidding on new jobs.</div>)}
                     {!homeownerCountered&&!iSentCounter&&!isAccepted&&!isDeclined&&!isCompleted&&!isInEscrow&&(
@@ -1356,7 +1407,7 @@ function DashboardInner() {
                       </div>
                     )}
                     {isCompleted&&(
-                      <div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(61,170,106,.9)',lineHeight:1.5}}>✓ Job complete · R{Math.round((b.finalAmount||b.price)*0.92).toLocaleString()} payment released to your account · Check Earnings tab</div>
+                      <div style={{background:'rgba(61,170,106,.08)',border:'1px solid rgba(61,170,106,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'rgba(61,170,106,.9)',lineHeight:1.5}}>✓ Job complete · R{estimateBidNet(b).toLocaleString()} payment released to your account · Check Earnings tab</div>
                     )}
                   </div>
                 )
@@ -1379,7 +1430,7 @@ function DashboardInner() {
                   <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:12,marginBottom:20}}>
                     <div style={{background:'#222220',borderRadius:10,border:'1px solid rgba(255,255,255,.06)',padding:'18px 20px'}}>
                       <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.3)',marginBottom:6}}>Total earned</div>
-                      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:40,color:'#52C47F',letterSpacing:1,lineHeight:1}}>R{myBids.filter(b=>b.jobStatus==='completed').reduce((s,b)=>s+Math.round((b.finalAmount||b.price)*0.92),0).toLocaleString()}</div>
+                      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:40,color:'#52C47F',letterSpacing:1,lineHeight:1}}>R{myBids.filter(b=>b.jobStatus==='completed').reduce((s,b)=>s+estimateBidNet(b),0).toLocaleString()}</div>
                     </div>
                     <div style={{background:'#222220',borderRadius:10,border:'1px solid rgba(255,255,255,.06)',padding:'18px 20px'}}>
                       <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.3)',marginBottom:6}}>Jobs completed</div>
@@ -1387,7 +1438,7 @@ function DashboardInner() {
                     </div>
                     <div style={{background:'#222220',borderRadius:10,border:'1px solid rgba(255,255,255,.06)',padding:'18px 20px'}}>
                       <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.3)',marginBottom:6}}>In escrow</div>
-                      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:40,color:'#E8A020',letterSpacing:1,lineHeight:1}}>R{myBids.filter(b=>['in_progress','completion_submitted'].includes(b.jobStatus)).reduce((s,b)=>s+Math.round((b.finalAmount||b.price)*0.92),0).toLocaleString()}</div>
+                      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:40,color:'#E8A020',letterSpacing:1,lineHeight:1}}>R{myBids.filter(b=>['in_progress','completion_submitted'].includes(b.jobStatus)).reduce((s,b)=>s+estimateBidNet(b),0).toLocaleString()}</div>
                     </div>
                     <div style={{background:'#222220',borderRadius:10,border:'1px solid rgba(255,255,255,.06)',padding:'18px 20px'}}>
                       <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.3)',marginBottom:6}}>Rating</div>
@@ -1409,7 +1460,7 @@ function DashboardInner() {
                         </div>
                       </div>
                       <div style={{textAlign:'right',flexShrink:0}}>
-                        <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:26,color:b.jobStatus==='completed'?'#52C47F':'#E8A020',letterSpacing:1}}>R{Math.round((b.finalAmount||b.price)*0.92).toLocaleString()}</div>
+                        <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:26,color:b.jobStatus==='completed'?'#52C47F':'#E8A020',letterSpacing:1}}>R{estimateBidNet(b).toLocaleString()}</div>
                         <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,color:'rgba(245,240,232,.3)',letterSpacing:.5}}>after 8% commission</div>
                       </div>
                     </div>
@@ -1617,7 +1668,7 @@ function DashboardInner() {
                     <div style={{marginBottom:20}}>
                       <label style={{display:'block',fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:6}}>Service areas ({profileForm.service_areas.length} selected)</label>
                       <div style={{display:'flex',flexWrap:'wrap',gap:6,maxHeight:200,overflowY:'auto',background:'rgba(255,255,255,.03)',border:'1px solid rgba(255,255,255,.1)',borderRadius:8,padding:10}}>
-                        {['Sandton','Fourways','Bryanston','Randburg','Roodepoort','Midrand','Soweto','Johannesburg CBD','Rosebank','Melrose','Kempton Park','Edenvale','Germiston','Boksburg','Benoni','Pretoria Central','Centurion','Pretoria East','Pretoria North','Menlyn','Lynnwood','Vereeniging','Vanderbijlpark','Alberton'].map((area:string)=>{
+                        {AREAS.map((area:string)=>{
                           const sel=profileForm.service_areas.includes(area)
                           return(<div key={area} onClick={()=>setProfileForm((p:any)=>({...p,service_areas:sel?p.service_areas.filter((a:string)=>a!==area):[...p.service_areas,area]}))} style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:600,letterSpacing:.5,padding:'5px 10px',borderRadius:4,cursor:'pointer',background:sel?'rgba(196,89,58,.2)':'rgba(255,255,255,.05)',border:`1px solid ${sel?'rgba(196,89,58,.4)':'rgba(255,255,255,.1)'}`,color:sel?'#E07A5F':'rgba(245,240,232,.5)',transition:'all .15s'}}>{area}</div>)
                         })}

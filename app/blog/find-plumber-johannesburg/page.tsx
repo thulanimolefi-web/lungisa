@@ -95,7 +95,7 @@ export default function FindPlumberJohannesburg() {
           </div>
           <span className="nav-word">LUNGISA</span>
         </Link>
-        <Link href="/auth"><button className="nav-cta">Post a job free</button></Link>
+        <Link href="/post"><button className="nav-cta">Post a job free</button></Link>
       </nav>
 
       <article className="article-wrap">
@@ -166,7 +166,7 @@ export default function FindPlumberJohannesburg() {
         <div className="cta-box">
           <h3>Need a Plumber in Johannesburg?</h3>
           <p>Post your job free. Get competitive bids from vetted plumbers near you. Pay safely in escrow.</p>
-          <Link href="/auth"><span className="cta-btn">Post your job free →</span></Link>
+          <Link href="/post"><span className="cta-btn">Post your job free →</span></Link>
         </div>
 
         <h2>Areas We Cover in Johannesburg</h2>

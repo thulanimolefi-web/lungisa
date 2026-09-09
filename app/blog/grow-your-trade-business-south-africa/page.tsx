@@ -71,7 +71,7 @@ export default function GrowTradeBusiness() {
           </div>
           <span className="nav-word">LUNGISA</span>
         </Link>
-        <Link href="/auth"><button className="nav-cta">Join as a tradesperson</button></Link>
+        <Link href="/join"><button className="nav-cta">Join as a tradesperson</button></Link>
       </nav>
 
       <article className="article-wrap">
@@ -148,7 +148,7 @@ export default function GrowTradeBusiness() {
         <div className="cta-box">
           <h3>Start Finding Work in Your Area</h3>
           <p>Join free. Bid on jobs near you. Pay 8% on labour only when you complete a paid job. No subscriptions, no listing fees.</p>
-          <Link href="/auth"><span className="cta-btn">Join as a tradesperson →</span></Link>
+          <Link href="/join"><span className="cta-btn">Join as a tradesperson →</span></Link>
         </div>
 
         <h2>Frequently Asked Questions</h2>

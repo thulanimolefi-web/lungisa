@@ -107,7 +107,7 @@ export default function BlogIndex() {
           </div>
           <span className="nav-word">LUNGISA</span>
         </Link>
-        <Link href="/auth"><button className="nav-cta">Post a job free</button></Link>
+        <Link href="/post"><button className="nav-cta">Post a job free</button></Link>
       </nav>
 
       {/* HERO */}
@@ -147,7 +147,7 @@ export default function BlogIndex() {
       <div className="bottom-cta">
         <h2 className="bottom-h">Ready to find a tradesperson?</h2>
         <p className="bottom-sub">Post your job free. Get bids within hours. Pay safely in escrow.</p>
-        <Link href="/auth"><button className="bottom-btn">Post a job — it&apos;s free</button></Link>
+        <Link href="/post"><button className="bottom-btn">Post a job — it&apos;s free</button></Link>
       </div>
 
       {/* FOOTER */}

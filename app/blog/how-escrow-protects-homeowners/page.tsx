@@ -71,7 +71,7 @@ export default function EscrowProtectsHomeowners() {
           </div>
           <span className="nav-word">LUNGISA</span>
         </Link>
-        <Link href="/auth"><button className="nav-cta">Post a job free</button></Link>
+        <Link href="/post"><button className="nav-cta">Post a job free</button></Link>
       </nav>
 
       <article className="article-wrap">
@@ -149,7 +149,7 @@ export default function EscrowProtectsHomeowners() {
         <div className="cta-box">
           <h3>Pay Safely on Every Job</h3>
           <p>Every Lungisa job uses escrow. Your money is protected until you confirm the work is done right.</p>
-          <Link href="/auth"><span className="cta-btn">Post your first job free →</span></Link>
+          <Link href="/post"><span className="cta-btn">Post your first job free →</span></Link>
         </div>
 
         <div className="related">

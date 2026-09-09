@@ -5,33 +5,8 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '../lib/supabase'
 import { splitCommission } from '../lib/commission'
 import { trackEvent, AnalyticsEvents } from '../lib/analytics'
+import { AREAS } from '../lib/areas'
 
-const AREAS = [
-  'Sandton','Fourways','Bryanston','Morningside','Rivonia','Sunninghill',
-  'Paulshof','Kyalami','Halfway House','Woodmead','Kramerville',
-  'Johannesburg CBD','Parktown','Rosebank','Melrose','Illovo','Hyde Park',
-  'Northcliff','Auckland Park','Greenside','Linden','Victory Park',
-  'Mayfair','Fordsburg','Newtown','Maboneng',
-  'Randburg','Ferndale','Honeydew','Ruimsig','Florida','Krugersdorp',
-  'Roodepoort','Northgate','Weltevredenpark','Constantia Kloof',
-  'Strubensvalley','Radiokop','Wilgeheuwel',
-  'Soweto','Lenasia','Ennerdale','Orange Farm','Alberton','Germiston',
-  'Meyersdal','Glenvista','Bassonia','Kibler Park','Mulbarton',
-  'Winchester Hills','Turffontein','Booysens','Ophirton',
-  'Boksburg','Benoni','Brakpan','Springs','Edenvale','Bedfordview',
-  'Kempton Park','Tembisa','Ekurhuleni','Vosloorus','Daveyton',
-  'Katlehong','Thokoza','Nigel','Heidelberg','Duduza',
-  'Midrand','Vorna Valley','Waterfall','Jukskei Park','Grand Central','Carlswald',
-  'Pretoria Central','Centurion','Pretoria East','Pretoria North',
-  'Pretoria West','Soshanguve','Mamelodi','Atteridgeville','Hatfield',
-  'Menlyn','Lynnwood','Faerie Glen','Moreleta Park','Garsfontein',
-  'Queenswood','Arcadia','Muckleneuk','Brooklyn','Groenkloof',
-  'Montana','Gezina','Silverton','Eersterust','Watloo',
-  'Irene','Rooihuiskraal','Olievenhoutbosch',
-  'Randfontein','Westonaria','Carletonville','Fochville','Magaliesburg','Chamdor',
-  'Vereeniging','Vanderbijlpark','Meyerton','Evaton','Sebokeng',
-  'Sharpeville','Bophelong','Three Rivers',
-]
 import NotificationBell from '../components/NotificationBell'
 import Messaging from '../components/Messaging'
 
@@ -106,6 +81,16 @@ function getCatEmoji(cat:string){const m:Record<string,string>={plumbing:'🔧',
 function getUrgencyLabel(u:string){const m:Record<string,string>={emergency:'Today — emergency',within_3_days:'Within 3 days',this_week:'This week',flexible:'Flexible'};return m[u]||'Flexible'}
 function getUrgencyColor(u:string){const m:Record<string,string>={emergency:'#E24B4A',within_3_days:'#E8A020',this_week:'#3DAA6A',flexible:'#D4C9B4'};return m[u]||'#D4C9B4'}
 function getTimeAgo(d:string){const diff=Date.now()-new Date(d).getTime();const mins=Math.floor(diff/60000);if(mins<60)return`${mins} min ago`;const hrs=Math.floor(mins/60);if(hrs<24)return`${hrs} hr${hrs>1?'s':''} ago`;return`${Math.floor(hrs/24)} day${Math.floor(hrs/24)>1?'s':''} ago`}
+// Same itemised-aware payout estimate used in the tradesperson dashboard —
+// materials pass through uncommissioned, falls back to flat 8% for bids
+// that predate itemisation.
+function estimateBidNet(b:{price:number, finalAmount:number|null, callOutFee?:number|null, labourAmount?:number|null, materialsAmount?:number|null}) {
+  const grossRand = b.finalAmount || b.price
+  const { netAmountCents } = splitCommission(Math.round(grossRand*100), b.labourAmount!=null ? {
+    call_out_fee: b.callOutFee, labour_amount: b.labourAmount, materials_amount: b.materialsAmount,
+  } : null)
+  return Math.round(netAmountCents/100)
+}
 
 export default function HomeDashboard() {
   const router = useRouter()
@@ -1515,7 +1500,7 @@ export default function HomeDashboard() {
                                       {/* ── COMPLETION SUBMITTED ── */}
                                       {isAccepted&&isPaid&&completions[selectedJob.id]&&selectedJob.status==='completion_submitted'&&(
                                         <div style={{background:'rgba(232,160,32,.08)',border:'1px solid rgba(232,160,32,.2)',borderRadius:8,padding:'12px 14px',fontSize:13,color:'#E8A020',lineHeight:1.5,marginTop:8}}>
-                                          ⏳ Completion submitted — waiting for your confirmation to release R{Math.round((bid.finalAmount||bid.price)*0.92).toLocaleString()}.
+                                          ⏳ Completion submitted — waiting for your confirmation to release R{estimateBidNet(bid).toLocaleString()}.
                                         </div>
                                       )}
 

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../lib/supabase'
 import { trackEvent, AnalyticsEvents } from '../lib/analytics'
+import { AREAS } from '../lib/areas'
 
 const TRADES = [
   {id:'plumbing',     label:'Plumbing',       emoji:'🔧', desc:'Pipes, geysers, taps, drains'},
@@ -18,12 +19,6 @@ const TRADES = [
   {id:'welding',      label:'Welding',        emoji:'🔥', desc:'Gates, burglar bars, steel'},
   {id:'cleaning',     label:'Cleaning',       emoji:'🧹', desc:'Deep clean & maintenance'},
   {id:'general',      label:'General',        emoji:'🔩', desc:'Handyman & odd jobs'},
-]
-
-const AREAS = [
-  'Soweto','Sandton','Roodepoort','Midrand','Randburg','Fourways',
-  'Boksburg','Pretoria Central','Centurion','Krugersdorp','Germiston',
-  'Benoni','Springs','Alberton','Edenvale','Kempton Park',
 ]
 
 const PERKS = [

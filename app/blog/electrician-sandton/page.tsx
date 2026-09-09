@@ -87,7 +87,7 @@ export default function ElectricianSandton() {
           </div>
           <span className="nav-word">LUNGISA</span>
         </Link>
-        <Link href="/auth"><button className="nav-cta">Post a job free</button></Link>
+        <Link href="/post"><button className="nav-cta">Post a job free</button></Link>
       </nav>
 
       <article className="article-wrap">
@@ -160,7 +160,7 @@ export default function ElectricianSandton() {
         <div className="cta-box">
           <h3>Need an Electrician in Sandton or Fourways?</h3>
           <p>Post your job on Lungisa. Get bids from registered, vetted electricians near you. Pay safely in escrow — money released only when you&apos;re satisfied.</p>
-          <Link href="/auth"><span className="cta-btn">Post your job free →</span></Link>
+          <Link href="/post"><span className="cta-btn">Post your job free →</span></Link>
         </div>
 
         <h2>Frequently Asked Questions</h2>

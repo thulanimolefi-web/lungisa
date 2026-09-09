@@ -74,7 +74,7 @@ export default function HomeRepairsGauteng() {
           </div>
           <span className="nav-word">LUNGISA</span>
         </Link>
-        <Link href="/auth"><button className="nav-cta">Post a job free</button></Link>
+        <Link href="/post"><button className="nav-cta">Post a job free</button></Link>
       </nav>
 
       <article className="article-wrap">
@@ -165,7 +165,7 @@ export default function HomeRepairsGauteng() {
         <div className="cta-box">
           <h3>Get Competitive Quotes for Your Job</h3>
           <p>Post your job on Lungisa and let vetted tradespeople bid. See exactly what the market rate is for your specific job in your area.</p>
-          <Link href="/auth"><span className="cta-btn">Post your job free →</span></Link>
+          <Link href="/post"><span className="cta-btn">Post your job free →</span></Link>
         </div>
 
         <h2>How to Make Sure You Pay a Fair Price</h2>

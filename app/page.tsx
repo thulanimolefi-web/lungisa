@@ -382,6 +382,7 @@ export default function LandingPage() {
           <a href="#how-it-works" className="nav-link">How it works</a>
           <a href="#why" className="nav-link">Why Lungisa</a>
           <a href="#trades" className="nav-link">Trades</a>
+          <a href="/blog" className="nav-link">Blog</a>
           <a href="#install" className="nav-link">Get the app</a>
           <button className="nav-cta" onClick={()=>router.push('/auth')}>Get started</button>
         </div>
@@ -398,6 +399,7 @@ export default function LandingPage() {
         <a href="#how-it-works" className="mm-link" onClick={()=>setMenuOpen(false)}>How it works</a>
         <a href="#why" className="mm-link" onClick={()=>setMenuOpen(false)}>Why Lungisa</a>
         <a href="#trades" className="mm-link" onClick={()=>setMenuOpen(false)}>Trades</a>
+        <a href="/blog" className="mm-link" onClick={()=>setMenuOpen(false)}>Blog</a>
         <a href="#install" className="mm-link" onClick={()=>setMenuOpen(false)}>Get the app</a>
         <button className="mm-cta" onClick={()=>{setMenuOpen(false);router.push('/post')}}>Post a job free →</button>
         <button className="mm-cta" style={{marginTop:10,background:'transparent',border:'1px solid rgba(255,255,255,.2)',color:'rgba(245,240,232,.7)'}} onClick={()=>{setMenuOpen(false);router.push('/join')}}>I&apos;m a tradesperson</button>
@@ -750,6 +752,7 @@ export default function LandingPage() {
             </div>
             <div>
               <div className="footer-col-h">Company</div>
+              <a href="/blog" className="footer-link">Blog</a>
               <a href="https://vaultlinkafrica.com" className="footer-link" target="_blank" rel="noreferrer">VaultLink Africa</a>
               <a onClick={()=>{setContactOpen(true);setContactDone(false)}} className="footer-link" style={{cursor:'pointer'}}>Contact us</a>
               <a href="mailto:info@lungiza.co.za?subject=Support%20request%20%E2%80%94%20Lungisa" className="footer-link">Support</a>

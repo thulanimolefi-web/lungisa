@@ -2,6 +2,7 @@
 
 import { supabase } from '../lib/supabase'
 import { trackEvent, AnalyticsEvents } from '../lib/analytics'
+import AddressSearch, { ResolvedLocation } from '../components/AddressSearch'
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 
@@ -21,43 +22,6 @@ const URGENCIES = [
   {label:'Within 3 days',color:'#E8A020'},
   {label:'This week',color:'#3DAA6A'},
   {label:'Flexible',color:'#D4C9B4'},
-]
-const AREAS = [
-  // Johannesburg North
-  'Sandton','Fourways','Bryanston','Morningside','Rivonia','Sunninghill',
-  'Paulshof','Kyalami','Halfway House','Woodmead','Kramerville',
-  // Johannesburg Central & South
-  'Johannesburg CBD','Parktown','Rosebank','Melrose','Illovo','Hyde Park',
-  'Northcliff','Auckland Park','Greenside','Linden','Victory Park',
-  'Mayfair','Fordsburg','Newtown','Maboneng',
-  // Johannesburg West
-  'Randburg','Ferndale','Honeydew','Ruimsig','Florida','Krugersdorp',
-  'Roodepoort','Northgate','Weltevredenpark','Constantia Kloof',
-  'Strubensvalley','Radiokop','Wilgeheuwel',
-  // Johannesburg South & SW
-  'Soweto','Lenasia','Ennerdale','Orange Farm','Alberton','Germiston',
-  'Meyersdal','Glenvista','Bassonia','Kibler Park','Mulbarton',
-  'Winchester Hills','Turffontein','Booysens','Ophirton',
-  // East Rand / Ekurhuleni
-  'Boksburg','Benoni','Brakpan','Springs','Edenvale','Bedfordview',
-  'Kempton Park','Tembisa','Ekurhuleni','Vosloorus','Daveyton',
-  'Katlehong','Thokoza','Nigel','Heidelberg','Duduza',
-  // Midrand
-  'Midrand','Vorna Valley','Waterfall','Jukskei Park',
-  'Grand Central','Carlswald',
-  // Pretoria / Tshwane
-  'Pretoria Central','Centurion','Pretoria East','Pretoria North',
-  'Pretoria West','Soshanguve','Mamelodi','Atteridgeville','Hatfield',
-  'Menlyn','Lynnwood','Faerie Glen','Moreleta Park','Garsfontein',
-  'Queenswood','Arcadia','Muckleneuk','Brooklyn','Groenkloof',
-  'Montana','Gezina','Silverton','Eersterust','Watloo',
-  'Irene','Rooihuiskraal','Olievenhoutbosch',
-  // West Rand
-  'Randfontein','Westonaria','Carletonville','Fochville',
-  'Magaliesburg','Chamdor',
-  // Sedibeng
-  'Vereeniging','Vanderbijlpark','Meyerton','Evaton','Sebokeng',
-  'Sharpeville','Bophelong','Three Rivers',
 ]
 const TIMES = ['Any time','Morning (7am–12pm)','Afternoon (12pm–5pm)','Evening (5pm–8pm)']
 const AVATAR_COLORS = ['#8B3A2A','#5A3A2A','#2A4A3A','#3A4A6A','#6A3A5A','#4A5A2A']
@@ -93,6 +57,9 @@ export default function PostJob() {
   const [title, setTitle]             = useState('')
   const [desc, setDesc]               = useState('')
   const [area, setArea]               = useState('')
+  const [streetAddress, setStreetAddress] = useState('')
+  const [lat, setLat]                 = useState<number|null>(null)
+  const [lng, setLng]                 = useState<number|null>(null)
   const [urgency, setUrgency]         = useState('Today — emergency')
   const [date, setDate]               = useState('')
   const [time, setTime]               = useState('')
@@ -312,7 +279,7 @@ export default function PostJob() {
   function savePendingJobDraft() {
     try {
       localStorage.setItem('lungisa_pending_job', JSON.stringify({
-        cat, title, desc, area, urgency, date, time, budget, budgetOpen, mediaFiles, noCalloutPreferred,
+        cat, title, desc, area, streetAddress, lat, lng, urgency, date, time, budget, budgetOpen, mediaFiles, noCalloutPreferred,
       }))
     } catch(e) { /* storage unavailable — draft is lost but flow still works */ }
   }
@@ -346,6 +313,9 @@ export default function PostJob() {
         category:       cat.toLowerCase() as any,
         urgency:        urgency==='Today — emergency'?'emergency':urgency==='Within 3 days'?'within_3_days':urgency==='This week'?'this_week':'flexible',
         area,
+        street_address: streetAddress||null,
+        latitude:       lat,
+        longitude:      lng,
         city:           'Johannesburg',
         budget_max:     budgetOpen ? null : budget,
         preferred_date: date||null,
@@ -392,6 +362,9 @@ export default function PostJob() {
         setTitle(draft.title ?? '')
         setDesc(draft.desc ?? '')
         setArea(draft.area ?? '')
+        setStreetAddress(draft.streetAddress ?? '')
+        setLat(draft.lat ?? null)
+        setLng(draft.lng ?? null)
         setUrgency(draft.urgency ?? 'Today — emergency')
         setDate(draft.date ?? '')
         setTime(draft.time ?? '')
@@ -415,7 +388,7 @@ export default function PostJob() {
 
   function resetAndPostAnother() {
     setStep(0); setLiveBids([]); setBidCount(0); setTitle(''); setDesc('')
-    setArea(''); setMediaFiles([]); setAccepted(false); setPaid(false)
+    setArea(''); setStreetAddress(''); setLat(null); setLng(null); setMediaFiles([]); setAccepted(false); setPaid(false)
     setSelectedBid(null); setPostedJobId(null); setFinalPrice(0)
   }
 
@@ -561,11 +534,20 @@ export default function PostJob() {
                 <div style={S.cardEyebrow}><span style={{width:14,height:2,background:'var(--terra)',display:'inline-block'}}/>Step 3 of 5</div>
                 <div style={S.cardTitle}>WHERE &<br/>WHEN?</div>
                 <p style={S.cardSub}>Tradespeople need your location to submit accurate bids.</p>
-                <label style={S.label}>Area *</label>
-                <select style={S.select} value={area} onChange={e=>setArea(e.target.value)}>
-                  <option value="">Select area</option>
-                  {AREAS.map(a=><option key={a}>{a}</option>)}
-                </select>
+                <label style={S.label}>Address *</label>
+                <AddressSearch
+                  theme="dark"
+                  value={area}
+                  inputStyle={S.select}
+                  placeholder="Start typing your street address..."
+                  onChange={(r: ResolvedLocation)=>{
+                    setArea(r.area)
+                    setStreetAddress(r.streetAddress||'')
+                    setLat(r.lat ?? null)
+                    setLng(r.lng ?? null)
+                  }}
+                />
+                {area&&<div style={{fontSize:12,color:'rgba(245,240,232,.4)',marginTop:-2,marginBottom:14}}>Area: {area}</div>}
                 {areaErr&&<div style={S.err}>{areaErr}</div>}
                 <label style={S.label}>How urgent?</label>
                 <div style={S.urgencyChips}>
