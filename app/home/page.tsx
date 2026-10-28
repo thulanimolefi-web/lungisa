@@ -942,7 +942,7 @@ export default function HomeDashboard() {
 
   return (
     <>
-      <style>{css}</style>
+      <style dangerouslySetInnerHTML={{__html: css}} />
       <div className="shell">
         {/* SIDEBAR */}
         <nav className="sidenav">

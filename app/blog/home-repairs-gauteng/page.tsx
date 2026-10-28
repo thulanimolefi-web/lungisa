@@ -63,7 +63,7 @@ export default function HomeRepairsGauteng() {
 
   return (
     <>
-      <style>{css}</style>
+      <style dangerouslySetInnerHTML={{__html: css}} />
 
       <nav className="nav">
         <Link href="/" className="nav-logo">

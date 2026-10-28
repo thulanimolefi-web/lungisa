@@ -239,7 +239,7 @@ export default function AdminPanel() {
 
   return (
     <>
-      <style>{css}</style>
+      <style dangerouslySetInnerHTML={{__html: css}} />
       <div style={{display:'flex',minHeight:'100vh'}}>
 
         {/* SIDEBAR */}

@@ -1,4 +1,6 @@
 import type { Metadata } from 'next'
+import InstallPrompt from './components/InstallPrompt'
+import ContactWidget from './components/ContactWidget'
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://www.lungiza.co.za'),
@@ -333,7 +335,11 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        <ContactWidget />
+        <InstallPrompt />
+      </body>
     </html>
   )
 }

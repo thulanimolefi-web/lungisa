@@ -25,8 +25,11 @@ export default function LandingPage() {
 
   useEffect(()=>{
     setMounted(true)
-    const onScroll = () => setScrolled(window.scrollY > 40)
+    // The global layout CSS makes <body> the scroll container (html is overflow:hidden),
+    // so window.scrollY never changes. Listen on both and read whichever moved.
+    const onScroll = () => setScrolled(Math.max(window.scrollY, document.body.scrollTop, document.documentElement.scrollTop) > 40)
     window.addEventListener('scroll', onScroll)
+    document.body.addEventListener('scroll', onScroll)
 
     const observer = new IntersectionObserver(entries => {
       if(entries[0].isIntersecting) setCounting(true)
@@ -46,7 +49,7 @@ export default function LandingPage() {
       errorCorrectionLevel: 'M',
     }).then(setTradespersonQR).catch(console.error)
 
-    return () => { window.removeEventListener('scroll', onScroll); observer.disconnect() }
+    return () => { window.removeEventListener('scroll', onScroll); document.body.removeEventListener('scroll', onScroll); observer.disconnect() }
   }, [])
 
   const css = `
@@ -339,6 +342,17 @@ export default function LandingPage() {
     { stars:5, text:'"What I love most is knowing exactly where my job is at all times. The progress tracker tells me everything — from bids received to payment in escrow. No more chasing and wondering."', name:'Kele L.', role:'Homeowner · Centurion', init:'KL' },
   ]
 
+  // On a phone, "Get the app" opens the install sheet instead of scrolling to a QR code
+  const openInstall = (e: React.MouseEvent) => {
+    try {
+      if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+        e.preventDefault()
+        setMenuOpen(false)
+        window.dispatchEvent(new Event('lungisa:open-install'))
+      }
+    } catch (err) {}
+  }
+
   const navClass = mounted ? `nav${scrolled?' scrolled':''}` : 'nav'
 
   async function sendContact() {
@@ -366,7 +380,7 @@ export default function LandingPage() {
 
   return (
     <>
-      <style>{css}</style>
+      <style dangerouslySetInnerHTML={{__html: css}} />
 
       {/* NAV */}
       <nav className={navClass}>
@@ -383,7 +397,8 @@ export default function LandingPage() {
           <a href="#why" className="nav-link">Why Lungisa</a>
           <a href="#trades" className="nav-link">Trades</a>
           <a href="/blog" className="nav-link">Blog</a>
-          <a href="#install" className="nav-link">Get the app</a>
+          <a href="#install" className="nav-link" onClick={openInstall}>Get the app</a>
+          <a href="/auth" className="nav-link">Sign in</a>
           <button className="nav-cta" onClick={()=>router.push('/auth')}>Get started</button>
         </div>
         {/* Hamburger — mobile only */}
@@ -400,7 +415,8 @@ export default function LandingPage() {
         <a href="#why" className="mm-link" onClick={()=>setMenuOpen(false)}>Why Lungisa</a>
         <a href="#trades" className="mm-link" onClick={()=>setMenuOpen(false)}>Trades</a>
         <a href="/blog" className="mm-link" onClick={()=>setMenuOpen(false)}>Blog</a>
-        <a href="#install" className="mm-link" onClick={()=>setMenuOpen(false)}>Get the app</a>
+        <a href="#install" className="mm-link" onClick={openInstall}>Get the app</a>
+        <a href="/auth" className="mm-link" onClick={()=>setMenuOpen(false)}>Sign in</a>
         <button className="mm-cta" onClick={()=>{setMenuOpen(false);router.push('/post')}}>Post a job free →</button>
         <button className="mm-cta" style={{marginTop:10,background:'transparent',border:'1px solid rgba(255,255,255,.2)',color:'rgba(245,240,232,.7)'}} onClick={()=>{setMenuOpen(false);router.push('/join')}}>I&apos;m a tradesperson</button>
       </div>
@@ -416,7 +432,7 @@ export default function LandingPage() {
           </div>
           <div style={{display:'inline-flex',alignItems:'center',gap:8,background:'rgba(232,160,32,.12)',border:'1px solid rgba(232,160,32,.3)',borderRadius:100,padding:'5px 14px',marginBottom:20,animation:'fadeUp .6s .05s ease both'}}>
             <span style={{fontSize:11}}>📍</span>
-            <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:700,letterSpacing:2,textTransform:'uppercase',color:'#E8A020'}}>Launching Johannesburg &amp; Pretoria · 1 August 2026</span>
+            <span style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:11,fontWeight:700,letterSpacing:2,textTransform:'uppercase',color:'#E8A020'}}>Now live in Johannesburg &amp; Pretoria</span>
           </div>
           <h1 className="hero-h1">FIX IT.<br/><span>RIGHT.</span></h1>
           <p className="hero-sub">
@@ -434,6 +450,7 @@ export default function LandingPage() {
 
         {/* Floating job card */}
         <div className="hero-card">
+          <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:700,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.45)',marginBottom:10}}>Example job</div>
           <div className="hc-job">
             <div className="hc-cat">
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
@@ -590,6 +607,39 @@ export default function LandingPage() {
         </div>
       </div>
 
+      {/* ── FAQ ────────────────────────────────────────────────────── */}
+      <div id="faq" style={{background:'#F5F0E8',padding:'72px 24px'}}>
+        <style dangerouslySetInnerHTML={{__html: `
+          .lz-faq{max-width:760px;margin:0 auto}
+          .lz-faq h3{font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#C4593A;margin:32px 0 10px}
+          .lz-faq details{background:#fff;border:1px solid #E4DCCB;border-radius:10px;margin-bottom:8px}
+          .lz-faq summary{cursor:pointer;list-style:none;padding:16px 18px;font-size:15px;font-weight:600;color:#2C2C28;display:flex;justify-content:space-between;gap:12px;align-items:center;min-height:48px}
+          .lz-faq summary::-webkit-details-marker{display:none}
+          .lz-faq summary::after{content:"+";font-size:20px;color:#C4593A;flex-shrink:0}
+          .lz-faq details[open] summary::after{content:"\\2212"}
+          .lz-faq details p{padding:0 18px 16px;font-size:14.5px;line-height:1.7;color:#5A5952;margin:0}
+        `}} />
+        <div className="lz-faq">
+          <div className="section-tag" style={{textAlign:'center'}}>Questions</div>
+          <h2 className="section-h" style={{textAlign:'center',color:'#2C2C28',marginBottom:8}}>Good to <span>know.</span></h2>
+
+          <h3>Homeowners</h3>
+          <details><summary>Is it free to post a job?</summary><p>Yes. Posting a job costs homeowners R0.</p></details>
+          <details><summary>How does escrow work?</summary><p>You pay the agreed amount through Yoco and Lungisa holds it. It is released to the tradesperson only after you confirm the job is complete.</p></details>
+          <details><summary>What if I am not happy with the work?</summary><p>Raise a dispute on the platform. The payment stays in escrow while Lungisa reviews it, which we aim to do within 48 hours.</p></details>
+          <details><summary>How are tradespeople verified?</summary><p>They submit a valid South African ID document, and Lungisa reviews it before a verified badge appears. Verification confirms identity. It is not a guarantee of workmanship, so read the reviews and compare bids.</p></details>
+          <details><summary>Can I negotiate the price?</summary><p>Yes. Bids are itemised into call-out fee, labour and materials, and you can negotiate before you accept.</p></details>
+
+          <h3>Tradespeople</h3>
+          <details><summary>What does it cost?</summary><p>Joining is free. There are no subscription, listing or per-bid fees. When a job is completed and paid, Lungisa keeps 8% of the call-out fee and labour. Materials are paid to you at cost.</p></details>
+          <details><summary>When do I get paid?</summary><p>By EFT to your registered bank account within 24 hours of the homeowner confirming the job is complete.</p></details>
+          <details><summary>Is there a minimum job size?</summary><p>Yes, R300.</p></details>
+          <details><summary>What do I need to join?</summary><p>A profile with your trade and areas, and a valid South African ID document for verification.</p></details>
+          <details><summary>Where do you operate?</summary><p>Johannesburg and Pretoria, across Gauteng.</p></details>
+          <details><summary>Can I take payment outside Lungisa?</summary><p>Not for jobs found through Lungisa. Keeping payment on the platform is what protects you from non-payment.</p></details>
+        </div>
+      </div>
+
       {/* ── QR INSTALL SECTION ─────────────────────────────────────── */}
       <div id="install" className="qr-section">
         <div className="qr-inner">
@@ -602,6 +652,8 @@ export default function LandingPage() {
             <p style={{fontSize:16,color:'rgba(245,240,232,.4)',textAlign:'center',maxWidth:480,margin:'0 auto',lineHeight:1.7}}>
               No App Store. No download. Scan the QR code with your phone camera and install Lungisa directly to your home screen.
             </p>
+            <style dangerouslySetInnerHTML={{__html: `.lz-install-btn{display:none}@media (max-width:900px){.lz-install-btn{display:flex;align-items:center;justify-content:center;margin:20px auto 0;min-height:50px;padding:0 28px;border:none;border-radius:12px;background:#C4593A;color:#fff;font-size:16px;font-weight:700;cursor:pointer}}`}} />
+            <button className="lz-install-btn" onClick={()=>window.dispatchEvent(new Event('lungisa:open-install'))}>Install Lungisa on this phone</button>
           </div>
 
           <div className="qr-cards">
@@ -713,7 +765,7 @@ export default function LandingPage() {
       <div className="cta-section">
         <div className="cta-bg"/>
         <h2 className="cta-h">READY TO<br/>LUNGISA?</h2>
-        <p className="cta-sub">Join homeowners and tradespeople across Johannesburg. Free to start.</p>
+        <p className="cta-sub">Join homeowners and tradespeople across Gauteng. Free to start.</p>
         <div className="cta-btns">
           <button className="btn-white" onClick={()=>router.push('/post')}>Post a job — it&apos;s free</button>
           <button className="btn-outline-white" onClick={()=>router.push('/join')}>Join as a tradesperson</button>
@@ -756,13 +808,15 @@ export default function LandingPage() {
               <a href="https://vaultlinkafrica.com" className="footer-link" target="_blank" rel="noreferrer">VaultLink Africa</a>
               <a onClick={()=>{setContactOpen(true);setContactDone(false)}} className="footer-link" style={{cursor:'pointer'}}>Contact us</a>
               <a href="mailto:info@lungiza.co.za?subject=Support%20request%20%E2%80%94%20Lungisa" className="footer-link">Support</a>
+              <a href="https://wa.me/27790737563" className="footer-link" target="_blank" rel="noopener noreferrer">WhatsApp 079 073 7563</a>
               <a href="/terms" className="footer-link">Terms of Service</a>
-              <a href="#install" className="footer-link">Get the app</a>
+              <a href="#install" className="footer-link" onClick={openInstall}>Get the app</a>
+              <a href="/privacy" className="footer-link">Privacy Policy</a>
             </div>
           </div>
           <div className="footer-bottom">
             <div className="footer-copy">© 2026 Lungisa · TVM Capital Link Pty Ltd · All rights reserved</div>
-            <div className="footer-badge">Johannesburg, South Africa 🇿🇦</div>
+            <div className="footer-badge">Gauteng, South Africa 🇿🇦</div>
           </div>
         </div>
       </footer>

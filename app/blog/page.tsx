@@ -95,7 +95,7 @@ export default function BlogIndex() {
 
   return (
     <>
-      <style>{css}</style>
+      <style dangerouslySetInnerHTML={{__html: css}} />
 
       {/* NAV */}
       <nav className="nav">

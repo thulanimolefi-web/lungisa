@@ -434,7 +434,7 @@ export default function PostJob() {
 
   return (
     <>
-      <style>{`
+      <style dangerouslySetInnerHTML={{__html: `
         @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap');
         *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
         :root{--terra:#C4593A;--terra-l:#E07A5F;--cream:#F5F0E8;--charcoal:#2C2C28;--charcoal-l:#5A5952;--fb:'Barlow',sans-serif;--fc:'Barlow Condensed',sans-serif;--fd:'Bebas Neue',sans-serif;}
@@ -455,7 +455,7 @@ export default function PostJob() {
         .upload-btn.disabled{opacity:.4;cursor:not-allowed;pointer-events:none}
         .upload-btn input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
         @media(max-width:900px){.page-grid{grid-template-columns:1fr!important}.sidebar-col{display:none}}
-      `}</style>
+      `}} />
 
       <div style={S.wrap}>
         {/* NAV */}

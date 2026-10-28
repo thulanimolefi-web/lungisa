@@ -965,7 +965,7 @@ function DashboardInner() {
 
   return (
     <>
-      <style>{`
+      <style dangerouslySetInnerHTML={{__html: `
         @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap');
         *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
         input::placeholder,textarea::placeholder{color:rgba(245,240,232,.25)}
@@ -996,7 +996,7 @@ function DashboardInner() {
           background:#111110;border-top:1px solid rgba(255,255,255,.08);
           z-index:50;height:60px;
         }
-      `}</style>
+      `}} />
 
       <div style={S.shell}>
         {/* SIDEBAR */}

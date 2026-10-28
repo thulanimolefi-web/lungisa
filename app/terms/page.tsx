@@ -26,7 +26,7 @@ export default function TermsPage() {
 
   return (
     <>
-      <style>{css}</style>
+      <style dangerouslySetInnerHTML={{__html: css}} />
       <div className="wrap">
         <button className="back" onClick={()=>router.push('/')}>← Back to Lungisa</button>
 
@@ -127,7 +127,7 @@ export default function TermsPage() {
         <p>Lungisa is a marketplace platform. We are not liable for the quality of work performed, injuries, property damage or losses arising from jobs arranged through the platform beyond the escrow amount held for that specific job.</p>
 
         <h2>11. Privacy</h2>
-        <p>We collect and process personal information in accordance with the Protection of Personal Information Act (POPIA) 4 of 2013. Your banking details are encrypted and used only for processing payouts. We do not sell your data to third parties.</p>
+        <p>We collect and process personal information in accordance with the Protection of Personal Information Act (POPIA) 4 of 2013. Your banking details are encrypted and used only for processing payouts. We do not sell your data to third parties. Our full <a href="/privacy" style={{color:'#C4593A',fontWeight:600}}>Privacy Policy</a> explains what we collect and your rights.</p>
 
         <h2>12. Changes to These Terms</h2>
         <p>We may update these terms from time to time. We will notify you by email and in-app notification when we make material changes. Continued use of Lungisa after changes constitutes acceptance of the updated terms.</p>
