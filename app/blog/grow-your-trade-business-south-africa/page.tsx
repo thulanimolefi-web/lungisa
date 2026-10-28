@@ -61,7 +61,7 @@ export default function GrowTradeBusiness() {
 
   return (
     <>
-      <style>{css}</style>
+      <style dangerouslySetInnerHTML={{__html: css}} />
       <nav className="nav">
         <Link href="/" className="nav-logo">
           <div className="nav-hex">

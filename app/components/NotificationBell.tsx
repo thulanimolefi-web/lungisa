@@ -213,12 +213,12 @@ export default function NotificationBell({ theme }: Props) {
           overflow: 'hidden',
           animation: 'bellDrop .15s ease both',
         }}>
-          <style>{`
+          <style dangerouslySetInnerHTML={{__html: `
             @keyframes bellDrop {
               from { opacity: 0; transform: translateY(-6px); }
               to   { opacity: 1; transform: translateY(0); }
             }
-          `}</style>
+          `}} />
 
           {/* Header */}
           <div style={{

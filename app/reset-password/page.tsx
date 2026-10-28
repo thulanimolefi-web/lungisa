@@ -76,7 +76,7 @@ export default function ResetPassword() {
 
   return (
     <>
-      <style>{css}</style>
+      <style dangerouslySetInnerHTML={{__html: css}} />
       <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:20,background:'var(--cream)'}}>
 
         {/* Logo */}

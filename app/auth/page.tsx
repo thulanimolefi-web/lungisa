@@ -435,7 +435,7 @@ export default function AuthPage() {
 
   return (
     <>
-      <style>{css}</style>
+      <style dangerouslySetInnerHTML={{__html: css}} />
 
       {/* LEFT PANEL */}
       <div className="al">
@@ -641,6 +641,9 @@ export default function AuthPage() {
               <button className="bm bt" onClick={handleSignup} disabled={loading}>
                 {loading?<span className="spin"/>:'Send verification code →'}
               </button>
+              <div style={{textAlign:'center',marginTop:12,fontSize:11.5,color:'rgba(0,0,0,.45)',lineHeight:1.6}}>
+                By continuing you agree to our <a href="/terms" target="_blank" rel="noopener noreferrer" style={{color:'var(--terra)',textDecoration:'underline'}}>Terms</a> and <a href="/privacy" target="_blank" rel="noopener noreferrer" style={{color:'var(--terra)',textDecoration:'underline'}}>Privacy Policy</a>.
+              </div>
               <div className="as" style={{marginTop:16}}><button onClick={()=>setScreen('role')}>← Back</button></div>
             </div>
           )}

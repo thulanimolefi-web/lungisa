@@ -262,7 +262,7 @@ export default function JoinPage() {
 
   return (
     <>
-      <style>{css}</style>
+      <style dangerouslySetInnerHTML={{__html: css}} />
 
       {/* NAV */}
       <nav className="nav">
@@ -283,7 +283,7 @@ export default function JoinPage() {
           <section className="hero">
             <div className="hero-inner">
               <div>
-                <div className="hero-eye">For tradespeople in Johannesburg</div>
+                <div className="hero-eye">For tradespeople in Gauteng</div>
                 <h1 className="hero-h1">MORE JOBS.<br/><span>YOUR PRICE.</span><br/>PAID SECURE.</h1>
                 <p className="hero-body">
                   Lungisa connects you directly with homeowners who need your skills.
@@ -448,6 +448,9 @@ export default function JoinPage() {
 
               <div style={{textAlign:'center',marginTop:16,fontSize:12,color:'rgba(245,240,232,.3)',lineHeight:1.6}}>
                 Free to join. No monthly fees. We only earn when you earn.
+              </div>
+              <div style={{textAlign:'center',marginTop:10,fontSize:11.5,color:'rgba(245,240,232,.35)',lineHeight:1.6}}>
+                By continuing you agree to our <a href="/terms" target="_blank" rel="noopener noreferrer" style={{color:'rgba(245,240,232,.6)',textDecoration:'underline'}}>Terms</a> and <a href="/privacy" target="_blank" rel="noopener noreferrer" style={{color:'rgba(245,240,232,.6)',textDecoration:'underline'}}>Privacy Policy</a>.
               </div>
             </div>
           </div>

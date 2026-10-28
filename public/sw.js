@@ -1,16 +1,24 @@
-const STATIC = 'lungisa-static-v1';
-const DYNAMIC = 'lungisa-dynamic-v1';
+// Lungisa service worker v2
+// - Works on both lungiza.co.za and www.lungiza.co.za (same-origin check)
+// - Pre-caches the shell one file at a time so a single missing file can
+//   never stop the worker from installing
+// - Never caches API / Supabase / third-party requests
+const STATIC = 'lungisa-static-v2';
+const DYNAMIC = 'lungisa-dynamic-v2';
 const SHELL = [
   '/',
   '/auth',
-  '/post-job',
-  '/home',
-  '/offline',
+  '/post',
+  '/offline.html',
   '/icons/icon-192x192.png',
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(STATIC).then(c => c.addAll(SHELL)));
+  e.waitUntil(
+    caches.open(STATIC).then(c =>
+      Promise.all(SHELL.map(url => c.add(url).catch(() => null)))
+    )
+  );
   self.skipWaiting();
 });
 
@@ -24,37 +32,44 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  const url = new URL(e.request.url);
-  if (e.request.method !== 'GET') return;
+  const req = e.request;
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
 
-  // Never cache Supabase or API calls — always fetch fresh
-  if (
-    url.hostname.includes('supabase.co') ||
-    url.pathname.startsWith('/api/') ||
-    url.hostname !== 'lungiza.co.za'
-  ) {
-    e.respondWith(fetch(e.request));
-    return;
-  }
+  // Anything not on our own origin, plus API routes: straight to the network
+  if (url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
 
-  // Cache-first for static assets and icons
-  if (url.pathname.startsWith('/_next/static/') || e.request.destination === 'image') {
+  // Cache-first for versioned static assets and images
+  if (url.pathname.startsWith('/_next/static/') || req.destination === 'image') {
     e.respondWith(
-      caches.match(e.request).then(cached => cached || fetch(e.request).then(r => {
-        caches.open(STATIC).then(c => c.put(e.request, r.clone()));
-        return r;
-      }))
+      caches.match(req).then(cached => {
+        if (cached) return cached;
+        return fetch(req).then(res => {
+          if (res && res.ok) {
+            const copy = res.clone();           // clone BEFORE returning
+            caches.open(STATIC).then(c => c.put(req, copy));
+          }
+          return res;
+        });
+      })
     );
     return;
   }
 
-  // Network-first for pages — fallback to cache, then offline page
-  e.respondWith(
-    fetch(e.request).then(r => {
-      caches.open(DYNAMIC).then(c => c.put(e.request, r.clone()));
-      return r;
-    }).catch(() =>
-      caches.match(e.request).then(cached => cached || caches.match('/offline'))
-    )
-  );
+  // Network-first for pages, falling back to cache, then the offline page
+  if (req.mode === 'navigate') {
+    e.respondWith(
+      fetch(req)
+        .then(res => {
+          if (res && res.ok) {
+            const copy = res.clone();
+            caches.open(DYNAMIC).then(c => c.put(req, copy));
+          }
+          return res;
+        })
+        .catch(() =>
+          caches.match(req).then(cached => cached || caches.match('/offline.html'))
+        )
+    );
+  }
 });

@@ -222,7 +222,7 @@ export default function TradespersonProfile() {
 
   if(loading) return (
     <>
-      <style>{css}</style>
+      <style dangerouslySetInnerHTML={{__html: css}} />
       {navBar}
       <div className="loading-wrap"><div className="spin"/><span>Loading profile...</span></div>
     </>
@@ -230,7 +230,7 @@ export default function TradespersonProfile() {
 
   if(notFound||!profile) return (
     <>
-      <style>{css}</style>
+      <style dangerouslySetInnerHTML={{__html: css}} />
       {navBar}
       <div className="loading-wrap">
         <div style={{fontSize:48,marginBottom:16}}>🔍</div>
@@ -262,7 +262,7 @@ export default function TradespersonProfile() {
 
   return (
     <>
-      <style>{css}</style>
+      <style dangerouslySetInnerHTML={{__html: css}} />
 
       {navBar}
 

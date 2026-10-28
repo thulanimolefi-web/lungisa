@@ -302,7 +302,7 @@ export default function VerificationBadge({ variant = 'full' }: Props) {
       {/* ── Upload panel ─────────────────────────────────────────── */}
       {showUpload&&(
         <div style={{background:'#1E1E1C',borderRadius:12,border:'1px solid rgba(255,255,255,.08)',padding:20,marginBottom:16}}>
-          <style>{`
+          <style dangerouslySetInnerHTML={{__html: `
             .vb-zone{border:2px dashed rgba(255,255,255,.15);border-radius:10px;padding:20px;text-align:center;cursor:pointer;transition:all .2s;background:rgba(255,255,255,.03);position:relative;margin-bottom:10px}
             .vb-zone:hover{border-color:rgba(196,89,58,.5);background:rgba(196,89,58,.04)}
             .vb-zone.has{border-color:#C4593A;border-style:solid}
@@ -311,7 +311,7 @@ export default function VerificationBadge({ variant = 'full' }: Props) {
             .vb-bar{height:4px;border-radius:2px;background:rgba(255,255,255,.1);margin:10px 0;overflow:hidden}
             .vb-fill{height:100%;background:#C4593A;border-radius:2px;transition:width .4s ease}
             @keyframes spin2{to{transform:rotate(360deg)}}
-          `}</style>
+          `}} />
 
           {/* Document type */}
           <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:10,fontWeight:600,letterSpacing:2,textTransform:'uppercase',color:'rgba(245,240,232,.4)',marginBottom:8}}>

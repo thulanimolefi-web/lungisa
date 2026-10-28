@@ -376,7 +376,7 @@ export default function Messaging({ theme, openJobId, openUserId, onClose }: Pro
       overflow: 'hidden',
       fontFamily: "'Barlow', sans-serif",
     }}>
-      <style>{`
+      <style dangerouslySetInnerHTML={{__html: `
         @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap');
         .msg-thread:hover { background: ${hoverBg} !important; }
         .msg-thread.active { background: ${activeBg} !important; }
@@ -388,7 +388,7 @@ export default function Messaging({ theme, openJobId, openUserId, onClose }: Pro
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: ${dark ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.1)'}; border-radius: 2px; }
-      `}</style>
+      `}} />
 
       {/* ── THREAD LIST (left panel) ─────────────────────────────── */}
       <div style={{
