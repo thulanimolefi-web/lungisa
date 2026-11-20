@@ -5,7 +5,13 @@ import { useParams } from 'next/navigation'
 import { apiFetch } from '../../lib/apiFetch'
 import { PACKS, packCompleteness, PackId } from '../../lib/packs'
 import { CERT_LABELS } from '../../lib/certificate-rules'
-import { APPROVAL_LABEL, Field, Level, money, shareLink, Shell, StatusPill, uploadSigned } from '../../components/rec-ui'
+import { APPROVAL_LABEL, Field, Level, money, openWhatsApp, QuoteLines, shareLink, Shell, StatusPill, uploadSigned } from '../../components/rec-ui'
+import BankingCard from '../../components/BankingCard'
+import { KIND_LABEL, LineKind, lineKey } from '../../lib/quote-templates'
+
+type QLine = { text: string; kind: LineKind; amount: string }
+const randStr = (c: number) => (c ? String(Math.round(c) / 100) : '')
+const toCents = (v: string) => Math.max(0, Math.round(Number(v || 0) * 100)) || 0
 
 // B18 to B28, B42: the job card. One screen for the tradesperson and the managing landlord or agency.
 export default function RecordPage() {
@@ -13,7 +19,10 @@ export default function RecordPage() {
   const [d, setD] = useState<any>(null)
   const [msg, setMsg] = useState<{ ok?: string; err?: string }>({})
   const [busy, setBusy] = useState(false)
-  const [q, setQ] = useState({ call_out: '', labour: '', materials: '', notes: '' })
+  const [q, setQ] = useState({ notes: '' })
+  const [lines, setLines] = useState<QLine[]>([{ text: 'Call-out fee', kind: 'call_out', amount: '' }, { text: '', kind: 'labour', amount: '' }, { text: '', kind: 'materials', amount: '' }])
+  const [tpl, setTpl] = useState<{ builtIn: any[]; mine: any[]; lastPrices: Record<string, number> } | null>(null)
+  const [tplName, setTplName] = useState('')
   const [v, setV] = useState({ description: '', amount: '', is_emergency: false, emergency_reason: '' })
   const [cert, setCert] = useState({ cert_type: 'ecoc', number: '', issue_date: '', issuer_name: '', issuer_reg_no: '' })
   const [certFile, setCertFile] = useState<File | null>(null)
@@ -43,17 +52,55 @@ export default function RecordPage() {
     setMsg({ ok: j.note || okText }); await load(); return j
   }
 
-  async function share(scope: 'approver' | 'viewer') {
+  // One tap: create the customer's link and open WhatsApp in their chat with the message written.
+  async function share(kind: 'quote' | 'signoff' | 'extra' | 'viewer', extra?: any) {
     const r = d.record
+    const scope = kind === 'viewer' ? 'viewer' : 'approver'
     const j = await act('link', { scope, recipient_name: r.customer_name, recipient_phone: r.customer_phone, recipient_email: r.customer_email }, 'Link ready')
     if (!j) return
     const url = `${window.location.origin}/l/${j.token}`
-    const text = scope === 'approver'
-      ? `Hi ${r.customer_name || ''}, here is your job record for "${r.title}". Please check the quote and approve it here:`
-      : `Job record for "${r.title}" (view only):`
-    await shareLink(url, text)
-    setMsg({ ok: `Link: ${url}` })
+    const first = String(r.customer_name || '').trim().split(' ')[0]
+    const hi = first ? `Hi ${first}` : 'Hi'
+    const from = d.tradeName ? ` from ${d.tradeName}` : ''
+    const text = kind === 'quote'
+      ? `${hi}, here is your quote${from} for ${r.title}: ${money(quoteTotal)}.\nCheck the details and approve it here: ${url}\nYou will get a code by email to confirm it is you.`
+      : kind === 'signoff'
+      ? `${hi}, the work on ${r.title} is done. Please check it and sign off here: ${url}\nYou can also pay ${money(quoteTotal + approvedExtras)} by card on the same page.`
+      : kind === 'extra'
+      ? `${hi}, I found extra work on ${r.title}: ${extra?.description} for ${money(extra?.amount_cents)}. I will only do it once you approve. Please approve or decline here: ${url}`
+      : `Job record for ${r.title} (view only): ${url}`
+    if (kind === 'viewer') await shareLink(url, `Job record for ${r.title} (view only):`)
+    else openWhatsApp(r.customer_phone, text)
+    setMsg({ ok: r.customer_phone ? 'WhatsApp opened with the message written. Tap send.' : `No customer phone on the job, so pick the chat in WhatsApp. Link: ${url}` })
   }
+
+  // Quote templates: load once, fill lines with the tradesperson's last-used prices.
+  async function loadTemplates() {
+    if (tpl) return
+    const r = await apiFetch(`/api/records/templates?pack=${encodeURIComponent(d?.record?.trade_pack || '')}`)
+    const j = await r.json().catch(() => null)
+    if (r.ok && j) setTpl(j)
+  }
+  function applyTemplate(key: string) {
+    if (!tpl || !key) return
+    const [src, id] = key.split(':')
+    const t = (src === 'mine' ? tpl.mine : tpl.builtIn).find((x: any) => x.id === id)
+    if (!t) return
+    setLines(t.lines.map((l: any) => {
+      const last = tpl.lastPrices[lineKey(l.text)]
+      const own = l.amount_cents
+      return { text: l.text, kind: l.kind, amount: randStr(src === 'mine' && own ? own : last || 0) }
+    }))
+    if (t.notes) setQ({ notes: t.notes })
+  }
+  async function saveTemplate() {
+    setBusy(true); setMsg({})
+    const res = await apiFetch('/api/records/templates', { method: 'POST', body: JSON.stringify({ name: tplName, trade_pack: d.record.trade_pack, lines, notes: q.notes }) })
+    const j = await res.json().catch(() => ({})); setBusy(false)
+    if (!res.ok) { setMsg({ err: j.error || 'Could not save the template' }); return }
+    setMsg({ ok: 'Template saved. It will be in your list next time.' }); setTplName(''); setTpl(null)
+  }
+  const linesTotal = lines.reduce((t, l) => t + toCents(l.amount), 0)
 
   async function ownerLink(to: 'owner' | 'backup') {
     setBusy(true); setMsg({})
@@ -128,7 +175,7 @@ export default function RecordPage() {
                   <button className="rx-btn green" disabled={busy || !quote} onClick={() => ownerLink('owner')}>Send to owner to approve</button>
                   <button className="rx-btn sec" disabled={busy || !quote} onClick={() => ownerLink('backup')}>Send to backup contact</button>
                 </>
-              : <button className="rx-btn green" disabled={busy || !quote} onClick={() => share('approver')}>Send to customer to approve</button>}
+              : <button className="rx-btn green" disabled={busy || !quote} onClick={() => share('quote')}>Send to customer on WhatsApp</button>}
             <button className="rx-btn sec" disabled={busy} onClick={() => share('viewer')}>View-only link</button>
             <Link className="rx-btn sec" href={`/records/${id}/print`} style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>Print or save PDF</Link>
           </div>
@@ -145,24 +192,51 @@ export default function RecordPage() {
         <h2 className="rx-h2">Quote {quote ? `(version ${quote.version})` : ''}</h2>
         {quote ? (
           <>
-            <div className="rx-muted">Call-out {money(quote.call_out_cents)} · Labour {money(quote.labour_cents)} · Materials {money(quote.materials_cents)}</div>
-            <div style={{ fontSize: 20, fontWeight: 700, margin: '6px 0' }}>{money(quoteTotal)}</div>
+            <QuoteLines quote={quote} />
+            <div className="rx-total">{money(quoteTotal)}</div>
             {quote.notes && <p className="rx-muted">{quote.notes}</p>}
             <p>{liveQuoteApproval ? <Level level="green">Approved: {APPROVAL_LABEL[liveQuoteApproval.approval_type]}</Level> : <Level level="amber">Not approved yet. Silence is not approval.</Level>}</p>
           </>
         ) : <p className="rx-muted">No quote yet.</p>}
         {isTrade && !closed && (
-          <details>
+          <details onToggle={e => { if ((e.target as HTMLDetailsElement).open) loadTemplates() }}>
             <summary style={{ cursor: 'pointer', fontWeight: 700, margin: '8px 0' }}>{quote ? 'Send a new version' : 'Write the quote'}</summary>
-            <div className="rx-grid">
-              <Field label="Call-out (R)"><input inputMode="decimal" value={q.call_out} onChange={e => setQ({ ...q, call_out: e.target.value })} /></Field>
-              <Field label="Labour (R)"><input inputMode="decimal" value={q.labour} onChange={e => setQ({ ...q, labour: e.target.value })} /></Field>
-              <Field label="Materials (R)"><input inputMode="decimal" value={q.materials} onChange={e => setQ({ ...q, materials: e.target.value })} /></Field>
+            <Field label="Start from a template">
+              <select defaultValue="" onChange={e => applyTemplate(e.target.value)}>
+                <option value="">{tpl ? 'Choose a template' : 'Loading templates...'}</option>
+                {tpl && tpl.mine.length > 0 && <optgroup label="My templates">{tpl.mine.map((t: any) => <option key={t.id} value={`mine:${t.id}`}>{t.name}</option>)}</optgroup>}
+                {tpl && <optgroup label="Standard templates">{tpl.builtIn.map((t: any) => <option key={t.id} value={`std:${t.id}`}>{t.name}</option>)}</optgroup>}
+              </select>
+            </Field>
+            <p className="rx-muted">Prices fill in from your last quote with the same line. Change anything before you send.</p>
+            {lines.map((l, i) => (
+              <div key={i} className="rx-row" style={{ alignItems: 'flex-end', marginBottom: 8 }}>
+                <div style={{ flex: '3 1 200px' }}><Field label={i === 0 ? 'Line' : ''}><input value={l.text} placeholder="What it is" onChange={e => setLines(lines.map((x, k) => k === i ? { ...x, text: e.target.value } : x))} /></Field></div>
+                <div style={{ flex: '1 1 120px' }}><Field label={i === 0 ? 'Type' : ''}><select value={l.kind} onChange={e => setLines(lines.map((x, k) => k === i ? { ...x, kind: e.target.value as LineKind } : x))}>
+                  {(Object.keys(KIND_LABEL) as LineKind[]).map(k => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}</select></Field></div>
+                <div style={{ flex: '1 1 100px' }}><Field label={i === 0 ? 'Amount (R)' : ''}><input inputMode="decimal" value={l.amount} onChange={e => setLines(lines.map((x, k) => k === i ? { ...x, amount: e.target.value.replace(/[^0-9.]/g, '') } : x))} /></Field></div>
+                <button className="rx-btn sec" aria-label="Remove line" onClick={() => setLines(lines.filter((_, k) => k !== i))} disabled={lines.length <= 1}>✕</button>
+              </div>
+            ))}
+            <div className="rx-row" style={{ justifyContent: 'space-between' }}>
+              <button className="rx-btn sec" onClick={() => setLines([...lines, { text: '', kind: 'materials', amount: '' }])}>+ Add line</button>
+              <div className="rx-total">{money(linesTotal)}</div>
             </div>
-            <Field label="Notes for the customer"><textarea value={q.notes} onChange={e => setQ({ ...q, notes: e.target.value })} /></Field>
+            <Field label="Notes for the customer"><textarea value={q.notes} onChange={e => setQ({ notes: e.target.value })} /></Field>
             {quote && <p className="rx-muted">A new version replaces version {quote.version}. Any approval of the old version stops counting.</p>}
-            <button className="rx-btn" disabled={busy} onClick={() => act('quote', q, 'Quote saved. Now share the approval link.')}>Save quote</button>
+            <div className="rx-row">
+              <button className="rx-btn" disabled={busy || linesTotal <= 0} onClick={() => act('quote', { lines, notes: q.notes }, 'Quote saved. Now send it to the customer.')}>Save quote</button>
+            </div>
+            <div className="rx-row" style={{ marginTop: 10 }}>
+              <input value={tplName} placeholder="Name, e.g. My geyser 150L job" onChange={e => setTplName(e.target.value)} style={{ flex: '1 1 220px', width: 'auto' }} />
+              <button className="rx-btn sec" disabled={busy || !tplName.trim() || linesTotal <= 0} onClick={saveTemplate}>Save as my template</button>
+            </div>
           </details>
+        )}
+        {(isTrade || isManager) && quote && !liveQuoteApproval && !closed && !(isManager && d.mandate) && (
+          <div className="rx-row rx-noprint" style={{ marginTop: 10 }}>
+            <button className="rx-btn green" disabled={busy} onClick={() => share('quote')}>Send quote on WhatsApp</button>
+          </div>
         )}
       </div>
 
@@ -198,6 +272,7 @@ export default function RecordPage() {
           <div className="rx-row">
             {['approved', 'awaiting_approval', 'quoted', 'draft'].includes(r.status) && <button className="rx-btn" disabled={busy || !liveQuoteApproval} onClick={() => act('start', {}, 'Work started')}>Start work</button>}
             {r.status === 'in_progress' && <button className="rx-btn green" disabled={busy} onClick={() => act('work_done', {}, 'Marked done. Send the link so the customer can sign off.')}>Work done, ask for sign-off</button>}
+            {r.status === 'awaiting_signoff' && <button className="rx-btn green" disabled={busy} onClick={() => share('signoff')}>Ask for sign-off on WhatsApp</button>}
             {r.status === 'awaiting_signoff' && <span className="rx-muted">Waiting for the customer to sign off. Nothing is approved by silence.</span>}
             {r.status === 'awaiting_signoff' && hoursSinceDone >= 72 && <button className="rx-btn sec" disabled={busy} onClick={() => act('close_without_signoff', {}, 'Closed without sign-off')}>Close without sign-off</button>}
           </div>
@@ -212,7 +287,8 @@ export default function RecordPage() {
         {d.variations.map((x: any) => (
           <div key={x.id} className="rx-item"><div><b>{x.description}</b> {money(x.amount_cents)}{x.is_emergency && <div className="rx-muted">Emergency: {x.emergency_reason}</div>}</div>
             <Level level={x.status === 'approved' || x.status === 'emergency_within_cap' ? 'green' : x.status === 'declined' ? 'red' : 'amber'}>
-              {x.status === 'requested' ? 'Not approved' : x.status === 'emergency_within_cap' ? 'Emergency within cap' : x.status}</Level></div>
+              {x.status === 'requested' ? 'Not approved' : x.status === 'emergency_within_cap' ? 'Emergency within cap' : x.status}</Level>
+            {isTrade && x.status === 'requested' && !closed && <button className="rx-btn sec rx-noprint" disabled={busy} onClick={() => share('extra', x)}>Send on WhatsApp</button>}</div>
         ))}
         {isTrade && !closed && (
           <details>
@@ -244,6 +320,7 @@ export default function RecordPage() {
         {pid && packStatus && (
           <div style={{ marginTop: 12 }}>
             <h2 className="rx-h2">{PACKS[pid].name} pack: {packStatus.done} of {packStatus.total} done</h2>
+            {PACKS[pid].certNote && <p className="rx-muted">{PACKS[pid].certNote} Add it under Certificates below.</p>}
             {PACKS[pid].items.filter(i => i.kind === 'field').map(i => (
               <Field key={i.id} label={i.label + (i.required ? '' : ' (optional)')}>
                 <input value={pack[i.id] || ''} disabled={!isTrade} onChange={e => setPack({ ...pack, [i.id]: e.target.value })} />
@@ -281,6 +358,8 @@ export default function RecordPage() {
           </details>
         )}
       </div>
+
+      {isTrade && <BankingCard compact />}
 
       {/* Invoice status */}
       <div className="rx-card">

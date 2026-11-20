@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { apiFetch } from '../../../lib/apiFetch'
 import { CERT_LABELS } from '../../../lib/certificate-rules'
-import { APPROVAL_LABEL, Bare, money } from '../../../components/rec-ui'
+import { APPROVAL_LABEL, Bare, money, QuoteLines } from '../../../components/rec-ui'
 
 // B29 (lean): printable job record. "Save as PDF" from the browser print dialog gives the PDF
 // an agent attaches to a PayProp or WeconnectU ticket. A server-generated PDF is "add on usage".
@@ -25,7 +25,7 @@ export default function PrintRecord() {
       {d.tradeName && <p className="rx-muted">Tradesperson: {d.tradeName}</p>}
       {r.scope && <div className="rx-card"><h2 className="rx-h2">Scope</h2><p>{r.scope}</p></div>}
       <div className="rx-card"><h2 className="rx-h2">Quote versions</h2>
-        {d.quotes.map((q: any) => <p key={q.id}>v{q.version}{q.superseded_at ? ' (replaced)' : ''}: call-out {money(q.call_out_cents)}, labour {money(q.labour_cents)}, materials {money(q.materials_cents)}, total {money(q.call_out_cents + q.labour_cents + q.materials_cents)}</p>)}</div>
+        {d.quotes.map((q: any) => <div key={q.id}><p><b>Version {q.version}{q.superseded_at ? ' (replaced)' : ''}: total {money(q.call_out_cents + q.labour_cents + q.materials_cents)}</b></p><QuoteLines quote={q} /></div>)}</div>
       <div className="rx-card"><h2 className="rx-h2">Extras</h2>
         {d.variations.length ? d.variations.map((v: any) => <p key={v.id}>{v.description}: {money(v.amount_cents)} ({v.status === 'requested' ? 'not approved' : v.status.replace(/_/g, ' ')})</p>) : <p className="rx-muted">None</p>}</div>
       <div className="rx-card"><h2 className="rx-h2">Approvals</h2>
