@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '../lib/supabase'
 import { apiFetch } from '../lib/apiFetch'
 import { Field, Shell, StatusPill } from '../components/rec-ui'
+import BankingCard from '../components/BankingCard'
+import { PACK_IDS, PACKS } from '../lib/packs'
 
 // B17/B31-lite: the tradesperson's (and manager's) list of job records, plus "New job".
 export default function RecordsPage() {
@@ -39,6 +41,7 @@ export default function RecordsPage() {
   return (
     <Shell title="Job records">
       <p className="rx-muted">Every job keeps its quote versions, approvals, photos and certificates, and stays with the property. Share it with your customer by WhatsApp link. No account needed on their side.</p>
+      {role === 'tradesperson' && <BankingCard />}
       {role === 'tradesperson' && !show && <button className="rx-btn" onClick={() => setShow(true)}>+ New job for my customer</button>}
       {role && role !== 'tradesperson' && <p className="rx-muted">Landlords and agencies log jobs from <Link href="/manage">Properties</Link>. Homeowners see their jobs in the <Link href="/home-file">Home file</Link>.</p>}
 
@@ -55,7 +58,7 @@ export default function RecordsPage() {
             <Field label="Suburb"><input value={f.suburb} onChange={up('suburb')} /></Field>
             <Field label="Trade pack">
               <select value={f.trade_pack} onChange={up('trade_pack')}>
-                <option value="">None</option><option value="geyser">Geyser and plumbing</option><option value="electrical">Electrical</option>
+                <option value="">None</option>{PACK_IDS.map(id => <option key={id} value={id}>{PACKS[id].name}</option>)}
               </select>
             </Field>
           </div>

@@ -1,6 +1,6 @@
 'use client'
 // Small shared UI kit for the job-record screens. Plain inline styles, mobile first,
-// 44px tap targets (NFR-11), brand colours from the existing app.
+// 44px tap targets (NFR-11). Same theme as the rest of Lungiza: colours and fonts from app/globals.css.
 import Link from 'next/link'
 import { CSSProperties, ReactNode } from 'react'
 import { supabase } from '../lib/supabase'
@@ -8,28 +8,34 @@ import { supabase } from '../lib/supabase'
 export const C = { ink: '#2C2C28', cream: '#F5F0E8', creamD: '#EAE3D6', line: '#DDD5C5', terra: '#C4593A', green: '#3DAA6A', amber: '#B7791F', red: '#C53030', grey: '#5A5952' }
 
 export const css = `
-  .rx{font-family:Arial,Helvetica,sans-serif;color:${C.ink};background:${C.cream};min-height:100vh}
+  .rx{font-family:'Barlow',Arial,sans-serif;color:${C.ink};background:${C.cream};min-height:100vh}
   .rx *{box-sizing:border-box}
   .rx-top{background:${C.ink};color:${C.cream};padding:12px 16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
   .rx-top a{color:${C.cream};text-decoration:none;font-size:14px;opacity:.85}
-  .rx-top .brand{font-weight:700;letter-spacing:2px;opacity:1;margin-right:auto}
+  .rx-top .brand{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:3px;opacity:1;margin-right:auto}
   .rx-wrap{max-width:860px;margin:0 auto;padding:16px}
   .rx-card{background:#fff;border:1px solid ${C.line};border-radius:10px;padding:16px;margin-bottom:14px}
-  .rx-h1{font-size:22px;margin:4px 0 12px}
-  .rx-h2{font-size:16px;margin:0 0 10px}
+  .rx-h1{font-family:'Bebas Neue',sans-serif;font-weight:400;font-size:32px;letter-spacing:1px;line-height:1.05;margin:4px 0 12px}
+  .rx-h2{font-family:'Barlow Condensed',sans-serif;font-size:15px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin:0 0 10px}
   .rx-muted{color:${C.grey};font-size:13px;line-height:1.5}
   .rx-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
   .rx-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
   @media(max-width:560px){.rx-grid{grid-template-columns:1fr}}
-  .rx label{display:block;font-size:12px;color:${C.grey};margin:0 0 4px}
+  .rx label{display:block;font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:${C.grey};margin:0 0 4px}
   .rx input,.rx select,.rx textarea{width:100%;min-height:44px;border:1px solid ${C.line};border-radius:8px;padding:10px;font-size:16px;background:#fff;color:${C.ink}}
   .rx textarea{min-height:80px}
-  .rx-btn{min-height:44px;border:none;border-radius:8px;padding:10px 16px;font-size:15px;font-weight:700;cursor:pointer;background:${C.terra};color:#fff}
+  .rx input::placeholder,.rx textarea::placeholder{color:#9A968B}
+  .rx select option{background:#fff;color:${C.ink}}
+  .rx-total{font-family:'Bebas Neue',sans-serif;font-size:30px;letter-spacing:1px;margin:6px 0}
+  .rx-lines{width:100%;border-collapse:collapse;font-size:14px;margin:6px 0}
+  .rx-lines td{padding:6px 0;border-bottom:1px solid ${C.creamD};vertical-align:top}
+  .rx-lines td:last-child{text-align:right;white-space:nowrap}
+  .rx-btn{min-height:44px;border:none;border-radius:8px;padding:10px 16px;font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:700;letter-spacing:.5px;cursor:pointer;background:${C.terra};color:#fff}
   .rx-btn.sec{background:#fff;color:${C.ink};border:1px solid ${C.line}}
   .rx-btn.green{background:${C.green}}
   .rx-btn.red{background:${C.red}}
   .rx-btn:disabled{opacity:.5;cursor:not-allowed}
-  .rx-pill{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;padding:3px 8px;border-radius:20px;border:1px solid ${C.line};background:${C.creamD}}
+  .rx-pill{display:inline-block;font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;padding:3px 8px;border-radius:20px;border:1px solid ${C.line};background:${C.creamD}}
   .rx-list a{color:inherit;text-decoration:none}
   .rx-item{display:flex;justify-content:space-between;gap:10px;padding:12px 0;border-bottom:1px solid ${C.creamD}}
   .rx-item:last-child{border-bottom:none}
@@ -100,6 +106,34 @@ export function Level({ level, children }: { level: 'green' | 'amber' | 'red'; c
   const col = level === 'green' ? C.green : level === 'amber' ? C.amber : C.red
   const txt = level === 'green' ? 'OK' : level === 'amber' ? 'Check' : 'Missing or invalid'
   return <span className="rx-pill" style={{ color: col, borderColor: col }}>{children || txt}</span>
+}
+
+/** South African number to WhatsApp format: 082 123 4567 -> 27821234567. Returns '' if it does not look valid. */
+export function waNumber(phone: string | null | undefined) {
+  let n = String(phone || '').replace(/\D/g, '')
+  if (n.startsWith('00')) n = n.slice(2)
+  if (n.startsWith('0') && n.length === 10) n = '27' + n.slice(1)
+  return n.length >= 10 && n.length <= 15 ? n : ''
+}
+
+/** One tap: opens WhatsApp straight in the customer's chat with the message written (NFR-10: no WhatsApp API).
+ *  Without a usable number, opens WhatsApp to pick the chat. */
+export function openWhatsApp(phone: string | null | undefined, text: string) {
+  const n = waNumber(phone)
+  const url = `https://wa.me/${n}?text=${encodeURIComponent(text)}`
+  const w = window.open(url, '_blank', 'noopener')
+  if (!w) window.location.href = url
+}
+
+/** The quote's lines, or its three totals for quotes written without lines. */
+export function QuoteLines({ quote }: { quote: any }) {
+  const lines = Array.isArray(quote?.lines) ? quote.lines.filter((l: any) => l.text) : []
+  if (!lines.length) return <div className="rx-muted">Call-out {money(quote.call_out_cents)} · Labour {money(quote.labour_cents)} · Materials {money(quote.materials_cents)}</div>
+  return (
+    <table className="rx-lines"><tbody>
+      {lines.map((l: any, i: number) => <tr key={i}><td>{l.text}{l.kind ? <span className="rx-muted"> · {l.kind === 'call_out' ? 'call-out' : l.kind}</span> : null}</td><td>{money(l.amount_cents)}</td></tr>)}
+    </tbody></table>
+  )
 }
 
 /** Open the phone share sheet, or WhatsApp web as a fallback (NFR-10: no WhatsApp API). */

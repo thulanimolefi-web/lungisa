@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { apiFetch } from '../../lib/apiFetch'
 import { CERT_LABELS } from '../../lib/certificate-rules'
-import { APPROVAL_LABEL, Bare, Field, Level, money, StatusPill } from '../../components/rec-ui'
+import { APPROVAL_LABEL, Bare, Field, Level, money, QuoteLines, StatusPill } from '../../components/rec-ui'
 
 // B20/B22/B39: the page behind every WhatsApp link. No account needed.
 // Approving, signing off and reporting problems need a one-time code (receiver-confirmed, rule R4).
@@ -111,8 +111,8 @@ export default function LinkPage() {
       <div className="rx-card">
         <h2 className="rx-h2">Quote {quote ? `version ${quote.version}` : ''}</h2>
         {quote ? <>
-          <div className="rx-muted">Call-out {money(quote.call_out_cents)} · Labour {money(quote.labour_cents)} · Materials {money(quote.materials_cents)}</div>
-          <div style={{ fontSize: 22, fontWeight: 700, margin: '6px 0' }}>{money(total)}</div>
+          <QuoteLines quote={quote} />
+          <div className="rx-total">{money(total)}</div>
           {quote.notes && <p className="rx-muted">{quote.notes}</p>}
           {approved ? <Level level="green">Approved · {APPROVAL_LABEL[approved.approval_type]}</Level> : <Level level="amber">Not approved yet</Level>}
         </> : <p className="rx-muted">The tradesperson has not sent a quote yet.</p>}

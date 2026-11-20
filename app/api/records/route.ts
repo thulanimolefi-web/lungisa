@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireUser } from '../../lib/auth-server'
 import { audit, db, findOrCreateProperty, orgIdsFor, propertyAccess } from '../../lib/jobrecord-server'
+import { isPackId } from '../../lib/packs'
 
 // B17: list and create job records.
 // GET  -> records where I am the tradesperson, the creator, or a member of the managing organisation
@@ -26,7 +27,7 @@ export async function POST(req: NextRequest) {
   const b = await req.json().catch(() => ({}))
   const title = String(b.title || '').trim()
   if (!title) return NextResponse.json({ error: 'Give the job a title' }, { status: 400 })
-  const pack = b.trade_pack === 'geyser' || b.trade_pack === 'electrical' ? b.trade_pack : null
+  const pack = isPackId(b.trade_pack) ? b.trade_pack : null
   const urgency = b.urgency === 'urgent' ? 'urgent' : 'routine'
 
   let propertyId: string

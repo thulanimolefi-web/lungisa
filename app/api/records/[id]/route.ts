@@ -58,9 +58,19 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         if (locked) return err('This job is closed')
         const prev = await currentQuote(record.id)
         const version = (prev?.version || 0) + 1
-        const lines = Array.isArray(b.lines) ? b.lines.slice(0, 40).map((l: any) => ({ text: String(l.text || '').slice(0, 200), amount_cents: cents(l.amount) })) : []
+        // Line items (from a template or typed): each line is call-out, labour or materials, and the
+        // three totals are the sums of their lines. Without lines, the three totals are entered directly.
+        const KINDS = ['call_out', 'labour', 'materials']
+        const lines = Array.isArray(b.lines) ? b.lines.slice(0, 40).map((l: any) => ({
+          text: String(l.text || '').trim().slice(0, 200), kind: KINDS.includes(l.kind) ? l.kind : 'labour', amount_cents: cents(l.amount),
+        })).filter((l: any) => l.text && l.amount_cents > 0) : []
+        const sum = (k: string) => lines.filter((l: any) => l.kind === k).reduce((t: number, l: any) => t + l.amount_cents, 0)
+        const totals = lines.length
+          ? { call_out_cents: sum('call_out'), labour_cents: sum('labour'), materials_cents: sum('materials') }
+          : { call_out_cents: cents(b.call_out), labour_cents: cents(b.labour), materials_cents: cents(b.materials) }
+        if (totals.call_out_cents + totals.labour_cents + totals.materials_cents <= 0) return err('Add at least one priced line')
         const { error } = await db().from('record_quotes').insert({
-          record_id: record.id, version, call_out_cents: cents(b.call_out), labour_cents: cents(b.labour), materials_cents: cents(b.materials),
+          record_id: record.id, version, ...totals,
           lines, notes: String(b.notes || '').slice(0, 2000) || null, sent_at: new Date().toISOString(), created_by: me,
         })
         if (error) return err('Could not save quote', 500)
@@ -70,7 +80,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
           await db().from('approvals').update({ void_at: new Date().toISOString() }).eq('record_id', record.id).eq('subject', 'quote').is('void_at', null)
         }
         await set({ status: 'awaiting_approval' })
-        await audit(me, 'quote_sent', 'job_records', record.id, { version, total_cents: cents(b.call_out) + cents(b.labour) + cents(b.materials) })
+        await audit(me, 'quote_sent', 'job_records', record.id, { version, total_cents: totals.call_out_cents + totals.labour_cents + totals.materials_cents, lines: lines.length })
         return NextResponse.json({ ok: true, version })
       }
 
