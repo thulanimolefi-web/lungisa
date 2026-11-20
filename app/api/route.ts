@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { verifyYocoWebhook } from '../lib/yoco-webhook'
 import nodemailer from 'nodemailer'
 import { splitCommission } from '../lib/commission'
+import { handleRecordWebhook } from '../lib/record-payments'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -26,6 +27,13 @@ export async function POST(req: NextRequest) {
 
     const event = JSON.parse(body)
     console.log('Yoco webhook event:', event.type)
+
+    // Job record card payments (customer link). Marketplace payments below are unchanged.
+    const recPayload = event.payload || event
+    if (recPayload?.metadata?.kind === 'job_record') {
+      await handleRecordWebhook(event.type, recPayload)
+      return NextResponse.json({ received: true })
+    }
 
     // ── Handle checkout.complete ──────────────────────────────────
     if(event.type === 'checkout.complete' || event.type === 'payment.succeeded') {

@@ -297,6 +297,7 @@ export default function AdminPanel() {
               {/* ── PAYOUTS ──────────────────────────────────────── */}
               {tab==='payouts'&&(
                 <div>
+                  <a href="/admin/record-payouts" className="btn-sm btn-terra" style={{display:'inline-block',marginBottom:12,textDecoration:'none'}}>Card payouts on job records →</a>
                   {payouts.length===0?(
                     <div className="card" style={{textAlign:'center',padding:'60px 20px'}}>
                       <div style={{fontSize:40,marginBottom:12}}>✓</div>

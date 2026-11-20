@@ -983,6 +983,13 @@ export default function HomeDashboard() {
             </div>
           </div>
 
+          {/* Entry points: home file, landlord or agency, sales listings */}
+          <div style={{display:'flex',gap:8,flexWrap:'wrap',padding:'10px 16px 0'}}>
+            {[['/home-file','My home file'],['/manage','I manage rentals'],['/listings','I sell property']].map(([href,label])=>(
+              <a key={href} href={href} style={{fontSize:13,padding:'10px 14px',borderRadius:20,border:'1px solid var(--cream-d)',background:'var(--white)',color:'var(--charcoal)',textDecoration:'none'}}>{label}</a>
+            ))}
+          </div>
+
           <div className="content">
 
             {/* ── ACTIVE JOBS ─────────────────────────────────────── */}

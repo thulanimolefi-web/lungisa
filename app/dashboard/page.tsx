@@ -1105,6 +1105,11 @@ function DashboardInner() {
             </div>
           </div>
 
+          {/* Job records for the tradesperson's own customers */}
+          <a href="/records" style={{display:'block',margin:'0 0 14px',padding:'14px 16px',borderRadius:8,background:'rgba(61,170,106,.12)',border:'1px solid rgba(61,170,106,.3)',color:'#F5F0E8',textDecoration:'none',fontSize:14}}>
+            <strong>Job records for your own customers</strong> · quote, extras, photos and certificates, approved by WhatsApp link. →
+          </a>
+
           {/* JOB FEED */}
           {view==='feed'&&(
             <div style={S.content}>
