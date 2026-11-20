@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '../lib/supabase'
+import { apiFetch } from '../lib/apiFetch'
 import { trackEvent, AnalyticsEvents } from '../lib/analytics'
 import { splitCommission } from '../lib/commission'
 import { AREAS } from '../lib/areas'
@@ -97,7 +98,7 @@ function QuoteSubmitCard({ bid, onSubmitted }: { bid: any; onSubmitted: () => vo
       if(error) { console.error('Submit quote error:', error.message); setSubmitting(false); return }
 
       // Email homeowner
-      fetch('/api/send-email', {
+      apiFetch('/api/send-email', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type:              'quote_submitted',
@@ -355,9 +356,9 @@ function DashboardInner() {
     try{
       const {data:{session}}=await supabase.auth.getSession()
       if(session?.user){
-        const {data}=await supabase
-          .from('profiles')
-          // ── CHANGE 2: added is_online to select ──
+        // Own row through my_profile() so email and phone stay private to the owner
+        const {data}=await (supabase
+          .rpc('my_profile') as any)
           .select(`*, tradesperson_profiles(trade_category,trade_categories,service_areas,years_experience,rating_avg,rating_count,jobs_completed,id_verified,verification_status,is_founding_member,is_online)`)
           .eq('id',session.user.id)
           .single()
@@ -737,7 +738,7 @@ function DashboardInner() {
       }).eq('id',bid.id)
       const {data:{session}}=await supabase.auth.getSession()
       const {data:jobData}=await supabase.from('jobs').select('homeowner_id').eq('id',bid.jobId).single()
-      fetch('/api/send-email',{
+      apiFetch('/api/send-email',{
         method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({
           type:'counter_offer',bidId:bid.id,counterAmount:amount,
@@ -817,7 +818,7 @@ function DashboardInner() {
         .eq('id', completionJobId)
         .single()
       if(jobData) {
-        fetch('/api/send-email', {
+        apiFetch('/api/send-email', {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({
             type:          'job_completion_submitted',
@@ -871,7 +872,7 @@ function DashboardInner() {
         }
         trackEvent(AnalyticsEvents.BID_SUBMITTED,{has_callout:bidCalloutNum>0,has_materials:bidMaterialsNum>0})
         await supabase.from('jobs').update({ status:'bidding' }).eq('id',modalJob.id)
-        fetch('/api/send-email',{
+        apiFetch('/api/send-email',{
           method:'POST',headers:{'Content-Type':'application/json'},
           body:JSON.stringify({jobId:modalJob.id,amount:price,eta:bidEta,tradespersonId:session.user.id})
         }).catch(e=>console.log('Email error:',e))

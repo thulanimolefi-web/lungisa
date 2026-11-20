@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import { apiFetch } from '../lib/apiFetch'
 
 type Message = {
   id: string
@@ -337,7 +338,7 @@ export default function Messaging({ theme, openJobId, openUserId, onClose }: Pro
         ))
 
         // Send notification to receiver
-        fetch('/api/send-email', {
+        apiFetch('/api/send-email', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

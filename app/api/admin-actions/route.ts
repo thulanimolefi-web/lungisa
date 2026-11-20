@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireAdmin } from '../../lib/auth-server'
 
 // Service role client — bypasses all RLS
 const supabase = createClient(
@@ -8,6 +9,8 @@ const supabase = createClient(
 )
 
 export async function POST(req: NextRequest) {
+  const auth = await requireAdmin(req)
+  if (auth instanceof NextResponse) return auth
   try {
     const { action, userId, jobId, paymentId, disputeId, reason } = await req.json()
 
@@ -114,6 +117,6 @@ export async function POST(req: NextRequest) {
 
   } catch(error) {
     console.error('Admin action error:', error)
-    return NextResponse.json({ error: String(error) }, { status: 500 })
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }
 }

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../lib/supabase'
+import { apiFetch } from '../lib/apiFetch'
 import { trackEvent, AnalyticsEvents } from '../lib/analytics'
 import { AREAS } from '../lib/areas'
 
@@ -137,10 +138,14 @@ export default function AuthPage() {
       if(data.user) {
         setUserId(data.user.id)
         const primaryArea = role==='homeowner' ? area : (areas[0]||'Johannesburg')
+        // Insert once (role and email cannot be changed later by the user), then update the editable columns
         await supabase.from('profiles').upsert({
           id: data.user.id, role, full_name: fname+' '+lname,
           phone: '+27'+phone.replace(/^0/,''), email, area: primaryArea, city: 'Johannesburg',
-        })
+        }, { onConflict: 'id', ignoreDuplicates: true })
+        await supabase.from('profiles').update({
+          full_name: fname+' '+lname, phone: '+27'+phone.replace(/^0/,''), area: primaryArea, city: 'Johannesburg',
+        }).eq('id', data.user.id)
         if(role==='tradesperson') {
           const safeAreas = areas.length > 0 ? areas : [area||'Johannesburg']
           await supabase.from('tradesperson_profiles').upsert({
@@ -149,7 +154,6 @@ export default function AuthPage() {
             trade_categories: (trades.length > 0 ? trades : [trade]).map(t=>t.toLowerCase()),
             service_areas:    safeAreas,
             years_experience: 0,
-            verification_status: 'unsubmitted',
           })
         }
         setLastOtpDate()
@@ -195,11 +199,10 @@ export default function AuthPage() {
       const idPath = `id-docs/${uid}/id_document.${idExt}`
       setUploadProgress(30)
       const { error: idErr } = await supabase.storage
-        .from('job-photos')
+        .from('verification-docs')
         .upload(idPath, idFile, { upsert: true, contentType: idFile.type })
       if(idErr) { setUploadErr('Upload failed: '+idErr.message); setLoading(false); return }
-      const { data: idData } = supabase.storage.from('job-photos').getPublicUrl(idPath)
-      idUrl = idData.publicUrl
+      idUrl = idPath // private bucket, path only
       setUploadProgress(60)
 
       // Upload selfie if provided
@@ -207,34 +210,18 @@ export default function AuthPage() {
         const selfieExt = selfieFile.name.split('.').pop()
         const selfiePath = `id-docs/${uid}/selfie.${selfieExt}`
         const { error: selfieErr } = await supabase.storage
-          .from('job-photos')
+          .from('verification-docs')
           .upload(selfiePath, selfieFile, { upsert: true, contentType: selfieFile.type })
-        if(!selfieErr) {
-          const { data: selfieData } = supabase.storage.from('job-photos').getPublicUrl(selfiePath)
-          selfieUrl = selfieData.publicUrl
-        }
+        if(!selfieErr) selfieUrl = selfiePath
       }
       setUploadProgress(80)
 
-      // Update tradesperson_profiles
-      await supabase.from('tradesperson_profiles').update({
-        id_document_url:     idUrl,
-        selfie_url:          selfieUrl || null,
-        id_submitted_at:     new Date().toISOString(),
-        verification_status: 'pending',
-        qualification:       idType,
-      }).eq('id', uid)
-
-      // Notify admin via notification row
-      await supabase.from('notifications').insert({
-        user_id:  uid,
-        type:     'id_submitted',
-        title:    'ID verification submitted',
-        message:  `${fname} ${lname} submitted their ${idType.replace('_',' ')} for verification.`,
-        link:     `/admin/verify/${uid}`,
-        read:     false,
-        payload:  { idUrl, selfieUrl, idType, tradeName: trades[0] },
+      // Server records the submission and notifies admin
+      const res = await apiFetch('/api/submit-verification', {
+        method: 'POST',
+        body: JSON.stringify({ idPath: idUrl, selfiePath: selfieUrl, idType }),
       })
+      if(!res.ok) { setUploadErr('Could not submit. Please try again.'); setLoading(false); return }
 
       setUploadProgress(100)
       trackEvent(AnalyticsEvents.SIGNUP_COMPLETED,{role:'tradesperson',id_verified:true})

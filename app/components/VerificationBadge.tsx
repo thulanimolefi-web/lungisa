@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { apiFetch } from '../lib/apiFetch'
 
 type VerificationStatus = 'unsubmitted' | 'pending' | 'verified' | 'rejected'
 
@@ -31,11 +32,8 @@ export default function VerificationBadge({ variant = 'full' }: Props) {
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if(!session?.user) { setLoading(false); return }
-      const { data } = await supabase
-        .from('tradesperson_profiles')
-        .select('id_verified, verification_status, id_submitted_at, rejection_reason')
-        .eq('id', session.user.id)
-        .single()
+      // Own verification status through a definer function (rejection reasons are private)
+      const { data } = await (supabase.rpc('my_verification').single() as any)
       if(data) {
         if(data.id_verified)                           setStatus('verified')
         else if(data.verification_status==='pending')  setStatus('pending')
@@ -86,12 +84,12 @@ export default function VerificationBadge({ variant = 'full' }: Props) {
       setUploadProgress(30)
 
       const { error: idErr } = await supabase.storage
-        .from('job-photos')
+        .from('verification-docs')
         .upload(idPath, idFile, { upsert: true, contentType: idFile.type })
       if(idErr) { setUploadErr('Upload failed: '+idErr.message); setUploading(false); return }
 
-      const { data: idData } = supabase.storage.from('job-photos').getPublicUrl(idPath)
-      const idUrl = idData.publicUrl
+      // Private bucket: we store the storage path, never a public URL.
+      const idUrl = idPath
       setUploadProgress(55)
 
       // ── 2. Upload selfie if provided ───────────────────────────
@@ -100,37 +98,18 @@ export default function VerificationBadge({ variant = 'full' }: Props) {
         const selfieExt  = selfieFile.name.split('.').pop()
         const selfiePath = `id-docs/${uid}/selfie.${selfieExt}`
         const { error: selfieErr } = await supabase.storage
-          .from('job-photos')
+          .from('verification-docs')
           .upload(selfiePath, selfieFile, { upsert: true, contentType: selfieFile.type })
-        if(!selfieErr) {
-          const { data: selfieData } = supabase.storage.from('job-photos').getPublicUrl(selfiePath)
-          selfieUrl = selfieData.publicUrl
-        }
+        if(!selfieErr) selfieUrl = selfiePath
       }
       setUploadProgress(75)
 
-      // ── 3. Update tradesperson_profiles ───────────────────────
-      const { error: profileErr } = await supabase.from('tradesperson_profiles').update({
-        id_document_url:     idUrl,
-        selfie_url:          selfieUrl || null,
-        id_submitted_at:     new Date().toISOString(),
-        verification_status: 'pending',
-        qualification:       idType,
-      }).eq('id', uid)
-
-      if(profileErr) {
-        setUploadErr('Failed to save profile: '+profileErr.message)
-        setUploading(false); return
-      }
-      setUploadProgress(90)
-
-      // ── 4. Fire API route — handles notification + admin email ─
-      // This runs server-side with service role key, no RLS issue
-      await fetch('/api/submit-verification', {
+      // 3. Server records the submission (verification columns are server-only)
+      const res = await apiFetch('/api/submit-verification', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: uid, idUrl, selfieUrl, idType }),
+        body: JSON.stringify({ idPath: idUrl, selfiePath: selfieUrl, idType }),
       })
+      if(!res.ok) { setUploadErr('Could not submit. Please try again.'); setUploading(false); return }
 
       setUploadProgress(100)
       setStatus('pending')

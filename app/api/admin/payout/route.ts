@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import nodemailer from 'nodemailer'
+import { checkBearerSecret } from '../../../lib/auth-server'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -15,10 +16,8 @@ const transporter = nodemailer.createTransport({
 
 // POST /api/admin/payout — mark a payment as processed
 export async function POST(req: NextRequest) {
-  const authHeader = req.headers.get('authorization')
-  if(authHeader !== `Bearer ${process.env.ADMIN_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const denied = checkBearerSecret(req, 'ADMIN_SECRET')
+  if (denied) return denied
   try {
     const { paymentId, status, reference, notes } = await req.json()
     if(!paymentId || !status) return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
@@ -91,10 +90,8 @@ export async function POST(req: NextRequest) {
 
 // GET /api/admin/payout — list all pending payouts
 export async function GET(req: NextRequest) {
-  const authHeader = req.headers.get('authorization')
-  if(authHeader !== `Bearer ${process.env.ADMIN_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const denied = checkBearerSecret(req, 'ADMIN_SECRET')
+  if (denied) return denied
   try {
     const { data, error } = await supabase
       .from('payments')
