@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { splitCommission } from '../../lib/commission'
+import { requireUser } from '../../lib/auth-server'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -8,6 +9,8 @@ const supabase = createClient(
 )
 
 export async function POST(req: NextRequest) {
+  const auth = await requireUser(req)
+  if (auth instanceof NextResponse) return auth
   try {
     const {
       amountInCents,
@@ -23,6 +26,11 @@ export async function POST(req: NextRequest) {
     if(!amountInCents || !jobId) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
+    // Only the job's homeowner can start a checkout for it
+    const { data: own } = await supabase.from('jobs').select('homeowner_id').eq('id', jobId).maybeSingle()
+    if (!own || (own as any).homeowner_id !== auth.user.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
 
     const secretKey = process.env.YOCO_SECRET_KEY
     if(!secretKey) {
@@ -31,7 +39,6 @@ export async function POST(req: NextRequest) {
 
     // ── Create Yoco hosted checkout ───────────────────────────────
     console.log('Creating Yoco checkout:', { amountInCents, currency, jobId })
-    console.log('Key prefix:', secretKey.substring(0, 12) + '...')
 
     const idempotencyKey = `lungisa-${jobId}-${Date.now()}`
 
@@ -43,7 +50,6 @@ export async function POST(req: NextRequest) {
       metadata:   { jobId, jobTitle, homeownerId, tradespersonId },
     }
 
-    console.log('Yoco payload:', JSON.stringify(payload))
 
     const yocoRes = await fetch('https://payments.yoco.com/api/checkouts', {
       method:  'POST',
@@ -57,16 +63,14 @@ export async function POST(req: NextRequest) {
 
     const checkout = await yocoRes.json()
     console.log('Yoco status:', yocoRes.status)
-    console.log('Yoco full response:', JSON.stringify(checkout))
 
     if(!yocoRes.ok) {
-      console.error('Yoco error detail:', JSON.stringify(checkout))
       // Surface the actual Yoco error message to frontend
       const errMsg = checkout?.displayMessage
         || checkout?.message
         || checkout?.error?.message
         || checkout?.errors?.[0]?.message
-        || JSON.stringify(checkout)
+        || 'Payment failed'
       return NextResponse.json({ error: errMsg }, { status: 400 })
     }
 
@@ -89,7 +93,7 @@ export async function POST(req: NextRequest) {
 
       await supabase.from('payments').insert({
         job_id:          jobId,
-        homeowner_id:    homeownerId,
+        homeowner_id:    auth.user.id,
         tradesperson_id: tradespersonId,
         gross_amount:       amountInCents,
         commission_amount:  commissionAmountCents,
@@ -105,7 +109,7 @@ export async function POST(req: NextRequest) {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://lungiza.co.za'
     fetch(`${appUrl}/api/send-email`, {
       method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: req.headers.get('authorization') || '' },
       body:    JSON.stringify({
         type: 'payment_confirmed', jobId,
         amount: amountInCents / 100,

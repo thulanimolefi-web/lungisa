@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import nodemailer from 'nodemailer'
 import { createClient } from '@supabase/supabase-js'
+import { requireUser } from '../../lib/auth-server'
 
 // Service role client — bypasses RLS
 const supabase = createClient(
@@ -21,11 +22,25 @@ const transporter = nodemailer.createTransport({
 const ADMIN_EMAIL = 'stockstvm@gmail.com' // your review email
 
 export async function POST(req: NextRequest) {
+  const auth = await requireUser(req)
+  if (auth instanceof NextResponse) return auth
   try {
-    const { userId, idUrl, selfieUrl, idType } = await req.json()
-    if(!userId || !idUrl) {
-      return NextResponse.json({ error: 'Missing userId or idUrl' }, { status: 400 })
+    const { idPath, selfiePath, idType } = await req.json()
+    const userId = auth.user.id // never trust a userId from the body
+    const prefix = `id-docs/${userId}/`
+    if(!idPath || !String(idPath).startsWith(prefix) || (selfiePath && !String(selfiePath).startsWith(prefix))) {
+      return NextResponse.json({ error: 'Invalid document path' }, { status: 400 })
     }
+    const { data: tpRow } = await supabase.from('tradesperson_profiles').select('id').eq('id', userId).maybeSingle()
+    if(!tpRow) return NextResponse.json({ error: 'Not a tradesperson' }, { status: 403 })
+    const { error: upErr } = await supabase.from('tradesperson_profiles').update({
+      id_document_url:     idPath,
+      selfie_url:          selfiePath || null,
+      id_submitted_at:     new Date().toISOString(),
+      verification_status: 'pending',
+      qualification:       idType,
+    }).eq('id', userId)
+    if(upErr) return NextResponse.json({ error: 'Could not save submission' }, { status: 500 })
 
     // ── 1. Fetch tradesperson name for emails ──────────────────────
     const { data: profile } = await supabase
@@ -50,7 +65,7 @@ export async function POST(req: NextRequest) {
       message: `Your ${docLabel} has been received. The Lungisa team will review it within 24 hours.`,
       link:    '/dashboard',
       read:    false,
-      payload: { idUrl, selfieUrl, idType },
+      payload: { idType },
     })
 
     // ── 3. Email the tradesperson — confirmation ───────────────────
@@ -111,36 +126,8 @@ export async function POST(req: NextRequest) {
               <tr><td style="padding:8px 0;color:#666;font-size:13px">Submitted</td><td style="padding:8px 0;font-size:13px;color:#222">${new Date().toLocaleString('en-ZA',{dateStyle:'full',timeStyle:'short'})}</td></tr>
             </table>
 
-            <div style="margin-bottom:20px">
-              <div style="font-size:13px;font-weight:600;color:#2C2C28;margin-bottom:8px">📄 ID Document</div>
-              <a href="${idUrl}" target="_blank" style="display:inline-block;background:#C4593A;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600;margin-bottom:8px">
-                View ID Document →
-              </a>
-              <div style="font-size:11px;color:#888;margin-top:4px;word-break:break-all">${idUrl}</div>
-            </div>
-
-            ${selfieUrl ? `
-            <div style="margin-bottom:20px">
-              <div style="font-size:13px;font-weight:600;color:#2C2C28;margin-bottom:8px">🤳 Selfie with ID</div>
-              <a href="${selfieUrl}" target="_blank" style="display:inline-block;background:#5A5952;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600;margin-bottom:8px">
-                View Selfie →
-              </a>
-              <div style="font-size:11px;color:#888;margin-top:4px;word-break:break-all">${selfieUrl}</div>
-            </div>
-            ` : '<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:10px 14px;font-size:12px;color:#856404;margin-bottom:20px">⚠️ No selfie uploaded — verify ID document carefully</div>'}
-
-            <div style="background:#f8f8f8;border:1px solid #ddd;border-radius:8px;padding:16px;margin-bottom:20px">
-              <div style="font-size:13px;font-weight:600;color:#2C2C28;margin-bottom:10px">To approve or reject:</div>
-              <div style="font-size:13px;color:#444;line-height:1.8">
-                <strong>Approve:</strong> Run in Supabase SQL Editor:<br/>
-                <code style="background:#2C2C28;color:#E07A5F;padding:6px 10px;border-radius:4px;display:block;margin:6px 0;font-size:12px">UPDATE public.tradesperson_profiles SET id_verified = true, verification_status = 'verified' WHERE id = '${userId}';</code>
-                <strong>Reject:</strong><br/>
-                <code style="background:#2C2C28;color:#f08080;padding:6px 10px;border-radius:4px;display:block;margin:6px 0;font-size:12px">UPDATE public.tradesperson_profiles SET id_verified = false, verification_status = 'rejected' WHERE id = '${userId}';</code>
-              </div>
-            </div>
-
-            <div style="font-size:12px;color:#888;line-height:1.6">
-              Running the approve query will automatically notify ${firstName} via in-app notification (Supabase trigger). You may also want to send them a personal email confirming approval.
+            <div style="font-size:13px;color:#444;line-height:1.7">
+              Documents are stored privately. Open the Lungiza admin page and use "Open ID and selfie" to view them through a 5-minute signed link, then approve or reject there.
             </div>
           </div>
         </div>
@@ -151,6 +138,6 @@ export async function POST(req: NextRequest) {
 
   } catch(error) {
     console.error('Verification submission error:', error)
-    return NextResponse.json({ error: String(error) }, { status: 500 })
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }
 }

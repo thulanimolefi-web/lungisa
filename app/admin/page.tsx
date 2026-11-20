@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../lib/supabase'
+import { apiFetch } from '../lib/apiFetch'
 
-const ADMIN_EMAIL = 'stockstvm@gmail.com' // also check info@lungiza.co.za
 
 type Tab = 'overview' | 'payouts' | 'disputes' | 'users' | 'jobs'
 
@@ -29,12 +29,9 @@ export default function AdminPanel() {
   async function checkAuth(){
     const { data:{ session } } = await supabase.auth.getSession()
     if(!session?.user){ router.push('/auth'); return }
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('email')
-      .eq('id', session.user.id)
-      .single()
-    if(profile?.email !== ADMIN_EMAIL){ router.push('/home'); return }
+    // Server-checked allow-list (public.admins), not a client email compare
+    const { data: ok } = await supabase.rpc('is_admin')
+    if(ok !== true){ router.push('/home'); return }
     setAuthed(true)
     loadAll()
   }
@@ -45,107 +42,50 @@ export default function AdminPanel() {
     setLoading(false)
   }
 
+  async function adminGet(k: string){
+    const res = await apiFetch('/api/admin/data?k='+k)
+    if(!res.ok) return null
+    return res.json()
+  }
+
   async function loadStats(){
-    const [jobs, users, payments, disputes] = await Promise.all([
-      supabase.from('jobs').select('id', {count:'exact',head:true}),
-      supabase.from('profiles').select('id', {count:'exact',head:true}),
-      supabase.from('payments').select('amount, net_amount, status'),
-      supabase.from('job_disputes').select('id', {count:'exact',head:true}).eq('status','open'),
-    ])
-    const pmts = payments.data || []
+    const r = await adminGet('stats'); if(!r) return
+    const pmts = r.payments || []
     setStats({
-      jobs:     jobs.count||0,
-      users:    users.count||0,
-      disputes: disputes.count||0,
-      payouts:  pmts.filter(p=>p.status==='held').length,
-      revenue:  pmts.filter(p=>p.status==='released').reduce((s:number,p:any)=>s+(p.amount-p.net_amount),0),
-      escrow:   pmts.filter(p=>p.status==='held').reduce((s:number,p:any)=>s+p.amount,0),
+      jobs:     r.jobs||0,
+      users:    r.users||0,
+      disputes: r.disputes||0,
+      payouts:  pmts.filter((p:any)=>p.status==='held').length,
+      revenue:  pmts.filter((p:any)=>p.status==='released').reduce((s:number,p:any)=>s+(p.amount-p.net_amount),0),
+      escrow:   pmts.filter((p:any)=>p.status==='held').reduce((s:number,p:any)=>s+p.amount,0),
     })
   }
 
   async function loadPayouts(){
-    const { data } = await supabase
-      .from('payments')
-      .select(`
-        id, amount, net_amount, status, created_at, yoco_charge_id,
-        jobs(title, status),
-        homeowner:profiles!payments_homeowner_id_fkey(full_name, email),
-        tradesperson:profiles!payments_tradesperson_id_fkey(full_name, email, phone)
-      `)
-      .eq('status','held')
-      .order('created_at', {ascending:false})
-    if(data) {
-      // For each payment, get banking details
-      const withBanking = await Promise.all((data||[]).map(async (p:any)=>{
-        const { data: bd } = await supabase
-          .from('banking_details')
-          .select('bank_name, account_holder, account_number, account_type, branch_code')
-          .eq('tradesperson_id', p.tradesperson_id)
-          .single()
-        return {...p, banking: bd}
-      }))
-      setPayouts(withBanking)
-    }
+    const r = await adminGet('payouts'); if(r?.data) setPayouts(r.data)
   }
 
   async function loadDisputes(){
-    try {
-      const { data, error } = await supabase
-        .from('job_disputes')
-        .select('*')
-        .order('created_at', {ascending:false})
-      
-      if(error){ console.log('[disputes] error:', error); return }
-      if(!data || data.length === 0){ console.log('[disputes] none found'); return }
-
-      // Enrich each dispute with job and profile data separately
-      const enriched = await Promise.all(data.map(async (d:any) => {
-        const { data: job } = await supabase
-          .from('jobs')
-          .select('id, title, status, homeowner_id')
-          .eq('id', d.job_id)
-          .single()
-
-        const { data: raiser } = await supabase
-          .from('profiles')
-          .select('full_name, email, role')
-          .eq('id', d.raised_by)
-          .single()
-
-        return { ...d, job, raiser }
-      }))
-
-      console.log('[disputes] enriched:', enriched)
-      setDisputes(enriched)
-    } catch(e) { console.log('[disputes] exception:', e) }
+    const r = await adminGet('disputes'); if(r?.data) setDisputes(r.data)
   }
 
   async function loadUsers(){
-    const { data } = await supabase
-      .from('profiles')
-      .select(`
-        id, full_name, email, phone, role, area, created_at,
-        tradesperson_profiles(trade_category, service_areas, rating_avg, jobs_completed, id_verified, verification_status, rejection_reason, id_document_url)
-      `)
-      .order('created_at', {ascending:false})
-      .limit(50)
-    if(data) setUsers(data)
+    const r = await adminGet('users'); if(r?.data) setUsers(r.data)
   }
 
   async function loadJobs(){
-    const { data } = await supabase
-      .from('jobs')
-      .select(`
-        id, title, category, area, status, created_at, budget_max,
-        profiles!jobs_homeowner_id_fkey(full_name, email)
-      `)
-      .order('created_at', {ascending:false})
-      .limit(50)
-    if(data) setJobs(data)
+    const r = await adminGet('jobs'); if(r?.data) setJobs(r.data)
+  }
+
+  async function openVerificationDocs(userId: string) {
+    const res = await apiFetch('/api/admin/verification-doc', { method: 'POST', body: JSON.stringify({ userId }) })
+    const data = await res.json()
+    if(!res.ok) { showToast('Error: ' + (data.error||'Could not open')); return }
+    for (const url of [data.idUrl, data.selfieUrl]) if (url) window.open(url, '_blank', 'noopener')
   }
 
   async function adminAction(payload: Record<string,any>) {
-    const res = await fetch('/api/admin-actions', {
+    const res = await apiFetch('/api/admin-actions', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify(payload),
@@ -556,14 +496,7 @@ export default function AdminPanel() {
                                 {u.tradesperson_profiles?.id_document_url ? (
                                   <div style={{marginBottom:8}}>
                                     <div style={{fontFamily:"'Barlow Condensed',sans-serif",fontSize:9,fontWeight:600,letterSpacing:1.5,textTransform:'uppercase',color:'rgba(245,240,232,.3)',marginBottom:5}}>ID Document</div>
-                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                    <img
-                                      src={u.tradesperson_profiles.id_document_url}
-                                      alt="ID document"
-                                      style={{width:'100%',maxWidth:220,borderRadius:6,border:'1px solid rgba(255,255,255,.1)',display:'block',cursor:'pointer'}}
-                                      onClick={()=>window.open(u.tradesperson_profiles.id_document_url,'_blank')}
-                                    />
-                                    <div style={{fontSize:10,color:'rgba(245,240,232,.25)',marginTop:3}}>Click to open full size</div>
+                                    <button className="btn-sm" onClick={()=>openVerificationDocs(u.id)}>Open ID and selfie (signed link, 5 min)</button>
                                   </div>
                                 ) : (
                                   <div style={{fontSize:11,color:'rgba(232,160,32,.6)',marginBottom:6}}>⚠ No ID document uploaded</div>

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import crypto from 'crypto'
+import { verifyYocoWebhook } from '../lib/yoco-webhook'
 import nodemailer from 'nodemailer'
 import { splitCommission } from '../lib/commission'
 
@@ -18,23 +18,14 @@ const transporter = nodemailer.createTransport({
 export async function POST(req: NextRequest) {
   try {
     const body      = await req.text()
-    const signature = req.headers.get('x-yoco-signature') || ''
-    const secret    = process.env.YOCO_WEBHOOK_SECRET || ''
-
-    // ── Verify Yoco signature ─────────────────────────────────────
-    if(secret && signature) {
-      const expected = crypto
-        .createHmac('sha256', secret)
-        .update(body)
-        .digest('hex')
-      if(signature !== expected) {
-        console.error('Webhook signature mismatch')
-        return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
-      }
+    // B09: signature is mandatory. Missing secret, missing headers or bad signature = reject.
+    if(!verifyYocoWebhook(body, req.headers, process.env.YOCO_WEBHOOK_SECRET)) {
+      console.error('Webhook rejected: signature check failed')
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
     }
 
     const event = JSON.parse(body)
-    console.log('Yoco webhook event:', event.type, JSON.stringify(event).substring(0, 200))
+    console.log('Yoco webhook event:', event.type)
 
     // ── Handle checkout.complete ──────────────────────────────────
     if(event.type === 'checkout.complete' || event.type === 'payment.succeeded') {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import nodemailer from 'nodemailer'
+import { checkBearerSecret } from '../../lib/auth-server'
 
 // Service role — bypasses RLS
 const supabase = createClient(
@@ -23,10 +24,8 @@ const transporter = nodemailer.createTransport({
 // Vercel cron calls GET /api/expire-jobs every night at 22:00 UTC
 export async function GET(req: NextRequest) {
   // Protect endpoint — only Vercel cron or admin can call this
-  const authHeader = req.headers.get('authorization')
-  if(authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const denied = checkBearerSecret(req, 'CRON_SECRET')
+  if (denied) return denied
 
   try {
     // ── 1. Find all jobs that should expire ───────────────────────

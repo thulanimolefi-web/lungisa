@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../lib/supabase'
+import { apiFetch } from '../lib/apiFetch'
 import { splitCommission } from '../lib/commission'
 import { trackEvent, AnalyticsEvents } from '../lib/analytics'
 import { AREAS } from '../lib/areas'
@@ -186,7 +187,8 @@ export default function HomeDashboard() {
     try {
       const {data:{session}} = await supabase.auth.getSession()
       if(session?.user) {
-        const {data} = await supabase.from('profiles').select('*').eq('id',session.user.id).single()
+        // Own row through my_profile(): email and phone are not readable by other users
+        const {data} = await supabase.rpc('my_profile').single() as any
         if(data) { setProfile(data); setProfileForm({full_name:data.full_name||'',phone:data.phone||'',area:data.area||''}) }
       }
     } catch(e){ console.log('Profile error:',e) }
@@ -421,7 +423,7 @@ export default function HomeDashboard() {
       },{onConflict:'job_id,tradesperson_id'})
       const {data:{session}} = await supabase.auth.getSession()
       const job = jobs.find(j=>j.id===jobId)
-      fetch('/api/send-email',{
+      apiFetch('/api/send-email',{
         method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({
           type:'quote_requested', jobId, jobTitle:job?.title||'Job',
@@ -450,7 +452,7 @@ export default function HomeDashboard() {
       await supabase.from('bids').update({status:'declined'}).eq('job_id',jobId).neq('id',bidId)
       await supabase.from('jobs').update({status:'accepted'}).eq('id',jobId)
       const {data:{session}} = await supabase.auth.getSession()
-      fetch('/api/send-email',{
+      apiFetch('/api/send-email',{
         method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({type:'bid_accepted',bidId,amount:escrowAmount,jobTitle:jobs.find(j=>j.id===jobId)?.title||'Job',jobId,tradespersonId})
       }).catch(e=>console.log('Email error:',e))
@@ -477,32 +479,12 @@ export default function HomeDashboard() {
       await supabase.from('jobs').update({status:'completed'}).eq('id',jobId)
       await supabase.from('bids').update({status:'accepted'}).eq('id',bidId)
 
-      // Update payments table — mark as released, set payout pending
-      await supabase.from('payments')
-        .update({
-          status:         'released',
-          released_at:    new Date().toISOString(),
-          payout_status:  'pending',
-          net_amount:     netAmount,
-        })
-        .eq('job_id', jobId)
-
-      // Create in-app notification for tradesperson
-      if(acceptedBid?.tradespersonId) {
-        try {
-          await supabase.from('notifications').insert({
-            user_id: acceptedBid.tradespersonId,
-            type:    'payment_processing',
-            title:   'Payment being processed',
-            message: `Homeowner confirmed the job done. R${Math.round(netAmount/100).toLocaleString()} will be paid to your bank account within 24 hours.`,
-            link:    '/dashboard',
-            read:    false,
-          })
-        } catch(e) { console.log('Notif insert error:', e) }
-      }
+      // Payment release and the tradesperson's notification are written by the server
+      const rel = await apiFetch('/api/jobs/confirm-complete',{method:'POST',body:JSON.stringify({jobId})})
+      if(!rel.ok){ const e = await rel.json().catch(()=>({})); console.log('Confirm complete error:', e.error) }
 
       // Email admin + tradesperson
-      fetch('/api/send-email',{
+      apiFetch('/api/send-email',{
         method:'POST', headers:{'Content-Type':'application/json'},
         body:JSON.stringify({
           type:             'payment_release_request',
@@ -531,7 +513,7 @@ export default function HomeDashboard() {
       const {data:{session}} = await supabase.auth.getSession()
       await supabase.from('job_disputes').insert({job_id:jobId,raised_by:session?.user?.id,reason:disputeReason,status:'open'})
       await supabase.from('jobs').update({status:'disputed'}).eq('id',jobId)
-      fetch('/api/send-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'dispute_raised',jobId,reason:disputeReason,homeownerId:session?.user?.id})}).catch(e=>console.log('Email error:',e))
+      apiFetch('/api/send-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'dispute_raised',jobId,reason:disputeReason,homeownerId:session?.user?.id})}).catch(e=>console.log('Email error:',e))
       toast('Dispute raised','Our team will review within 24 hours','#E8A020')
       setDisputeJob(null); setDisputeReason(''); loadRealJobs(true)
     } catch(e){ console.log('Dispute error:',e) }
@@ -564,7 +546,7 @@ export default function HomeDashboard() {
       const tradeName = jobs.find(j=>j.id===jobId)?.bids.find(b=>b.id===bidId)?.name.split(' ')[0]||'the tradesperson'
       const {data:{session}} = await supabase.auth.getSession()
       const {data:jobData} = await supabase.from('jobs').select('homeowner_id').eq('id',jobId).single()
-      fetch('/api/send-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'counter_offer',bidId,counterAmount:parseInt(amt),counterBy:'homeowner',jobTitle:jobs.find(j=>j.id===jobId)?.title||'Job',jobId,homeownerId:(jobData as any)?.homeowner_id||session?.user?.id,tradespersonId:currentBid?.tradespersonId||bidId})}).catch(e=>console.log('Email error:',e))
+      apiFetch('/api/send-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'counter_offer',bidId,counterAmount:parseInt(amt),counterBy:'homeowner',jobTitle:jobs.find(j=>j.id===jobId)?.title||'Job',jobId,homeownerId:(jobData as any)?.homeowner_id||session?.user?.id,tradespersonId:currentBid?.tradespersonId||bidId})}).catch(e=>console.log('Email error:',e))
       toast(`Counter sent to ${tradeName}! (Round ${newRound}/3)`,'Waiting for their response','#E8A020')
     } catch(e){ setCounterResp(r=>({...r,[bidId]:'error'})) }
   }
@@ -587,7 +569,7 @@ export default function HomeDashboard() {
       await supabase.from('bids').update({status:'declined'}).eq('job_id',jobId).neq('id',bidId)
       await supabase.from('jobs').update({status:'accepted'}).eq('id',jobId)
       const {data:{session}} = await supabase.auth.getSession()
-      fetch('/api/send-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'bid_accepted',bidId,amount:agreedAmount,jobTitle:jobs.find(j=>j.id===jobId)?.title||'Job',jobId,tradespersonId:bid?.tradespersonId||bidId})}).catch(e=>console.log('Email error:',e))
+      apiFetch('/api/send-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'bid_accepted',bidId,amount:agreedAmount,jobTitle:jobs.find(j=>j.id===jobId)?.title||'Job',jobId,tradespersonId:bid?.tradespersonId||bidId})}).catch(e=>console.log('Email error:',e))
       toast('Bid accepted!',`${bidName.split(' ')[0]} is confirmed · Pay to lock in`,'#3DAA6A')
       loadRealJobs(true)
     } catch(e){ console.log('Accept bid error:',e) }
@@ -598,7 +580,7 @@ export default function HomeDashboard() {
     const acceptedBid = job?.bids.find(b=>b.status==='accepted'||b.status==='completed')
     try {
       const {data:{session}} = await supabase.auth.getSession()
-      const res = await fetch('/api/charge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({amountInCents:Math.round(amount*100),currency:'ZAR',jobId,jobTitle:job?.title||'Home repair',homeownerId:session?.user?.id,tradespersonId:acceptedBid?.tradespersonId||'',successUrl:`${window.location.origin}/home?payment=success&jobId=${jobId}`,cancelUrl:`${window.location.origin}/home?payment=cancelled`})})
+      const res = await apiFetch('/api/charge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({amountInCents:Math.round(amount*100),currency:'ZAR',jobId,jobTitle:job?.title||'Home repair',homeownerId:session?.user?.id,tradespersonId:acceptedBid?.tradespersonId||'',successUrl:`${window.location.origin}/home?payment=success&jobId=${jobId}`,cancelUrl:`${window.location.origin}/home?payment=cancelled`})})
       const data = await res.json()
       if(!res.ok||data.error){ toast('Payment error',data.error||'Please try again','#E24B4A'); return }
       if(data.redirectUrl){ window.location.href = data.redirectUrl }
@@ -620,14 +602,7 @@ export default function HomeDashboard() {
       if(existing){ toast('Already reviewed','You have already left a review for this job','#E8A020'); setReviewJob(null); return }
       const {error:reviewErr} = await supabase.from('reviews').insert({job_id:reviewJob,reviewer_id:session.user.id,reviewee_id:tradespersonId,rating,comment:reviewText||null})
       if(reviewErr){ console.error('Review insert error:',reviewErr); toast('Could not save review','Please try again','#E24B4A'); return }
-      const {data:allReviews} = await supabase.from('reviews').select('rating').eq('reviewee_id',tradespersonId)
-      if(allReviews&&allReviews.length>0) {
-        const count = allReviews.length
-        const avg = allReviews.reduce((s:number,r:any)=>s+r.rating,0)/count
-        const rounded = Math.round(avg*10)/10
-        const {count:completedCount} = await supabase.from('bids').select('id',{count:'exact',head:true}).eq('tradesperson_id',tradespersonId).eq('status','completed')
-        await supabase.from('tradesperson_profiles').update({rating_avg:rounded,rating_count:count,jobs_completed:completedCount||count}).eq('id',tradespersonId)
-      }
+      // Rating and jobs completed are recalculated by one server-side database trigger, not by the browser
       setHistoryJobs(h=>h.map(j=>j.id===reviewJob?{...j,rating}:j))
       toast('Review submitted ⭐','Thank you — this helps other homeowners','#C4593A')
     } catch(e){ console.error('Review error:',e); toast('Something went wrong','Please try again','#E24B4A') }

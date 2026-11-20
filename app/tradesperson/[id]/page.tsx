@@ -63,7 +63,7 @@ export default function TradespersonProfile() {
       const { data, error } = await supabase
         .from('profiles')
         .select(`
-          *,
+          id, full_name, area, city, created_at,
           tradesperson_profiles(
             trade_category,
             trade_categories,
@@ -91,8 +91,8 @@ export default function TradespersonProfile() {
         full_name:           data.full_name||'Tradesperson',
         area:                data.area||'Johannesburg',
         city:                data.city||'Johannesburg',
-        email:               data.email||'',
-        phone:               data.phone||'',
+        email:               '', // contact details are not public
+        phone:               '',
         created_at:          data.created_at,
         trade_category:      tp?.trade_category||'general',
         service_areas:       tp?.service_areas||[],

@@ -1,12 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 import nodemailer from 'nodemailer'
 import { createClient } from '@supabase/supabase-js'
+import { requireUser, isAdmin } from '../../lib/auth-server'
 
 // Service role client — bypasses RLS for notification inserts
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
+
+// Caller must be signed in and a party to the job they are emailing about.
+async function isJobParty(userId: string, jobId?: string): Promise<boolean> {
+  if (!jobId) return false
+  const { data: job } = await supabase.from('jobs').select('homeowner_id').eq('id', jobId).maybeSingle()
+  if (!job) return false
+  if ((job as any).homeowner_id === userId) return true
+  const { data: bid } = await supabase.from('bids').select('id').eq('job_id', jobId).eq('tradesperson_id', userId).limit(1)
+  return !!(bid && bid.length)
+}
 
 // ── Updated to info@lungiza.co.za via HMailPlus SMTP ─────────────────
 const transporter = nodemailer.createTransport({
@@ -80,8 +91,13 @@ async function notify(
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireUser(req)
+    if (auth instanceof NextResponse) return auth
     const body = await req.json()
     const { type } = body
+    if (!(await isJobParty(auth.user.id, body.jobId)) && !(await isAdmin(auth.user.id))) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
 
     // ─── 1. NEW BID — notify homeowner ─────────────────────────────
     if(type === 'new_bid' || (!type && body.jobId)) {
